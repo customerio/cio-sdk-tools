@@ -2,9 +2,10 @@
   "name": "sdk-self-service",
   "version": "1.0.0",
   "description": "A self service tool to run diagnostics on your mobile SDK installation",
-  "main": "index.js",
+  "main": "run-diagnostics.js",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "start": "nodetsc && node run-diagnostics.js"
   },
   "repository": {
     "type": "git",
@@ -21,5 +22,8 @@
     "path": "^0.12.7",
     "typescript": "^5.1.6",
     "xcode": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.4.8"
   }
 }
