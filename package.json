@@ -1,0 +1,24 @@
+{
+  "name": "sdk-self-service",
+  "version": "1.0.0",
+  "description": "A self service tool to run diagnostics on your mobile SDK installation",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/customerio/sdk-self-service.git"
+  },
+  "author": "CustomerIO Team",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/customerio/sdk-self-service/issues"
+  },
+  "homepage": "https://github.com/customerio/sdk-self-service#readme",
+  "dependencies": {
+    "fs": "^0.0.1-security",
+    "path": "^0.12.7",
+    "xcode": "^3.0.1"
+  }
+}
