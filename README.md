@@ -1,0 +1,2 @@
+# sdk-self-service
+A self service tool to run diagnostics on your mobile SDK installation
