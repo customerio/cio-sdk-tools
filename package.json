@@ -5,6 +5,10 @@
   "main": "run-diagnostics.js",
   "scripts": {
     "diagnose": "node run-diagnostics.js"
+    "build": "tsc",
+    "lint": "eslint 'src/**/*.{js,ts}'",
+    "lint:fix": "eslint 'src/**/*.{js,ts}' --fix",
+    "start": "nodetsc && node run-diagnostics.js"
   },
   "repository": {
     "type": "git",
@@ -24,6 +28,13 @@
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
-    "@types/node": "^20.4.8"
+    "@types/node": "^20.4.8",
+    "@typescript-eslint/eslint-plugin": "^6.3.0",
+    "@typescript-eslint/parser": "^6.3.0",
+    "eslint": "^8.46.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
+    "prettier": "^3.0.1",
+    "typescript": "^5.1.6"
   }
 }
