@@ -1,219 +1,451 @@
-"use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __generator = (this && this.__generator) || function (thisArg, body) {
-    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g;
-    return g = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
-    function verb(n) { return function (v) { return step([n, v]); }; }
-    function step(op) {
-        if (f) throw new TypeError("Generator is already executing.");
-        while (g && (g = 0, op[0] && (_ = 0)), _) try {
-            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
-            if (y = 0, t) op = [op[0] & 2, t.value];
-            switch (op[0]) {
-                case 0: case 1: t = op; break;
-                case 4: _.label++; return { value: op[1], done: false };
-                case 5: _.label++; y = op[1]; op = [0]; continue;
-                case 7: op = _.ops.pop(); _.trys.pop(); continue;
-                default:
-                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
-                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
-                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
-                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
-                    if (t[2]) _.ops.pop();
-                    _.trys.pop(); continue;
-            }
-            op = body.call(thisArg, _);
-        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
-        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
-    }
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-var fs = require("fs");
-var path = require("path");
-var xcode = require("xcode");
-var cleanString = function (input) { return input.replace(/['"]/g, '').trim(); };
-var searchFileInDirectory = function (startPath, filter) { return __awaiter(void 0, void 0, void 0, function () {
-    var results, files, tasks;
-    return __generator(this, function (_a) {
-        switch (_a.label) {
-            case 0:
-                results = [];
-                return [4 /*yield*/, fs.readdir(startPath)];
-            case 1:
-                files = _a.sent();
-                tasks = files.map(function (file) { return __awaiter(void 0, void 0, void 0, function () {
-                    var filename, stat, subDirResults;
-                    return __generator(this, function (_a) {
-                        switch (_a.label) {
-                            case 0:
-                                filename = path.join(startPath, file);
-                                return [4 /*yield*/, fs.lstat(filename)];
-                            case 1:
-                                stat = _a.sent();
-                                if (filename.includes('/Pods/')) {
-                                    return [2 /*return*/];
-                                }
-                                if (!stat.isDirectory()) return [3 /*break*/, 3];
-                                return [4 /*yield*/, searchFileInDirectory(filename, filter)];
-                            case 2:
-                                subDirResults = _a.sent();
-                                results = results.concat(subDirResults);
-                                return [3 /*break*/, 4];
-                            case 3:
-                                if (filter.test(filename)) {
-                                    results.push(filename);
-                                }
-                                _a.label = 4;
-                            case 4: return [2 /*return*/];
-                        }
-                    });
-                }); });
-                return [4 /*yield*/, Promise.all(tasks)];
-            case 2:
-                _a.sent();
-                return [2 /*return*/, results];
+const xcode = require('xcode');
+const path = require('path');
+const fs = require('fs').promises;
+
+/**
+ * Function to clean a string by removing single/double quotes and leading/trailing whitespaces.
+ * @param {string} input - String to be cleaned.
+ * @return {string} Cleaned string.
+ */
+function cleanString(input) {
+    return input.replace(/['"]/g, '').trim();
+}
+
+/**
+ * Search for a specific file within a directory and all its subdirectories.
+ * @param {string} startPath - Path of the directory to start the search from.
+ * @param {RegExp} filter - Regular expression to match the file name.
+ * @return {Promise<Array<string>>} Promise resolving to an array of file paths.
+ */
+// Function to search a file in a directory and its subdirectories
+async function searchFileInDirectory(startPath, filter) {
+    let results = [];
+    const files = await fs.readdir(startPath);
+    const tasks = files.map(async (file) => {
+        const filename = path.join(startPath, file);
+        const stat = await fs.lstat(filename);
+
+        // Skip the Pods directory and its subdirectories
+        if (filename.includes('/Pods/')) return;
+
+        if (stat.isDirectory()) {
+            const subDirResults = await searchFileInDirectory(filename, filter);
+            results = results.concat(subDirResults);
         }
+        else if (filter.test(filename)) results.push(filename);
     });
-}); };
-var checkNotificationServiceExtension = function (targets) {
-    var extensionCount = 0;
-    var isEmbedded = false;
-    var isFoundationExtension = false;
-    for (var key in targets) {
-        var target = targets[key];
-        if (target.productType && cleanString(target.productType) === 'com.apple.product-type.app-extension') {
-            console.log("\uD83D\uDD0E Found extension app: ".concat(JSON.stringify(target)));
-            console.log("\uD83D\uDD0E Found NSE: ".concat(target.name));
+
+    // Wait for all tasks to complete
+    await Promise.all(tasks);
+
+    return results;
+}
+
+/**
+ * Check if a Notification Service Extension is present and that there is only one.
+ * @param {Object} targets - Targets from the Xcode project.
+ */
+function checkNotificationServiceExtension(targets) {
+    let extensionCount = 0;
+    let isEmbedded = false;
+    let isFoundationExtension = false;
+
+    for (let key in targets) {
+        const target = targets[key];
+        // The following check ensures that we are dealing with a valid 'target' that is an app extension.
+        // 'target' and 'target.productType' must exist (i.e., they are truthy).
+        // We then remove any single or double quotes and any leading or trailing whitespace from 'target.productType'.
+        // If it matches "com.apple.product-type.app-extension", we increment the 'extensionCount'.
+
+        if (target && target.productType && cleanString(target.productType) === "com.apple.product-type.app-extension") {
+            console.log(`🔎 Found extension app: ${JSON.stringify(target)}`);
+            console.log(`🔎 Found NSE: ${target.name}`);
             extensionCount++;
         }
-        if (target.productType && cleanString(target.productType) === 'com.apple.product-type.application') {
-            console.log("\uD83D\uDD0E Checking if the NSE is embedded into target app: ".concat(target.productType));
-            if (target.buildPhases && target.buildPhases.find(function (phase) { return cleanString(phase.comment) === 'Embed App Extensions'; })) {
+
+        if (target && target.productType && cleanString(target.productType) === "com.apple.product-type.application") {
+            console.log(`🔎 Checking if the NSE is embedded into target app: ${target.productType}`);
+            // Check if the target is listed in the Embed App Extensions build phase.
+            if (target.buildPhases && target.buildPhases.find((phase) => cleanString(phase.comment) === "Embed App Extensions")) {
                 isEmbedded = true;
-            }
-            else if (target.buildPhases && target.buildPhases.find(function (phase) { return cleanString(phase.comment) === 'Embed Foundation Extensions'; })) {
+            } else if (target.buildPhases && target.buildPhases.find((phase) => cleanString(phase.comment) === "Embed Foundation Extensions")) {
                 isFoundationExtension = true;
             }
         }
     }
+
     if (extensionCount > 1) {
-        console.log('❌ Multiple Notification Service Extensions found. Only one should be present.');
-    }
-    else if (extensionCount === 1) {
+        console.log("❌ Multiple Notification Service Extensions found. Only one should be present.");
+    } else if (extensionCount === 1) {
         if (isEmbedded) {
-            console.log('✅ Notification Service Extension found and embedded.');
+            console.log("✅ Notification Service Extension found and embedded.");
+        } else if (isFoundationExtension) {
+            console.log("✅ Notification Service Extension found but not embedded as it is a Foundation Extension.");
+        } else {
+            console.log("❌ Notification Service Extension found but not embedded.");
         }
-        else if (isFoundationExtension) {
-            console.log('✅ Notification Service Extension found but not embedded as it is a Foundation Extension.');
-        }
-        else {
-            console.log('❌ Notification Service Extension found but not embedded.');
-        }
+    } else {
+        console.log("❌ Notification Service Extension not found.");
     }
-    else {
-        console.log('❌ Notification Service Extension not found.');
-    }
-};
-var getDeploymentTargetVersion = function (pbxProject) {
-    var buildConfig = pbxProject.pbxXCBuildConfigurationSection();
-    var nativeTargets = pbxProject.pbxNativeTargetSection();
-    var configList = pbxProject.pbxXCConfigurationList();
-    var nseBuildConfigKeys = [];
+}
+
+function getDeploymentTargetVersion(pbxProject) {
+    const buildConfig = pbxProject.pbxXCBuildConfigurationSection();
+    const nativeTargets = pbxProject.pbxNativeTargetSection();
+    const configList = pbxProject.pbxXCConfigurationList();
+
+    let nseBuildConfigKeys = [];
+
     // Find the NSE build configuration list key
-    for (var key in nativeTargets) {
-        var nativeTarget = nativeTargets[key];
+    for (let key in nativeTargets) {
+        const nativeTarget = nativeTargets[key];
         if (nativeTarget.productType && cleanString(nativeTarget.productType) === 'com.apple.product-type.app-extension') {
-            var configListKey = nativeTarget.buildConfigurationList;
-            var buildConfigurations = configList[configListKey].buildConfigurations;
-            nseBuildConfigKeys = buildConfigurations.map(function (config) { return config.value; });
+            const configListKey = nativeTarget.buildConfigurationList;
+            const buildConfigurations = configList[configListKey].buildConfigurations;
+            nseBuildConfigKeys = buildConfigurations.map(config => config.value);
             break;
         }
     }
+
     // Return deployment target of the NSE
     if (nseBuildConfigKeys.length) {
-        for (var key in buildConfig) {
-            var config = buildConfig[key];
+        for (let key in buildConfig) {
+            const config = buildConfig[key];
             // Check if the config is the NSE build configuration and it has an iOS deployment target
             if (nseBuildConfigKeys.includes(key) && config.buildSettings && config.buildSettings['IPHONEOS_DEPLOYMENT_TARGET']) {
                 return config.buildSettings['IPHONEOS_DEPLOYMENT_TARGET'];
             }
         }
     }
+
     return null;
-};
+}
+
+function extractPodVersions(podfileLockContent, podPattern) {
+    let match;
+    const versions = [];
+    while ((match = podPattern.exec(podfileLockContent)) !== null) {
+        versions.push(match[1]);
+    }
+
+    if (versions.length > 0) {
+        return versions.join(', ');
+    } else {
+        return undefined;
+    }
+}
+
+async function checkForSDKInitializationInReactNative(projectPath) {
+    const allowedExtensions = ['.js', '.jsx', '.ts', '.tsx'];
+    let fileNameForSDKInitialization = undefined;
+    try {
+        const files = await fs.readdir(projectPath);
+        if (files.length === 0) return undefined;
+
+        for (const file of files) {
+            const filePath = path.join(projectPath, file);
+            const linkStat = await fs.lstat(filePath);
+            if (file.startsWith('.') || file.startsWith('_') || file.startsWith('node_modules') || linkStat.isSymbolicLink()) {
+                continue;
+            };
+            const stats = await fs.stat(filePath);
+            if (!stats.isDirectory() && !stats.isFile() && !allowedExtensions.includes(path.extname(file))) {
+                continue;
+            }
+
+            if (stats.isDirectory()) {
+                fileNameForSDKInitialization = await checkForSDKInitializationInReactNative(filePath);
+                if (fileNameForSDKInitialization) {
+                    break;
+                }
+            } else if (stats.isFile() && reactNativeSDKInitializationFiles.includes(file)) {
+                const fileContent = await fs.readFile(filePath, 'utf8');
+                if (fileContent.includes('CustomerIO.initialize')) {
+                    return file;
+                }
+            }
+        };
+    } catch (err) {
+        console.error(`🚨 Error reading directory ${projectPath}:`, err.code);
+    }
+    return fileNameForSDKInitialization;
+}
+
+async function matchesReactNativeProjectStructure(projectPath) {
+    let isReactNativeProject = false;
+
+    // Check for package.json
+    const packageJsonPath = path.join(projectPath, 'package.json');
+    try {
+        await fs.access(packageJsonPath);
+        isReactNativeProject = true;
+    } catch { }
+
+    // Check for ios directory
+    const iosPath = path.join(projectPath, 'ios');
+    try {
+        const stats = await fs.stat(iosPath);
+        isReactNativeProject = isReactNativeProject && stats.isDirectory();
+    } catch { }
+
+    return isReactNativeProject;
+}
+
 // Validate input argument
 if (!process.argv[2]) {
-    console.error('🚨 Error: No directory provided.');
+    console.error("🚨 Error: No directory provided.");
     process.exit(1);
 }
+
 // Get root path
-var rootPath = process.argv[2];
+const rootPath = process.argv[2];
+
 // Define the patterns to search for
-var projPattern = /\.pbxproj$/;
-var appDelegatePattern = /AppDelegate\.swift$/;
-function checkProject() {
-    return __awaiter(this, void 0, void 0, function () {
-        var _a, projectPaths, appDelegatePaths, _i, projectPaths_1, projectPath, project, targets, deploymentTarget, _b, appDelegatePaths_1, appDelegatePath, contents, err_1;
-        return __generator(this, function (_c) {
-            switch (_c.label) {
-                case 0:
-                    // Search for the .pbxproj and AppDelegate.swift files
-                    console.log('🔎 Searching for project files...');
-                    return [4 /*yield*/, Promise.all([
-                            searchFileInDirectory(rootPath, projPattern),
-                            searchFileInDirectory(rootPath, appDelegatePattern)
-                        ])];
-                case 1:
-                    _a = _c.sent(), projectPaths = _a[0], appDelegatePaths = _a[1];
-                    // Process each .pbxproj file
-                    for (_i = 0, projectPaths_1 = projectPaths; _i < projectPaths_1.length; _i++) {
-                        projectPath = projectPaths_1[_i];
-                        project = xcode.project(projectPath);
-                        project.parseSync();
-                        console.log("\uD83D\uDD0E Checking project at path: ".concat(projectPath));
-                        targets = project.pbxNativeTargetSection();
-                        // Check for Notification Service Extension
-                        checkNotificationServiceExtension(targets);
-                        deploymentTarget = getDeploymentTargetVersion(project);
-                        console.log("\uD83D\uDD14 Deployment Target Version for NSE: ".concat(deploymentTarget, ". Ensure this version is not higher than the iOS version of the devices where the app will be installed. A higher target version may prevent some features, like rich notifications, from working correctly."));
-                    }
-                    _b = 0, appDelegatePaths_1 = appDelegatePaths;
-                    _c.label = 2;
-                case 2:
-                    if (!(_b < appDelegatePaths_1.length)) return [3 /*break*/, 7];
-                    appDelegatePath = appDelegatePaths_1[_b];
-                    console.log("\uD83D\uDD0E Checking AppDelegate at path: ".concat(appDelegatePath));
-                    _c.label = 3;
-                case 3:
-                    _c.trys.push([3, 5, , 6]);
-                    return [4 /*yield*/, fs.readFile(appDelegatePath, 'utf8')];
-                case 4:
-                    contents = _c.sent();
-                    if (contents.includes('func userNotificationCenter(')) {
-                        console.log('✅ Required method found in AppDelegate.swift');
-                    }
-                    else {
-                        console.log('❌ Required method not found in AppDelegate.swift');
-                    }
-                    return [3 /*break*/, 6];
-                case 5:
-                    err_1 = _c.sent();
-                    console.error('🚨 Error reading file:', err_1);
-                    return [3 /*break*/, 6];
-                case 6:
-                    _b++;
-                    return [3 /*break*/, 2];
-                case 7: return [2 /*return*/];
+const projPattern = /\.pbxproj$/;
+const appDelegateSwiftPattern = /AppDelegate\.swift$/;
+const appDelegateObjectiveCPattern = /AppDelegate\.mm$/;
+const entitlementsFilePattern = /\.entitlements$/;
+
+const objCUserNotificationCenterPattern = /-\s?\(void\)userNotificationCenter:\s*\(UNUserNotificationCenter\s?\*\)center\s*/;;
+const pushNotificationEntitlementPattern = /<key>\s*aps-environment\s*<\/key>/;
+const podCustomerIOReactNativePattern = /- customerio-reactnative\s+\(([^)]+)\)/g;
+const podCustomerIOTrackingPattern = /- CustomerIO\/Tracking\s+\(([^)]+)\)/g;
+const podCustomerIOMessagingInAppPattern = /- CustomerIO\/MessagingInApp\s+\(([^)]+)\)/g;
+const podCustomerIOMessagingPushAPNPattern = /- CustomerIO\/MessagingPushAPN\s+\(([^)]+)\)/g;
+const podCustomerIOMessagingPushFCMPattern = /- CustomerIO\/MessagingPushFCM\s+\(([^)]+)\)/g;
+
+const reactNativePackageName = 'customerio-reactnative';
+const conflictingReactNativePackages = [
+    'react-native-onesignal',
+    '@react-native-firebase/messaging',
+];
+
+const conflictingIosPods = [
+    'OneSignal',
+    'Firebase/Messaging',
+];
+
+const reactNativeSDKInitializationFiles = [
+    'App.js',
+    'App.jsx',
+    'App.ts',
+    'App.tsx',
+    'FeaturesUpdate.js',
+    'CustomerIOService.js',
+    'CustomerIOService.ts',
+];
+
+async function checkProject() {
+    // Search for the .pbxproj and AppDelegate.swift files
+    console.log("🔎 Searching for project files...");
+
+    const isReactNativeApp = await matchesReactNativeProjectStructure(rootPath);
+    let iosProjectPath;
+
+    if (isReactNativeApp) {
+        console.log("🔔 Project appears to be a React Native project");
+        iosProjectPath = path.join(rootPath, 'ios');
+    } else {
+        console.log("🔔 Project appears to be a native iOS project");
+        iosProjectPath = rootPath;
+    }
+
+    const [projectPaths, appDelegateSwiftPaths, appDelegateObjectiveCPaths, entitlementsFilePaths] = await Promise.all([
+        searchFileInDirectory(iosProjectPath, projPattern),
+        searchFileInDirectory(iosProjectPath, appDelegateSwiftPattern),
+        searchFileInDirectory(iosProjectPath, appDelegateObjectiveCPattern),
+        searchFileInDirectory(iosProjectPath, entitlementsFilePattern),
+    ]);
+
+    // Process each .pbxproj file
+    for (let projectPath of projectPaths) {
+        const project = xcode.project(projectPath);
+        project.parseSync();
+
+        console.log(`🔎 Checking project at path: ${projectPath}`);
+
+        const targets = project.pbxNativeTargetSection();
+
+        // Check for Notification Service Extension
+        checkNotificationServiceExtension(targets);
+
+        const deploymentTarget = getDeploymentTargetVersion(project);
+        console.log(`🔔 Deployment Target Version for NSE: ${deploymentTarget}. Ensure this version is not higher than the iOS version of the devices where the app will be installed. A higher target version may prevent some features, like rich notifications, from working correctly.`);
+    }
+
+    // Process each AppDelegate.swift file
+    for (let appDelegatePath of appDelegateSwiftPaths) {
+        console.log(`🔎 Checking AppDelegate at path: ${appDelegatePath}`);
+        try {
+            const contents = await fs.readFile(appDelegatePath, 'utf8');
+            if (contents.includes("func userNotificationCenter(")) {
+                console.log("✅ Required method found in AppDelegate.swift");
+            } else {
+                console.log("❌ Required method not found in AppDelegate.swift");
             }
-        });
-    });
+        } catch (err) {
+            console.error("🚨 Error reading file:", err);
+        }
+    }
+
+    // Process each AppDelegate.m file
+    for (let appDelegatePath of appDelegateObjectiveCPaths) {
+        console.log(`🔎 Checking AppDelegate at path: ${appDelegatePath}`);
+        try {
+            const contents = await fs.readFile(appDelegatePath, 'utf8');
+            if (objCUserNotificationCenterPattern.test(contents)) {
+                console.log("✅ Required method found in AppDelegate.m");
+            } else {
+                console.log("❌ Required method not found in AppDelegate.m");
+            }
+        } catch (err) {
+            console.error("🚨 Error reading file:", err);
+        }
+    }
+
+    // Process each entitlements file
+    for (let entitlementsFilePath of entitlementsFilePaths) {
+        console.log(`🔎 Checking entitlements file at path: ${entitlementsFilePath}`);
+        try {
+            // We can use XML parsing libraries (like xml2js) for better results because entitlements files are XML files
+            const contents = await fs.readFile(entitlementsFilePath, 'utf8');
+            if (pushNotificationEntitlementPattern.test(contents)) {
+                console.log("✅ Push Notification capability found in entitlements");
+            } else {
+                console.log("❌ Push Notification capability not found in entitlements");
+            }
+        } catch (err) {
+            console.error("🚨 Error reading file:", err);
+        }
+    }
+
+    const podfilePath = path.join(iosProjectPath, 'Podfile');
+    const podfileLockPath = path.join(iosProjectPath, 'Podfile.lock');
+    try {
+        console.log(`🔎 Checking for conflicting libraries in: ${podfileLockPath}`);
+        const podfileLockContent = await fs.readFile(podfileLockPath, 'utf8');
+        const conflictingPods = conflictingIosPods.filter((lib) => podfileLockContent.includes(lib));
+        if (conflictingPods.length === 0) {
+            console.log('✅ No conflicting pods found in Podfile');
+        } else {
+            console.log('🚨 More than one pods found in Podfile for handling push notifications', conflictingPods);
+        }
+    } catch (err) {
+        console.error("🚨 Error reading Podfile.lock:", err);
+    }
+
+    if (isReactNativeApp) {
+        console.log(`🔎 Checking for SDK Initialization in React Native`);
+        const sdkInitializationFile = await checkForSDKInitializationInReactNative(rootPath);
+        if (sdkInitializationFile) {
+            console.log("✅ SDK Initialization found in", sdkInitializationFile);
+        } else {
+            console.log("❌ SDK Initialization not found in given files", reactNativeSDKInitializationFiles);
+        }
+
+        try {
+            const packageJsonPath = path.join(rootPath, 'package.json');
+            console.log(`🔎 Checking for conflicting libraries in: ${packageJsonPath}`);
+            const packageJson = require(packageJsonPath);
+            const dependencies = [
+                ...Object.keys(packageJson.dependencies || {}),
+                ...Object.keys(packageJson.devDependencies || {}),
+            ];
+            const conflictingLibraries = conflictingReactNativePackages.filter((lib) => dependencies.includes(lib));
+            if (conflictingLibraries.length === 0) {
+                console.log('✅ No conflicting libraries found in package.json');
+            } else {
+                console.log('🚨 More than one libraries found in package.json for handling push notifications', conflictingLibraries);
+            }
+        } catch (err) {
+            console.error("🚨 Error reading package.json:", err);
+        }
+    }
+
+    console.log(`🗒️ Collecting more information on project`);
+
+    if (isReactNativeApp) {
+        const packageJsonPath = path.join(rootPath, 'package.json');
+        const yarnLockPath = path.join(rootPath, 'yarn.lock');
+        const npmLockPath = path.join(rootPath, 'package-lock.json');
+
+        // Print package version from package.json
+        const packageJson = require(packageJsonPath);
+        const sdkVersionInPackageJson = packageJson.dependencies[reactNativePackageName];
+        console.log('👉 %s version in package.json:', reactNativePackageName, sdkVersionInPackageJson);
+
+        // Print package version from yarn.lock
+        try {
+            const yarnLockContent = await fs.readFile(yarnLockPath, 'utf8');
+            const yarnLockVersionMatch = yarnLockContent.match(new RegExp(`${reactNativePackageName}@[^:]+:\\s*\\n\\s*version\\s*"([^"]+)"`));
+            const yarnLockVersion = yarnLockVersionMatch ? yarnLockVersionMatch[1] : 'Not found';
+            console.log('👉 %s version in yarn.lock:', reactNativePackageName, yarnLockVersion);
+        } catch (err) {
+            console.log('🚨 Error reading yarn.lock:', err.code);
+        }
+
+        // Print package version from package-lock.json
+        try {
+            const npmLock = require(npmLockPath);
+            const npmLockVersion = npmLock.dependencies[reactNativePackageName].version;
+            console.log('👉 %s version in package-lock.json:', reactNativePackageName, npmLockVersion);
+        } catch (err) {
+            console.log('🚨 Error reading package-lock.json:', err.code);
+        }
+    }
+
+    // Print pods versions from Podfile.lock
+    try {
+        const podfileLockContent = await fs.readFile(podfileLockPath, 'utf8');
+
+        if (isReactNativeApp) {
+            const rnPodMatch = podfileLockContent.match(podCustomerIOReactNativePattern);
+            if (rnPodMatch && rnPodMatch[1]) {
+                console.log('👉 %s version in Podfile.lock:', reactNativePackageName, rnPodMatch[1]);
+            } else {
+                console.log('❌ %s not found in Podfile.lock', reactNativePackageName);
+            };
+        }
+
+        const trackingPodVersions = extractPodVersions(podfileLockContent, podCustomerIOTrackingPattern);
+        if (trackingPodVersions) {
+            console.log('👉 CustomerIOTracking version in Podfile.lock:', trackingPodVersions);
+        } else {
+            console.log('❌ CustomerIOTracking not found in Podfile.lock');
+        };
+
+        const inAppMessagingPodVersions = extractPodVersions(podfileLockContent, podCustomerIOMessagingInAppPattern);
+        if (inAppMessagingPodVersions) {
+            console.log('👉 CustomerIO/MessagingInApp version in Podfile.lock:', inAppMessagingPodVersions);
+        } else {
+            console.log('❌ CustomerIO/MessagingInApp not found in Podfile.lock');
+        };
+
+        const messagingPushAPNPodVersions = extractPodVersions(podfileLockContent, podCustomerIOMessagingPushAPNPattern);
+        const messagingPushFCMPodVersions = extractPodVersions(podfileLockContent, podCustomerIOMessagingPushFCMPattern);
+
+        if (messagingPushAPNPodVersions && messagingPushFCMPodVersions) {
+            console.log('🚨 CustomerIO/MessagingPushAPN and CustomerIO/MessagingPushFCM found in Podfile.lock. Both cannot be used at a time, please use only one of them.');
+        } else if (messagingPushAPNPodVersions) {
+            console.log('👉 CustomerIO/MessagingPushAPN version in Podfile.lock:', messagingPushAPNPodVersions);
+        } else if (messagingPushFCMPodVersions) {
+            console.log('👉 CustomerIO/MessagingPushFCM version in Podfile.lock:', messagingPushFCMPodVersions);
+        } else {
+            console.log('CustomerIO/MessagingPush not found in Podfile.lock');
+        };
+    } catch (err) {
+        console.error("🚨 Error reading Podfile.lock:", err);
+    }
+
+    // Print iOS deployment target version from Podfile
+    try {
+        const podfileContent = await fs.readFile(podfilePath, 'utf8');
+        const iosVersionMatch = podfileContent.match(/platform\s+:ios,\s*'([^']+)'/);
+        const iosVersion = iosVersionMatch ? iosVersionMatch[1] : 'Not found';
+        console.log('👉 iOS deployment target version:', iosVersion);
+    } catch (err) {
+        console.error("🚨 Error reading Podfile:", err);
+    }
 }
-checkProject().catch(function (err) { return console.error('🚨 Error during project check:', err); });
+
+checkProject().catch(err => console.error("🚨 Error during project check:", err));
