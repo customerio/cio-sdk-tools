@@ -4,7 +4,7 @@
   "description": "A self service tool to run diagnostics on your mobile SDK installation",
   "main": "run-diagnostics.js",
   "scripts": {
-    "diagnose": "node run-diagnostics.js",
+    "diagnose": "npx tsc && node dist/index.js",
     "build": "tsc",
     "lint": "eslint 'src/**/*.{js,ts}'",
     "lint:fix": "eslint 'src/**/*.{js,ts}' --fix",
