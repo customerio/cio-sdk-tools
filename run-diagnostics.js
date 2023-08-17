@@ -58,7 +58,7 @@ async function checkNotificationServiceExtension(targets, rootPath) {
      */
     async function readAndParseXML(filePath) {
         const infoPlistPath = path.join(rootPath, filePath);
-        console.log(`🔎 Path : ${infoPlistPath}`);
+        console.log(`🔎 Checking info.plist at Path : ${infoPlistPath}`);
         const xml = await fs.readFile(infoPlistPath, 'utf8');
 
         return new Promise((resolve, reject) => {
@@ -116,7 +116,7 @@ async function checkNotificationServiceExtension(targets, rootPath) {
         // If it matches "com.apple.product-type.app-extension", we increment the 'extensionCount'.
 
         if (target && target.productType && cleanString(target.productType) === "com.apple.product-type.app-extension") {
-            console.log(`🔎 Found app extension: ${JSON.stringify(target)}`);
+            console.log(`🔎 Found app extension: ${target.name}`);
 
             const inferredDirectoryName = target.name || target.productReference_comment.replace('.appex', '');
             const possibleInfoPlistPath = `./${inferredDirectoryName}/Info.plist`.replace(/"/g, '');
@@ -125,14 +125,14 @@ async function checkNotificationServiceExtension(targets, rootPath) {
 
             // If the Info.plist content represents an NSE, process further
             if (isNotificationServiceExtension(infoPlistContent)) {
-                console.log(`🔎 Found NSE: ${target.name}`);
+                console.log(`🔎 Found Notification app extension: ${target.name}`);
                 extensionCount++;
             }
 
         }
 
         if (target && target.productType && cleanString(target.productType) === "com.apple.product-type.application") {
-            console.log(`🔎 Checking if the NSE is embedded into target app: ${target.productType}`);
+            console.log(`🔎 Checking if the NSE is embedded into target app: ${target.name}`);
             // Check if the target is listed in the Embed App Extensions build phase.
             if (target.buildPhases && target.buildPhases.find((phase) => cleanString(phase.comment) === "Embed App Extensions")) {
                 isEmbedded = true;
