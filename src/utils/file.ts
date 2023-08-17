@@ -87,3 +87,26 @@ export async function readAndParseXML(
   });
   return content;
 }
+
+export function readFileWithStats(paths: string[]): any[] {
+  type Result = {
+    path: string;
+    content?: string;
+    lastUpdated?: number;
+  };
+
+  const results: Result[] = [];
+  for (const path of paths) {
+    const result: Result = {
+      path: path,
+    };
+    try {
+      result.content = fs.readFileSync(path, "utf8");
+      result.lastUpdated = fs.statSync(path).mtime.getTime();
+    } catch (err) {
+      /* empty */
+    }
+    results.push(result);
+  }
+  return results;
+}
