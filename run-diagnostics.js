@@ -1,6 +1,7 @@
 const xcode = require('xcode');
 const path = require('path');
 const fs = require('fs').promises;
+const xml2js = require('xml2js');
 
 /**
  * Function to clean a string by removing single/double quotes and leading/trailing whitespaces.
@@ -45,10 +46,67 @@ async function searchFileInDirectory(startPath, filter) {
  * Check if a Notification Service Extension is present and that there is only one.
  * @param {Object} targets - Targets from the Xcode project.
  */
-function checkNotificationServiceExtension(targets) {
+async function checkNotificationServiceExtension(targets, rootPath) {
     let extensionCount = 0;
     let isEmbedded = false;
     let isFoundationExtension = false;
+
+    /**
+     * Reads the XML file at the provided path and returns its content as a JSON object.
+     * @param {string} filePath - Path to the XML file.
+     * @returns {Object|null} The parsed content of the XML file or null if reading failed.
+     */
+    async function readAndParseXML(filePath) {
+        const infoPlistPath = path.join(rootPath, filePath);
+        console.log(`🔎 Path : ${infoPlistPath}`);
+        const xml = await fs.readFile(infoPlistPath, 'utf8');
+
+        return new Promise((resolve, reject) => {
+            xml2js.parseString(xml, { explicitArray: false }, (error, result) => {
+                if (error) {
+                    reject(error);
+                } else {
+                    resolve(result.plist.dict);
+                }
+            });
+        });
+    }
+
+    /**
+     * Determine if the provided content represents a Notification Service Extension.
+     *
+     * The function checks the structure of the content to identify keys and values 
+     * that indicate the presence of a Notification Service Extension.
+     * 
+     * Specifically, it checks for:
+     * 1. The presence of the 'NSExtension' key.
+     * 2. Inside the nested 'dict' structure, the presence of the 'NSExtensionPointIdentifier' key.
+     * 3. The associated value of 'com.apple.usernotifications.service' for the 'NSExtensionPointIdentifier' key.
+     * 
+     * @param {Object} content - The parsed content of the Info.plist for a target.
+     * @returns {boolean} - Returns true if the content indicates a Notification Service Extension, else false.
+     */
+    function isNotificationServiceExtension(content) {
+        // Check if 'NSExtension' is present as a key, accounting for both string and array type.
+        const hasNSExtensionKey = Array.isArray(content.key)
+            ? content.key.includes('NSExtension')
+            : content.key === 'NSExtension';
+
+        // Check if 'NSExtensionPointIdentifier' is present inside the nested dict, accounting for both string and array type.
+        const hasNSExtensionPointIdentifier = content.dict && Array.isArray(content.dict.key)
+            ? content.dict.key.includes('NSExtensionPointIdentifier')
+            : content.dict.key === 'NSExtensionPointIdentifier';
+
+        // Check if the value associated with 'NSExtensionPointIdentifier' is 'com.apple.usernotifications.service'.
+        const hasUserNotificationsService = content.dict && Array.isArray(content.dict.string)
+            ? content.dict.string.includes("com.apple.usernotifications.service")
+            : content.dict.string === "com.apple.usernotifications.service";
+
+        // If all checks pass, return true; otherwise, return false.
+        return hasNSExtensionKey && hasNSExtensionPointIdentifier && hasUserNotificationsService;
+    }
+
+
 
     for (let key in targets) {
         const target = targets[key];
@@ -58,9 +116,19 @@ function checkNotificationServiceExtension(targets) {
         // If it matches "com.apple.product-type.app-extension", we increment the 'extensionCount'.
 
         if (target && target.productType && cleanString(target.productType) === "com.apple.product-type.app-extension") {
-            console.log(`🔎 Found extension app: ${JSON.stringify(target)}`);
-            console.log(`🔎 Found NSE: ${target.name}`);
-            extensionCount++;
+            console.log(`🔎 Found app extension: ${JSON.stringify(target)}`);
+
+            const inferredDirectoryName = target.name || target.productReference_comment.replace('.appex', '');
+            const possibleInfoPlistPath = `./${inferredDirectoryName}/Info.plist`.replace(/"/g, '');
+
+            const infoPlistContent = await readAndParseXML(possibleInfoPlistPath);
+
+            // If the Info.plist content represents an NSE, process further
+            if (isNotificationServiceExtension(infoPlistContent)) {
+                console.log(`🔎 Found NSE: ${target.name}`);
+                extensionCount++;
+            }
+
         }
 
         if (target && target.productType && cleanString(target.productType) === "com.apple.product-type.application") {
@@ -267,7 +335,7 @@ async function checkProject() {
         const targets = project.pbxNativeTargetSection();
 
         // Check for Notification Service Extension
-        checkNotificationServiceExtension(targets);
+        await checkNotificationServiceExtension(targets, rootPath);
 
         const deploymentTarget = getDeploymentTargetVersion(project);
         console.log(`🔔 Deployment Target Version for NSE: ${deploymentTarget}. Ensure this version is not higher than the iOS version of the devices where the app will be installed. A higher target version may prevent some features, like rich notifications, from working correctly.`);
