@@ -1,3 +1,4 @@
+export * from "./array";
 export * from "./file";
 export * from "./helpers";
 export * as logger from "./logger";
