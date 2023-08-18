@@ -5,7 +5,7 @@
   "scripts": {
     "compile": "tsc",
     "diagnose": "tsc && node ./dist/run-diagnostics.js",
-    "doctor": "tsc && node ./dist/index.js"
+    "doctor": "tsc && node ./dist/entrypoint.js"
   },
   "repository": {
     "type": "git",
