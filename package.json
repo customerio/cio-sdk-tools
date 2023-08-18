@@ -2,9 +2,10 @@
   "name": "cio-sdk-tools",
   "version": "1.0.0",
   "description": "A self service tool to run diagnostics on your mobile SDK installation",
-  "main": "run-diagnostics.js",
   "scripts": {
-    "diagnose": "node run-diagnostics.js"
+    "compile": "tsc",
+    "diagnose": "tsc && node ./dist/run-diagnostics.js",
+    "doctor": "tsc && node ./dist/entrypoint.js"
   },
   "repository": {
     "type": "git",
@@ -17,13 +18,15 @@
   },
   "homepage": "https://github.com/customerio/sdk-self-service#readme",
   "dependencies": {
+    "commander": "^11.0.0",
     "fs": "^0.0.1-security",
     "path": "^0.12.7",
-    "typescript": "^5.1.6",
+    "winston": "^3.10.0",
     "xcode": "^3.0.1",
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
-    "@types/node": "^20.4.8"
+    "@types/node": "^20.4.8",
+    "typescript": "^5.1.6"
   }
 }
