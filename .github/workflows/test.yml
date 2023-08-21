@@ -18,7 +18,7 @@ jobs:
         run: npm audit
 
       - name: Compile
-        run: npm run typescript
+        run: npm run compile
 
       - name: Publish test
         run: npm publish --dry-run
