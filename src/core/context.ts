@@ -1,4 +1,4 @@
-import { MobileProject } from "./projects";
+import { MobileProject } from './projects';
 
 export class Context {
   static instance: Context;

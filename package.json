@@ -8,9 +8,9 @@
     "build": "tsc",
     "lint": "eslint 'src/**/*.{js,ts,tsx}'",
     "lint:fix": "npx eslint 'src/**/*.{js,ts,tsx}' --fix",
-    "format": "npx prettier --write \"src/**/*.tsx\" && (npm run lint || true)",
+    "format": "npx prettier --write \"src/**/*.{ts,tsx}\" && (npm run lint:fix || true)",
     "start": "nodetsc && node run-diagnostics.js",
-    "doctor": "tsc && node ./dist/entrypoint.js"
+    "compile": "tsc"
   },
   "repository": {
     "type": "git",
@@ -24,9 +24,10 @@
   "homepage": "https://github.com/customerio/sdk-self-service#readme",
   "dependencies": {
     "@types/xml2js": "^0.4.11",
-    "commander": "^11.0.0",
     "fs": "^0.0.1-security",
     "path": "^0.12.7",
+    "chalk": "^4.1.2",
+    "commander": "^11.0.0",
     "typescript": "^5.1.6",
     "winston": "^3.10.0",
     "xcode": "^3.0.1",

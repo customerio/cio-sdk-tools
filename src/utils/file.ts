@@ -1,14 +1,16 @@
-import * as fs from "fs";
-import * as path from "path";
-import * as xml2js from "xml2js";
-import { logger } from ".";
+import * as fs from 'fs';
+import * as path from 'path';
+import * as xml2js from 'xml2js';
+import { logger } from '.';
 
 export function isDirectory(path: string): boolean {
   try {
     const stat = fs.statSync(path);
     return stat.isDirectory();
   } catch (err) {
-    logger.error("Error checking directory: %s", err);
+    logger.logWithFormat((formatter) =>
+      formatter.error('Error checking directory: %s', err)
+    );
     return false;
   }
 }
@@ -23,14 +25,16 @@ export function isDirectoryNonEmpty(path: string): boolean {
     const files = fs.readdirSync(path);
     return files.length > 0;
   } catch (err) {
-    logger.error("Error checking directory: %s", err);
+    logger.logWithFormat((formatter) =>
+      formatter.error('Error checking directory: %s', err)
+    );
     return false;
   }
 }
 
 export function readFileContent(path: string): string | undefined {
   try {
-    return fs.readFileSync(path, "utf8");
+    return fs.readFileSync(path, 'utf8');
   } catch (err) {
     return undefined;
   }
@@ -47,10 +51,10 @@ export function readFileContent(path: string): string | undefined {
 export async function searchFileInDirectory(
   directoryPath: string,
   filters: Map<string, RegExp>,
-  ignoreDirs: string[] = [],
+  ignoreDirs: string[] = []
 ): Promise<Record<string, string[]>> {
   const results: Record<string, string[]> = Object.fromEntries(
-    [...filters.keys()].map((key) => [key, []]),
+    [...filters.keys()].map((key) => [key, []])
   );
 
   const files = fs.readdirSync(directoryPath);
@@ -79,9 +83,9 @@ export async function searchFileInDirectory(
 }
 
 export async function readAndParseXML(
-  filePath: string,
+  filePath: string
 ): Promise<any | undefined> {
-  const xml = fs.readFileSync(filePath, "utf8");
+  const xml = fs.readFileSync(filePath, 'utf8');
   const content = await xml2js.parseStringPromise(xml, {
     explicitArray: false,
   });
@@ -101,7 +105,7 @@ export function readFileWithStats(paths: string[]): any[] {
       path: path,
     };
     try {
-      result.content = fs.readFileSync(path, "utf8");
+      result.content = fs.readFileSync(path, 'utf8');
       result.lastUpdated = fs.statSync(path).mtime.getTime();
     } catch (err) {
       /* empty */

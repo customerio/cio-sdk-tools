@@ -4,9 +4,9 @@
  * @returns Cleaned string.
  */
 export function trimQuotes(input: string) {
-  return input.replace(/['"]/g, "").trim();
+  return input.replace(/['"]/g, '').trim();
 }
 
 export function trimEqualOperator(input: string) {
-  return input.replace(/^=/, "").trim();
+  return input.replace(/^=/, '').trim();
 }
