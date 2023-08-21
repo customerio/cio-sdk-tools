@@ -5,7 +5,7 @@
 pre-commit:
   commands:    
     lint:
-      glob: "src/**/*.{js,ts,tsx}"
+      glob: "src/**/*.{js,ts}"
       # Format code and then `git add` modified files from formatter. 
       run: npm run format && git add {staged_files}    
 

@@ -6,9 +6,9 @@
   "scripts": {
     "doctor": "npm start doctor",
     "build": "tsc",
-    "lint": "eslint 'src/**/*.{js,ts,tsx}'",
-    "lint:fix": "npx eslint 'src/**/*.{js,ts,tsx}' --fix",
-    "format": "npx prettier --write \"src/**/*.{ts,tsx}\" && (npm run lint:fix || true)",
+    "lint": "eslint 'src/**/*.{js,ts}'",
+    "lint:fix": "npx eslint 'src/**/*.{js,ts}' --fix",
+    "format": "npx prettier --write \"src/**/*.{ts}\" && (npm run lint:fix || true)",
     "lint:report": "npm run lint -- --output-file eslint_report.json --format json",
     "start": "npx tsc && node dist/index.js",
     "compile": "tsc"
