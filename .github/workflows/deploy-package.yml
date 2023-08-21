@@ -1,0 +1,60 @@
+name: Deploy SDK
+
+# Only run after a pull request has been merged. This is because
+# bot account runs write operations on the github repo to push a tag.
+on:
+  push:
+    branches: [main] # all branches where deployments currently occur. Make sure this list matches list of branches in  `.releaserc` file.
+
+permissions:
+  contents: write # access to push the git tag
+  issues: write # Bot creates an issue if there is an issue during deployment process
+  pull-requests: write # allow bot to make comments on PRs after they get deployed
+
+jobs:
+  deploy-git-tag:
+    name: Deploy git tag
+    runs-on: ubuntu-latest
+    outputs:
+      new_release_git_head: ${{ steps.semantic-release.outputs.new_release_git_head }}
+      new_release_published: ${{ steps.semantic-release.outputs.new_release_published }}
+      new_release_version: ${{ steps.semantic-release.outputs.new_release_version }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Deploy git tag via semantic release
+        uses: cycjimmy/semantic-release-action@v3
+        id: semantic-release
+        with:
+          # version numbers below can be in many forms: M, M.m, M.m.p
+          semantic_version: 19
+          extra_plugins: |
+            conventional-changelog-conventionalcommits@4
+            @semantic-release/changelog@6
+            @semantic-release/git@10
+            @semantic-release/github@8
+            @semantic-release/exec@6
+        env:
+          # Needs to push git commits to repo. Needs write access.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy-npm:
+    name: Deploy to npm
+    needs: [deploy-git-tag]
+    if: needs.deploy-git-tag.outputs.new_release_published == 'true' # only run if a git tag was made.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ needs.deploy-git-tag.outputs.new_release_git_head }}
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          cache: 'npm'
+
+      - name: Deploy to npm
+        run: ./scripts/deploy-code.sh
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          IS_PRERELEASE: false # at this time, all deployments are made to `main` production branch
