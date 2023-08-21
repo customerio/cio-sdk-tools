@@ -9,7 +9,7 @@
     "resolveJsonModule": true
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.{ts,tsx}"
   ],
   "exclude": [
     "dist",
