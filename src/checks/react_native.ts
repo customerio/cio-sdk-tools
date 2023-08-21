@@ -14,7 +14,11 @@ async function validateNoConflictingSDKs(
   project: ReactNativeProject
 ): Promise<void> {
   const packageFile = project.packageJsonFile;
-  console.log(`🔎 Checking for conflicting libraries in: ${packageFile.path}`);
+  logger.logWithFormat((formatter) =>
+    formatter.search(
+      `Checking for conflicting libraries in: ${packageFile.path}`
+    )
+  );
 
   const packageJson = JSON.parse(packageFile.content!);
   const dependencies = [...Object.keys(packageJson.dependencies || {})];
