@@ -50,7 +50,7 @@ async function doctor(projectPath: string) {
 }
 
 function identifyProject(projectDirectory: string): MobileProject | undefined {
-  // Check for React Native (e.g., looking for 'react-native' in package.json)
+  // Check for React Native (looking for 'react-native' in package.json)
   if (fs.existsSync(path.join(projectDirectory, "package.json"))) {
     const packageContent = fs.readFileSync(
       path.join(projectDirectory, "package.json"),
@@ -61,12 +61,12 @@ function identifyProject(projectDirectory: string): MobileProject | undefined {
     }
   }
 
-  // Check for Flutter (e.g., looking for a pubspec.yaml file)
+  // Check for Flutter (looking for a pubspec.yaml file)
   if (fs.existsSync(path.join(projectDirectory, "pubspec.yaml"))) {
     return new FlutterProject(projectDirectory);
   }
 
-  // Check for iOS Native (e.g., looking for a .xcodeproj directory)
+  // Check for iOS Native (looking for a .xcodeproj directory)
   const files = fs.readdirSync(projectDirectory);
   const xcodeProjectExists = files.some((file) => file.endsWith(".xcodeproj"));
   if (xcodeProjectExists) {
