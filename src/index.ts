@@ -67,7 +67,9 @@ function identifyProject(projectDirectory: string): MobileProject | undefined {
   }
 
   // Check for iOS Native (e.g., looking for a .xcodeproj directory)
-  if (fs.existsSync(path.join(projectDirectory, "*.xcodeproj"))) {
+  const files = fs.readdirSync(projectDirectory);
+  const xcodeProjectExists = files.some((file) => file.endsWith(".xcodeproj"));
+  if (xcodeProjectExists) {
     return new iOSNativeProject(projectDirectory);
   }
 
