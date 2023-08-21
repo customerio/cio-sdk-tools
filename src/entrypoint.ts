@@ -1,7 +1,7 @@
 import { Command, Option } from 'commander';
 import { handler } from './doctor';
+import pkg from '../package.json';
 
-const pkg = require('../package.json');
 const program = new Command();
 
 program

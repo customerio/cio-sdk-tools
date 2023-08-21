@@ -1,6 +1,6 @@
 import winston from 'winston';
 
-const consoleFormat = winston.format.printf(({ level, message, ...args }) => {
+const consoleFormat = winston.format.printf(({ message, ...args }) => {
   // only include args if there are any
   if (Object.keys(args).length === 0) {
     return `${message}`;
