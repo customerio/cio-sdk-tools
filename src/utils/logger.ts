@@ -1,49 +1,79 @@
+import chalk from "chalk";
 import * as os from "os";
 import * as path from "path";
 import winston from "winston";
 
 const logger: winston.Logger = createLogger();
 
-export function debug(message: string, ...args: any[]) {
-  logger.debug(message, ...args);
+export function log(log: Log) {
+  logger.log(log.level, log.message, ...log.args);
 }
 
-export function info(message: string, ...args: any[]) {
-  logger.info(message, ...args);
+export function logWithFormat(
+  callback: (formatter: typeof messageFormatter) => Log,
+) {
+  log(callback(messageFormatter));
 }
 
-export function warn(message: string, ...args: any[]) {
-  logger.warn(message, ...args);
+export interface Log {
+  level: string;
+  message: string;
+  args: any[];
 }
 
-export function error(message: string, ...args: any[]) {
-  logger.error(message, ...args);
+function defineLogStyle(config: { level: string; icon: string }) {
+  return function format(message: string, ...args: any[]): Log {
+    const formattedMessage = config.icon
+      ? `${config.icon} ${message}`
+      : message;
+
+    const msg: Log = {
+      level: config.level,
+      message: formattedMessage,
+      args,
+    };
+
+    return msg;
+  };
 }
 
-export function progress(message: string, ...args: any[]) {
-  // logger.info(`[.] ${message}`, ...args);
-  logger.info(`\u{1F50D} ${message}`, ...args);
-}
+export const messageFormatter = {
+  debug: defineLogStyle({ level: "debug", icon: "" }),
+  error: defineLogStyle({
+    level: "error",
+    icon: chalk.red("🚫🚫🚫"),
+  }),
+  failure: defineLogStyle({
+    level: "error",
+    icon: chalk.red("[✗]"),
+  }),
+  info: defineLogStyle({
+    level: "info",
+    icon: chalk.cyan("[i]"),
+  }),
+  progress: defineLogStyle({
+    level: "info",
+    icon: chalk.blue("[○]"),
+  }),
+  result: defineLogStyle({
+    level: "info",
+    icon: chalk.keyword("orange")("[→]"),
+  }),
+  search: defineLogStyle({
+    level: "info",
+    icon: chalk.green("[🔎]"),
+  }),
+  success: defineLogStyle({
+    level: "info",
+    icon: chalk.green("[✓]"),
+  }),
+  warning: defineLogStyle({
+    level: "warn",
+    icon: chalk.yellow("[!]"),
+  }),
+};
 
-export function result(message: string, ...args: any[]) {
-  // logger.info(`\u{1F514} ${message}`, ...args);
-  logger.info(`[=] ${message}`, ...args);
-}
-
-export function success(message: string, ...args: any[]) {
-  // logger.info(`\u2705 ${message}`, ...args);
-  logger.info(`[✓] ${message}`, ...args);
-}
-
-export function failure(message: string, ...args: any[]) {
-  // logger.error(`\u{1F4A5} ${message}`, ...args);
-  logger.error(`[✗] ${message}`, ...args);
-}
-
-export function warning(message: string, ...args: any[]) {
-  // logger.warn(`\u26A0️ ${message}`, ...args);
-  logger.warn(`[!] ${message}`, ...args);
-}
+export { messageFormatter as formatter };
 
 function createLogger(): winston.Logger {
   const args = process.argv;

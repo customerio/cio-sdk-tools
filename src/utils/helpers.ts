@@ -12,7 +12,9 @@ export function runCatching<T>(
       if (onError) {
         onError(error);
       } else {
-        logger.error(`An error occurred in function ${fn.name}:`, error);
+        logger.logWithFormat((formatter) =>
+          formatter.error(`An error occurred in function ${fn.name}:`, error),
+        );
       }
     }
   };

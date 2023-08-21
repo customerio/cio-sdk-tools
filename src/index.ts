@@ -14,27 +14,37 @@ diagnose().catch((err) => console.error("Error running diagnostics:", err));
 async function diagnose() {
   const projectPath = process.argv[2];
   if (!isDirectoryNonEmpty(projectPath)) {
-    logger.error(
-      `Project directory is not valid or is empty at ${projectPath}`,
+    logger.logWithFormat((formatter) =>
+      formatter.error(
+        `Project directory is not valid or is empty at ${projectPath}`,
+      ),
     );
     process.exit(1);
   }
 
   const project = identifyProject(projectPath);
   if (!project) {
-    logger.error(`Unable to identify project framework in ${projectPath}`);
+    logger.logWithFormat((formatter) =>
+      formatter.error(`Unable to identify project framework in ${projectPath}`),
+    );
     process.exit(1);
   }
 
-  logger.info(`Detected framework: ${project.framework} in ${projectPath}`);
+  logger.logWithFormat((formatter) =>
+    formatter.info(
+      `Detected framework: ${project.framework} in ${projectPath}`,
+    ),
+  );
   Context.create(project);
 
   await project.loadFilesContent();
   await project.runAllChecks();
 
-  logger.info(`🗒️ Collecting more information on project`);
+  logger.logWithFormat((formatter) =>
+    formatter.result(`Collecting more information on project`),
+  );
   for (const summary of project.summary) {
-    logger.info(summary);
+    logger.log(summary);
   }
 }
 

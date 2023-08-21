@@ -22,7 +22,9 @@ async function validateNoConflictingSDKs(
   const sdkVersionInPackageJson =
     packageJson.dependencies[PACKAGE_NAME_REACT_NATIVE];
   project.summary.push(
-    `👉 ${PACKAGE_NAME_REACT_NATIVE} version in package.json: ${sdkVersionInPackageJson}`,
+    logger.formatter.info(
+      `${PACKAGE_NAME_REACT_NATIVE} version in package.json: ${sdkVersionInPackageJson}`,
+    ),
   );
 
   const conflictingLibraries = Conflicts.reactNativePackages.filter((lib) =>
@@ -30,11 +32,15 @@ async function validateNoConflictingSDKs(
   );
 
   if (conflictingLibraries.length === 0) {
-    logger.success("No conflicting libraries found in package.json");
+    logger.logWithFormat((formatter) =>
+      formatter.success("No conflicting libraries found in package.json"),
+    );
   } else {
-    logger.warning(
-      "More than one libraries found in package.json for handling push notifications",
-      conflictingLibraries,
+    logger.logWithFormat((formatter) =>
+      formatter.warning(
+        "More than one libraries found in package.json for handling push notifications",
+        conflictingLibraries,
+      ),
     );
   }
 }
@@ -43,7 +49,9 @@ async function collectSummary(project: ReactNativeProject): Promise<void> {
   try {
     const packageLockFile = project.packageLockFile;
     if (!packageLockFile || !packageLockFile.content) {
-      project.summary.push(`❌ No lock file found for package.json`);
+      project.summary.push(
+        logger.formatter.warning(`No lock file found for package.json`),
+      );
     } else {
       let sdkVersionInLockFile: string | undefined;
       const lockFileType = packageLockFile.args.get("type");
@@ -65,16 +73,22 @@ async function collectSummary(project: ReactNativeProject): Promise<void> {
 
       if (sdkVersionInLockFile) {
         project.summary.push(
-          `👉 ${PACKAGE_NAME_REACT_NATIVE} version in ${packageLockFile.path} file set to ${sdkVersionInLockFile}`,
+          logger.formatter.info(
+            `${PACKAGE_NAME_REACT_NATIVE} version in ${packageLockFile.path} file set to ${sdkVersionInLockFile}`,
+          ),
         );
       } else {
         project.summary.push(
-          `❌ ${PACKAGE_NAME_REACT_NATIVE} not found in ${packageLockFile.path}`,
+          logger.formatter.warning(
+            `${PACKAGE_NAME_REACT_NATIVE} not found in ${packageLockFile.path}`,
+          ),
         );
       }
     }
   } catch (err) {
-    logger.error("Unable to read lock files for package.json: %s", err);
+    logger.logWithFormat((formatter) =>
+      formatter.error("Unable to read lock files for package.json: %s", err),
+    );
   }
 
   try {
@@ -86,17 +100,23 @@ async function collectSummary(project: ReactNativeProject): Promise<void> {
     );
     if (reactNativePodMatch && reactNativePodMatch[1]) {
       project.summary.push(
-        `👉 ${PACKAGE_NAME_REACT_NATIVE} version in ${podfileLock.path} set to ${reactNativePodMatch[1]}`,
+        logger.formatter.info(
+          `${PACKAGE_NAME_REACT_NATIVE} version in ${podfileLock.path} set to ${reactNativePodMatch[1]}`,
+        ),
       );
     } else {
       project.summary.push(
-        `❌ ${PACKAGE_NAME_REACT_NATIVE} not found in ${podfileLock.path}`,
+        logger.formatter.warning(
+          `${PACKAGE_NAME_REACT_NATIVE} not found in ${podfileLock.path}`,
+        ),
       );
     }
   } catch (err) {
-    logger.error(
-      `Unable to read Podfile.lock at ${project.podfileLock.path}: %s`,
-      err,
+    logger.logWithFormat((formatter) =>
+      formatter.error(
+        `Unable to read Podfile.lock at ${project.podfileLock.path}: %s`,
+        err,
+      ),
     );
   }
 }

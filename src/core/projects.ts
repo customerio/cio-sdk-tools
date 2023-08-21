@@ -6,6 +6,7 @@ import {
   readFileWithStats,
   searchFileInDirectory,
 } from "../utils/file";
+import { Log } from "../utils/logger";
 
 type Constructor = new (...args: any[]) => any;
 
@@ -29,7 +30,7 @@ class File {
 export interface MobileProject {
   readonly framework: string;
   readonly projectPath: string;
-  readonly summary: string[];
+  readonly summary: Log[];
 
   loadFilesContent(): Promise<void>;
   runAllChecks(): Promise<void>;
@@ -128,7 +129,7 @@ export class iOSNativeProject
 {
   public readonly framework: string = "iOS";
   public readonly projectPath: string;
-  public readonly summary: string[] = [];
+  public readonly summary: Log[] = [];
 
   constructor(projectPath: string) {
     super();
@@ -157,7 +158,7 @@ export class ReactNativeProject
 {
   public readonly framework: string = "ReactNative";
   public readonly projectPath: string;
-  public readonly summary: string[] = [];
+  public readonly summary: Log[] = [];
 
   public readonly packageJsonFile: File;
   public packageLockFile?: File;
@@ -218,7 +219,7 @@ export class FlutterProject
 {
   public readonly framework: string = "Flutter";
   public readonly projectPath: string;
-  public readonly summary: string[] = [];
+  public readonly summary: Log[] = [];
 
   public readonly pubspecYamlFile: File;
   public readonly pubspecLockFile: File;
