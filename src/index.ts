@@ -1,3 +1,4 @@
+import { Command } from "commander";
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -7,12 +8,12 @@ import {
   ReactNativeProject,
   iOSNativeProject,
 } from "./core";
-import { isDirectoryNonEmpty, logger } from "./utils";
+import { isDirectoryNonEmpty, logger, readFileContent } from "./utils";
+import { configureLogger } from "./utils/logger";
 
-diagnose().catch((err) => console.error("Error running diagnostics:", err));
+const program = new Command();
 
-async function diagnose() {
-  const projectPath = process.argv[2];
+async function doctor(projectPath: string) {
   if (!isDirectoryNonEmpty(projectPath)) {
     logger.logWithFormat((formatter) =>
       formatter.error(
@@ -72,3 +73,34 @@ function identifyProject(projectDirectory: string): MobileProject | undefined {
 
   return undefined;
 }
+
+const packageJson = JSON.parse(
+  readFileContent(path.join(__dirname, "../package.json"))!,
+);
+
+program
+  .name(packageJson.name)
+  .version(packageJson.version, "--version")
+  .description(packageJson.description);
+
+program
+  .command("doctor")
+  .description(
+    "Analyzes the project at the given path, performs diagnostics, and provides recommendations for improvements",
+  )
+  .argument("[path]", "Path to project directory", ".")
+  .option("-l, --log-level <level>", "Log level", "info")
+  .option("-r, --report [filename]", "Output report to file")
+  .action((path, options) => {
+    configureLogger({
+      logLevel: options.logLevel,
+      saveReport: options.report,
+    });
+    doctor(path).catch((err) =>
+      logger.logWithFormat((formatter) =>
+        formatter.error("Error running doctor:", err),
+      ),
+    );
+  });
+
+program.parse();

@@ -3,12 +3,11 @@
   "version": "1.0.0",
   "description": "A self service tool to run diagnostics on your mobile SDK installation",
   "scripts": {
-    "compile": "tsc",
-    "diagnose": "npx tsc && node dist/index.js",
     "build": "tsc",
     "lint": "eslint 'src/**/*.{js,ts}'",
     "lint:fix": "eslint 'src/**/*.{js,ts}' --fix",
-    "start": "nodetsc && node run-diagnostics.js"
+    "start": "npx tsc && node dist/index.js",
+    "doctor": "npm start doctor"
   },
   "repository": {
     "type": "git",

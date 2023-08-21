@@ -75,23 +75,29 @@ export const messageFormatter = {
 
 export { messageFormatter as formatter };
 
-function createLogger(): winston.Logger {
-  const args = process.argv;
-  const supportedLogLevel = ["error", "warn", "info", "debug"];
-
-  // Extract log level from command line arguments
-  const logLevelArg = process.argv.find(
-    (arg) => arg.startsWith("-l=") || arg.startsWith("--log-level="),
-  );
-  let logLevel = logLevelArg ? logLevelArg.split("=")[1] : "info";
-  if (!supportedLogLevel.includes(logLevel)) {
-    logLevel = "info";
+export function configureLogger(options: {
+  logLevel: string;
+  saveReport?: string | boolean;
+}) {
+  logger.level = options.logLevel;
+  if (options.saveReport) {
+    let destination: string;
+    if (options.saveReport === true || options.saveReport === "") {
+      destination = path.join(
+        os.homedir(),
+        "Desktop",
+        "cio-sdk-tools-output.logs",
+      );
+    } else {
+      destination = options.saveReport;
+    }
+    logger.transports.push(
+      new winston.transports.File({ filename: destination }),
+    );
   }
+}
 
-  // Extract output filename from command line arguments
-  const saveOutputArg = args.find((arg) => arg.startsWith("--save-report="));
-  const outputPath = saveOutputArg ? saveOutputArg.split("=")[1] : undefined;
-
+function createLogger(): winston.Logger {
   const transports: winston.transport[] = [
     new winston.transports.Console({
       format: winston.format.combine(
@@ -100,22 +106,9 @@ function createLogger(): winston.Logger {
       ),
     }),
   ];
-  if (outputPath) {
-    let destination;
-    if (outputPath === "") {
-      destination = path.join(
-        os.homedir(),
-        "Desktop",
-        "cio-sdk-tools-output.logs",
-      );
-    } else {
-      destination = outputPath;
-    }
-    transports.push(new winston.transports.File({ filename: destination }));
-  }
 
   return winston.createLogger({
-    level: logLevel,
+    level: "info",
     format: winston.format.json(),
     transports: transports,
   });
