@@ -11,14 +11,14 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: '16'
-          cache: 'yarn'
-      - run: yarn install --frozen-lockfile
+          cache: 'npm'
+      - run: npm ci
 
       - name: Check for known vulnerabilities
-        run: yarn audit
+        run: npm audit
 
       - name: Compile
-        run: yarn typescript
+        run: npm run typescript
 
       - name: Publish test
         run: npm publish --dry-run
@@ -31,9 +31,9 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: '16'
-          cache: 'yarn'
-      - run: yarn install --frozen-lockfile
-      - run: yarn lint:report
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint:report
 
       - name: Annotate Code Linting Results
         uses: ataylorme/eslint-annotate-action@v2
