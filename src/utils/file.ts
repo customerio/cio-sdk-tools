@@ -84,6 +84,7 @@ export async function searchFileInDirectory(
 
 export async function readAndParseXML(
   filePath: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any | undefined> {
   const xml = fs.readFileSync(filePath, "utf8");
   const content = await xml2js.parseStringPromise(xml, {
@@ -92,16 +93,16 @@ export async function readAndParseXML(
   return content;
 }
 
-export function readFileWithStats(paths: string[]): any[] {
-  type Result = {
-    path: string;
-    content?: string;
-    lastUpdated?: number;
-  };
+type FileWithStats = {
+  path: string;
+  content?: string;
+  lastUpdated?: number;
+};
 
-  const results: Result[] = [];
+export function readFileWithStats(paths: string[]): FileWithStats[] {
+  const results: FileWithStats[] = [];
   for (const path of paths) {
-    const result: Result = {
+    const result: FileWithStats = {
       path: path,
     };
     try {

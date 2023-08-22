@@ -9,7 +9,5 @@
         "ecmaVersion": 2020,
         "sourceType": "module"
     },
-    "rules": {
-        "@typescript-eslint/no-explicit-any": "off"
-    }
+    "rules": {}
 }

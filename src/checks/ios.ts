@@ -55,6 +55,7 @@ async function validateDeploymentTarget(project: iOSProject): Promise<void> {
 //
 async function verifyNotificationServiceExtension(
   project: iOSProject,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   targets: any[],
 ) {
   let extensionCount = 0;
@@ -89,7 +90,7 @@ async function verifyNotificationServiceExtension(
         possibleInfoPlistPath,
       );
       logger.logWithFormat((formatter) =>
-        formatter.search(`Checking info.plist at Path : ${infoPlistPath}`),
+        formatter.search(`Checking Info.plist at path: ${infoPlistPath}`),
       );
       const infoPlistContent = await readAndParseXML(infoPlistPath);
 
@@ -117,6 +118,7 @@ async function verifyNotificationServiceExtension(
       if (
         target.buildPhases &&
         target.buildPhases.find(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (phase: any) => trimQuotes(phase.comment) === "Embed App Extensions",
         )
       ) {
@@ -124,6 +126,7 @@ async function verifyNotificationServiceExtension(
       } else if (
         target.buildPhases &&
         target.buildPhases.find(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (phase: any) =>
             trimQuotes(phase.comment) === "Embed Foundation Extensions",
         )
@@ -178,6 +181,7 @@ async function verifyNotificationServiceExtension(
  * @param content - The parsed content of the Info.plist for a target.
  * @returns - Returns true if the content indicates a Notification Service Extension, else false.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function isNotificationServiceExtension(content: any) {
   // Check if 'NSExtension' is present as a key, accounting for both string and array type.
   const hasNSExtensionKey = Array.isArray(content.key)
@@ -204,6 +208,7 @@ function isNotificationServiceExtension(content: any) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getDeploymentTargetVersion(pbxProject: any) {
   const buildConfig = pbxProject.pbxXCBuildConfigurationSection();
   const nativeTargets = pbxProject.pbxNativeTargetSection();
@@ -223,6 +228,7 @@ function getDeploymentTargetVersion(pbxProject: any) {
       const configListKey = nativeTarget.buildConfigurationList;
       const buildConfigurations = configList[configListKey].buildConfigurations;
       nseBuildConfigKeys = buildConfigurations.map(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (config: any) => config.value,
       );
       break;
@@ -356,13 +362,13 @@ async function collectSummary(project: iOSProject): Promise<void> {
     if (trackingPodVersions) {
       project.summary.push(
         logger.formatter.info(
-          `CustomerIOTracking version in ${podfileLockPath} set to ${trackingPodVersions}`,
+          `CustomerIO/Tracking version in ${podfileLockPath} set to ${trackingPodVersions}`,
         ),
       );
     } else {
       project.summary.push(
         logger.formatter.failure(
-          `CustomerIOTracking not found in Podfile.lock at ${podfileLockPath}`,
+          `CustomerIO/Tracking not found in Podfile.lock at ${podfileLockPath}`,
         ),
       );
     }
