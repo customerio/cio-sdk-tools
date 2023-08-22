@@ -129,8 +129,7 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
 
 export class iOSNativeProject
   extends iOSProjectBase(Object)
-  implements MobileProject, iOSProject
-{
+  implements MobileProject, iOSProject {
   public readonly framework: string = "iOS";
   public readonly projectPath: string;
   public readonly summary: Log[] = [];
@@ -158,8 +157,7 @@ export class iOSNativeProject
 
 export class ReactNativeProject
   extends iOSProjectBase(Object)
-  implements MobileProject, iOSProject
-{
+  implements MobileProject, iOSProject {
   public readonly framework: string = "ReactNative";
   public readonly projectPath: string;
   public readonly summary: Log[] = [];
@@ -219,8 +217,7 @@ export class ReactNativeProject
 
 export class FlutterProject
   extends iOSProjectBase(Object)
-  implements MobileProject, iOSProject
-{
+  implements MobileProject, iOSProject {
   public readonly framework: string = "Flutter";
   public readonly projectPath: string;
   public readonly summary: Log[] = [];

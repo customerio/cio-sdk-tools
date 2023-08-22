@@ -18,14 +18,14 @@ export async function runAllChecks(): Promise<void> {
   const context = Context.get();
   const project = context.project as iOSProject;
 
-  await runCatching(validateDeploymentTarget)(project);
+  await runCatching(analyzeNotificationServiceExtensionProperties)(project);
   await runCatching(validateUserNotificationCenterDelegate)(project);
   await runCatching(validatePushEntitlements)(project);
   await runCatching(validateNoConflictingSDKs)(project);
   await runCatching(collectSummary)(project);
 }
 
-async function validateDeploymentTarget(project: iOSProject): Promise<void> {
+async function analyzeNotificationServiceExtensionProperties(project: iOSProject): Promise<void> {
   for (const projectFile of project.projectFiles) {
     const filepath = projectFile.path;
     const xcodeProject = xcode.project(filepath);
@@ -33,14 +33,11 @@ async function validateDeploymentTarget(project: iOSProject): Promise<void> {
 
     logger.searching(`Checking project at path: ${filepath}`);
 
+    logger.searching(`project files: ${projectFile}`);
+
     const targets = xcodeProject.pbxNativeTargetSection();
     // Check for Notification Service Extension
-    await verifyNotificationServiceExtension(project, targets);
-
-    const deploymentTarget = getDeploymentTargetVersion(xcodeProject);
-    logger.result(
-      `Deployment Target Version for NSE: ${deploymentTarget}. Ensure this version is not higher than the iOS version of the devices where the app will be installed. A higher target version may prevent some features, like rich notifications, from working correctly.`,
-    );
+    await validateNotificationServiceExtenstion(xcodeProject, project, targets);
   }
 }
 
@@ -49,7 +46,8 @@ async function validateDeploymentTarget(project: iOSProject): Promise<void> {
  * @param {Object} targets - Targets from the Xcode project.
  */
 //
-async function verifyNotificationServiceExtension(
+async function validateNotificationServiceExtenstion(
+  xcodeProject: any,
   project: iOSProject,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   targets: any[],
@@ -60,6 +58,9 @@ async function verifyNotificationServiceExtension(
 
   for (const name in targets) {
     const target = targets[name];
+
+    logger.searching(`target: ${target.name}`);
+
 
     // The following check ensures that we are dealing with a valid 'target' that is an app extension.
     // 'target' and 'target.productType' must exist (i.e., they are truthy).
@@ -90,6 +91,12 @@ async function verifyNotificationServiceExtension(
       if (isNotificationServiceExtension(infoPlistContent.plist.dict)) {
         logger.progress(`Found Notification app extension: ${target.name}`);
         extensionCount++;
+
+        // Check for deployment target for NSE
+        const deploymentTarget = getDeploymentTargetVersion(xcodeProject, target);
+        logger.result(
+          `Deployment Target Version for NSE: ${deploymentTarget}. Ensure this version is not higher than the iOS version of the devices where the app will be installed. A higher target version may prevent some features, like rich notifications, from working correctly.`,
+        );
       }
     }
 
@@ -183,30 +190,26 @@ function isNotificationServiceExtension(content: any) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getDeploymentTargetVersion(pbxProject: any) {
+function getDeploymentTargetVersion(pbxProject: any, notificationExtensionNativeTarget: any) {
   const buildConfig = pbxProject.pbxXCBuildConfigurationSection();
-  const nativeTargets = pbxProject.pbxNativeTargetSection();
   const configList = pbxProject.pbxXCConfigurationList();
 
   let nseBuildConfigKeys = [];
 
   // Find the NSE build configuration list key
-  for (const key in nativeTargets) {
-    const nativeTarget = nativeTargets[key];
-    const productType: string | undefined = nativeTarget?.productType;
 
-    if (
-      productType &&
-      trimQuotes(productType) === "com.apple.product-type.app-extension"
-    ) {
-      const configListKey = nativeTarget.buildConfigurationList;
-      const buildConfigurations = configList[configListKey].buildConfigurations;
-      nseBuildConfigKeys = buildConfigurations.map(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (config: any) => config.value,
-      );
-      break;
-    }
+  const productType: string | undefined = notificationExtensionNativeTarget?.productType;
+
+  if (
+    productType &&
+    trimQuotes(productType) === "com.apple.product-type.app-extension"
+  ) {
+    const configListKey = notificationExtensionNativeTarget.buildConfigurationList;
+    const buildConfigurations = configList[configListKey].buildConfigurations;
+    nseBuildConfigKeys = buildConfigurations.map(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (config: any) => config.value,
+    );
   }
 
   // Return deployment target of the NSE
