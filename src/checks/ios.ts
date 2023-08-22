@@ -285,6 +285,11 @@ async function validatePushEntitlements(project: iOSProject): Promise<void> {
 }
 
 async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
+  if (!project.isUsingCocoaPods) {
+    // Since we do not support SPM at the moment
+    return;
+  }
+
   const podfileLockPath = project.podfileLock.path;
   logger.searching(`Checking for conflicting libraries in: ${podfileLockPath}`);
   const podfileLockContent = readFileContent(podfileLockPath);
@@ -307,84 +312,92 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
 }
 
 async function collectSummary(project: iOSProject): Promise<void> {
-  try {
-    const podfileLock = project.podfileLock;
-    const podfileLockPath = podfileLock.path;
-    const podfileLockContent = podfileLock.content!;
+  if (project.isUsingCocoaPods) {
+    try {
+      const podfileLock = project.podfileLock;
+      const podfileLockPath = podfileLock.path;
+      const podfileLockContent = podfileLock.content!;
 
-    const trackingPodVersions = extractPodVersions(
-      podfileLockContent,
-      Patterns.iOS_POD_CIO_TRACKING
-    );
-    if (trackingPodVersions) {
-      project.summary.push(
-        logger.formatter.info(
-          `CustomerIO/Tracking version in ${podfileLockPath} set to ${trackingPodVersions}`
-        )
+      const trackingPodVersions = extractPodVersions(
+        podfileLockContent,
+        Patterns.iOS_POD_CIO_TRACKING
       );
-    } else {
-      project.summary.push(
-        logger.formatter.failure(
-          `CustomerIO/Tracking not found in Podfile.lock at ${podfileLockPath}`
-        )
+      if (trackingPodVersions) {
+        project.summary.push(
+          logger.formatter.info(
+            `CustomerIO/Tracking version in ${podfileLockPath} set to ${trackingPodVersions}`
+          )
+        );
+      } else {
+        project.summary.push(
+          logger.formatter.failure(
+            `CustomerIO/Tracking not found in Podfile.lock at ${podfileLockPath}`
+          )
+        );
+      }
+
+      const inAppMessagingPodVersions = extractPodVersions(
+        podfileLockContent,
+        Patterns.iOS_POD_CIO_IN_APP
+      );
+      if (inAppMessagingPodVersions) {
+        project.summary.push(
+          logger.formatter.info(
+            `CustomerIO/MessagingInApp version in ${podfileLockPath} set to ${inAppMessagingPodVersions}`
+          )
+        );
+      } else {
+        project.summary.push(
+          logger.formatter.failure(
+            `CustomerIO/MessagingInApp not found in Podfile.lock at ${podfileLockPath}`
+          )
+        );
+      }
+
+      const messagingPushAPNPodVersions = extractPodVersions(
+        podfileLockContent,
+        Patterns.iOS_POD_CIO_PUSH_APN
+      );
+      const messagingPushFCMPodVersions = extractPodVersions(
+        podfileLockContent,
+        Patterns.iOS_POD_CIO_PUSH_FCM
+      );
+      if (messagingPushAPNPodVersions && messagingPushFCMPodVersions) {
+        project.summary.push(
+          logger.formatter.failure(
+            `CustomerIO/MessagingPushAPN and CustomerIO/MessagingPushFCM found in Podfile.lock at ${podfileLockPath}. Both cannot be used at a time, please use only one of them.`
+          )
+        );
+      } else if (messagingPushAPNPodVersions) {
+        project.summary.push(
+          logger.formatter.info(
+            `CustomerIO/MessagingPushAPN version in ${podfileLockPath} set to ${messagingPushAPNPodVersions}`
+          )
+        );
+      } else if (messagingPushFCMPodVersions) {
+        project.summary.push(
+          logger.formatter.info(
+            `CustomerIO/MessagingPushFCM version in ${podfileLockPath} set to ${messagingPushFCMPodVersions}`
+          )
+        );
+      } else {
+        project.summary.push(
+          logger.formatter.warning(
+            `CustomerIO/MessagingPush not found in Podfile.lock at ${podfileLockPath}`
+          )
+        );
+      }
+    } catch (err) {
+      logger.error(
+        `Unable to read Podfile.lock at ${project.podfileLock.path}: %s`,
+        err
       );
     }
-
-    const inAppMessagingPodVersions = extractPodVersions(
-      podfileLockContent,
-      Patterns.iOS_POD_CIO_IN_APP
-    );
-    if (inAppMessagingPodVersions) {
-      project.summary.push(
-        logger.formatter.info(
-          `CustomerIO/MessagingInApp version in ${podfileLockPath} set to ${inAppMessagingPodVersions}`
-        )
-      );
-    } else {
-      project.summary.push(
-        logger.formatter.failure(
-          `CustomerIO/MessagingInApp not found in Podfile.lock at ${podfileLockPath}`
-        )
-      );
-    }
-
-    const messagingPushAPNPodVersions = extractPodVersions(
-      podfileLockContent,
-      Patterns.iOS_POD_CIO_PUSH_APN
-    );
-    const messagingPushFCMPodVersions = extractPodVersions(
-      podfileLockContent,
-      Patterns.iOS_POD_CIO_PUSH_FCM
-    );
-    if (messagingPushAPNPodVersions && messagingPushFCMPodVersions) {
-      project.summary.push(
-        logger.formatter.failure(
-          `CustomerIO/MessagingPushAPN and CustomerIO/MessagingPushFCM found in Podfile.lock at ${podfileLockPath}. Both cannot be used at a time, please use only one of them.`
-        )
-      );
-    } else if (messagingPushAPNPodVersions) {
-      project.summary.push(
-        logger.formatter.info(
-          `CustomerIO/MessagingPushAPN version in ${podfileLockPath} set to ${messagingPushAPNPodVersions}`
-        )
-      );
-    } else if (messagingPushFCMPodVersions) {
-      project.summary.push(
-        logger.formatter.info(
-          `CustomerIO/MessagingPushFCM version in ${podfileLockPath} set to ${messagingPushFCMPodVersions}`
-        )
-      );
-    } else {
-      project.summary.push(
-        logger.formatter.warning(
-          `CustomerIO/MessagingPush not found in Podfile.lock at ${podfileLockPath}`
-        )
-      );
-    }
-  } catch (err) {
-    logger.error(
-      `Unable to read Podfile.lock at ${project.podfileLock.path}: %s`,
-      err
+  } else {
+    project.summary.push(
+      logger.formatter.warning(
+        `No Podfile found at ${project.podfile.path}. The project appears to be using Swift Package Manager (SPM).`
+      )
     );
   }
 }
