@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -91,8 +91,12 @@ program
     "Analyzes the project at the given path, performs diagnostics, and provides recommendations for improvements",
   )
   .argument("[path]", "Path to project directory", ".")
-  .option("-l, --log-level <level>", "Log level", "info")
-  .option("-r, --report [filename]", "Output report to file")
+  .addOption(
+    new Option("-l, --log-level [level]", "Log level")
+      .default("info")
+      .choices(["info", "warning", "error"]),
+  )
+  .option("-r, --report <filename>", "Output report to file")
   .action((path, options) => {
     configureLogger({
       logLevel: options.logLevel,

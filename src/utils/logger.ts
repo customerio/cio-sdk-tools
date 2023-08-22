@@ -18,10 +18,12 @@ export function logWithFormat(
 export interface Log {
   level: string;
   message: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   args: any[];
 }
 
 function defineLogStyle(config: { level: string; icon: string }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return function format(message: string, ...args: any[]): Log {
     const formattedMessage = config.icon
       ? `${config.icon} ${message}`
@@ -91,9 +93,7 @@ export function configureLogger(options: {
     } else {
       destination = options.saveReport;
     }
-    logger.transports.push(
-      new winston.transports.File({ filename: destination }),
-    );
+    logger.add(new winston.transports.File({ filename: destination }));
   }
 }
 
