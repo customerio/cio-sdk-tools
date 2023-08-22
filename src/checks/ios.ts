@@ -1,7 +1,4 @@
 import * as path from "path";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-import xcode from "xcode";
 import { Conflicts, Patterns } from "../constants";
 import { Context, iOSProject } from "../core";
 import {
@@ -25,19 +22,14 @@ export async function runAllChecks(): Promise<void> {
   await runCatching(collectSummary)(project);
 }
 
-async function analyzeNotificationServiceExtensionProperties(project: iOSProject): Promise<void> {
-  for (const projectFile of project.projectFiles) {
-    const filepath = projectFile.path;
-    const xcodeProject = xcode.project(filepath);
-    xcodeProject.parseSync();
-
-    logger.searching(`Checking project at path: ${filepath}`);
-
-    logger.searching(`project files: ${projectFile}`);
-
+async function analyzeNotificationServiceExtensionProperties(
+  project: iOSProject,
+): Promise<void> {
+  for (const xcodeProject of project.xcodeProjectFiles) {
+    logger.searching(`Checking project at path: ${xcodeProject.filepath}`);
     const targets = xcodeProject.pbxNativeTargetSection();
     // Check for Notification Service Extension
-    await validateNotificationServiceExtenstion(xcodeProject, project, targets);
+    await validateNotificationServiceExtension(xcodeProject, project, targets);
   }
 }
 
@@ -46,7 +38,8 @@ async function analyzeNotificationServiceExtensionProperties(project: iOSProject
  * @param {Object} targets - Targets from the Xcode project.
  */
 //
-async function validateNotificationServiceExtenstion(
+async function validateNotificationServiceExtension(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   xcodeProject: any,
   project: iOSProject,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -58,9 +51,6 @@ async function validateNotificationServiceExtenstion(
 
   for (const name in targets) {
     const target = targets[name];
-
-    logger.searching(`target: ${target.name}`);
-
 
     // The following check ensures that we are dealing with a valid 'target' that is an app extension.
     // 'target' and 'target.productType' must exist (i.e., they are truthy).
@@ -93,7 +83,10 @@ async function validateNotificationServiceExtenstion(
         extensionCount++;
 
         // Check for deployment target for NSE
-        const deploymentTarget = getDeploymentTargetVersion(xcodeProject, target);
+        const deploymentTarget = getDeploymentTargetVersion(
+          xcodeProject,
+          target,
+        );
         logger.result(
           `Deployment Target Version for NSE: ${deploymentTarget}. Ensure this version is not higher than the iOS version of the devices where the app will be installed. A higher target version may prevent some features, like rich notifications, from working correctly.`,
         );
@@ -190,7 +183,12 @@ function isNotificationServiceExtension(content: any) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getDeploymentTargetVersion(pbxProject: any, notificationExtensionNativeTarget: any) {
+function getDeploymentTargetVersion(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pbxProject: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  notificationExtensionNativeTarget: any,
+) {
   const buildConfig = pbxProject.pbxXCBuildConfigurationSection();
   const configList = pbxProject.pbxXCConfigurationList();
 
@@ -198,13 +196,15 @@ function getDeploymentTargetVersion(pbxProject: any, notificationExtensionNative
 
   // Find the NSE build configuration list key
 
-  const productType: string | undefined = notificationExtensionNativeTarget?.productType;
+  const productType: string | undefined =
+    notificationExtensionNativeTarget?.productType;
 
   if (
     productType &&
     trimQuotes(productType) === "com.apple.product-type.app-extension"
   ) {
-    const configListKey = notificationExtensionNativeTarget.buildConfigurationList;
+    const configListKey =
+      notificationExtensionNativeTarget.buildConfigurationList;
     const buildConfigurations = configList[configListKey].buildConfigurations;
     nseBuildConfigKeys = buildConfigurations.map(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -256,9 +256,13 @@ async function validateUserNotificationCenterDelegate(
   }
 
   if (allRequirementsMet) {
-    logger.success(`Found the method in AppDelegate required to track the "open" metric when a push notification is clicked.`);
+    logger.success(
+      `Found the method in AppDelegate required to track the "open" metric when a push notification is clicked.`,
+    );
   } else {
-    logger.failure(`Didn't find the necessary method in AppDelegate to track the "open" metric when a push notification is clicked.`);
+    logger.failure(
+      `Didn't find the necessary method in AppDelegate to track the "open" metric when a push notification is clicked.`,
+    );
   }
 }
 

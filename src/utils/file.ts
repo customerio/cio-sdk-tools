@@ -3,6 +3,15 @@ import * as path from "path";
 import * as xml2js from "xml2js";
 import { logger } from ".";
 
+export function doesExists(path: string): boolean {
+  try {
+    return fs.existsSync(path);
+  } catch (err) {
+    logger.error("Error checking directory: %s", err);
+    return false;
+  }
+}
+
 export function isDirectory(path: string): boolean {
   try {
     const stat = fs.statSync(path);
