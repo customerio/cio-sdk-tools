@@ -130,7 +130,7 @@ async function validateNotificationServiceExtension(
     if (isEmbedded) {
       logger.success("Notification Service Extension found and embedded.");
     } else if (isFoundationExtension) {
-      logger.warning(
+      logger.info(
         "Notification Service Extension found but not embedded as it is a Foundation Extension.",
       );
     } else {
