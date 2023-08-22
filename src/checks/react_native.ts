@@ -14,10 +14,8 @@ async function validateNoConflictingSDKs(
   project: ReactNativeProject
 ): Promise<void> {
   const packageFile = project.packageJsonFile;
-  logger.logWithFormat((formatter) =>
-    formatter.search(
-      `Checking for conflicting libraries in: ${packageFile.path}`
-    )
+  logger.searching(
+    `Checking for conflicting libraries in: ${packageFile.path}`
   );
 
   const packageJson = JSON.parse(packageFile.content!);
@@ -36,15 +34,11 @@ async function validateNoConflictingSDKs(
   );
 
   if (conflictingLibraries.length === 0) {
-    logger.logWithFormat((formatter) =>
-      formatter.success('No conflicting libraries found in package.json')
-    );
+    logger.success('No conflicting libraries found in package.json');
   } else {
-    logger.logWithFormat((formatter) =>
-      formatter.warning(
-        'More than one libraries found in package.json for handling push notifications',
-        conflictingLibraries
-      )
+    logger.warning(
+      'More than one libraries found in package.json for handling push notifications',
+      conflictingLibraries
     );
   }
 }
@@ -90,9 +84,7 @@ async function collectSummary(project: ReactNativeProject): Promise<void> {
       }
     }
   } catch (err) {
-    logger.logWithFormat((formatter) =>
-      formatter.error('Unable to read lock files for package.json: %s', err)
-    );
+    logger.error('Unable to read lock files for package.json: %s', err);
   }
 
   try {
@@ -116,11 +108,9 @@ async function collectSummary(project: ReactNativeProject): Promise<void> {
       );
     }
   } catch (err) {
-    logger.logWithFormat((formatter) =>
-      formatter.error(
-        `Unable to read Podfile.lock at ${project.podfileLock.path}: %s`,
-        err
-      )
+    logger.error(
+      `Unable to read Podfile.lock at ${project.podfileLock.path}: %s`,
+      err
     );
   }
 }

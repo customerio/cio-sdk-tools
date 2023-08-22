@@ -24,18 +24,16 @@
   },
   "homepage": "https://github.com/customerio/sdk-self-service#readme",
   "dependencies": {
-    "@types/xml2js": "^0.4.11",
-    "fs": "^0.0.1-security",
-    "path": "^0.12.7",
     "chalk": "^4.1.2",
     "commander": "^11.0.0",
-    "typescript": "^5.1.6",
     "winston": "^3.10.0",
     "xcode": "^3.0.1",
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
+    "@tsconfig/node20": "^20.1.1",
     "@types/node": "^20.4.8",
+    "@types/xml2js": "^0.4.11",
     "@typescript-eslint/eslint-plugin": "^6.3.0",
     "@typescript-eslint/parser": "^6.3.0",
     "eslint": "^8.46.0",

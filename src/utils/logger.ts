@@ -15,13 +15,54 @@ export function logWithFormat(
   log(callback(messageFormatter));
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type LogFunction = (message: string, ...args: any[]) => void;
+
+export const error: LogFunction = (message, ...args) => {
+  log(messageFormatter.error(message, ...args));
+};
+
+export const failure: LogFunction = (message, ...args) => {
+  log(messageFormatter.failure(message, ...args));
+};
+
+export const fatal: LogFunction = (message, ...args) => {
+  log(messageFormatter.fatal(message, ...args));
+};
+
+export const info: LogFunction = (message, ...args) => {
+  log(messageFormatter.info(message, ...args));
+};
+
+export const progress: LogFunction = (message, ...args) => {
+  log(messageFormatter.progress(message, ...args));
+};
+
+export const result: LogFunction = (message, ...args) => {
+  log(messageFormatter.result(message, ...args));
+};
+
+export const searching: LogFunction = (message, ...args) => {
+  log(messageFormatter.searching(message, ...args));
+};
+
+export const success: LogFunction = (message, ...args) => {
+  log(messageFormatter.success(message, ...args));
+};
+
+export const warning: LogFunction = (message, ...args) => {
+  log(messageFormatter.warning(message, ...args));
+};
+
 export interface Log {
   level: string;
   message: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   args: any[];
 }
 
 function defineLogStyle(config: { level: string; icon: string }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return function format(message: string, ...args: any[]): Log {
     const formattedMessage = config.icon
       ? `${config.icon} ${message}`
@@ -38,14 +79,17 @@ function defineLogStyle(config: { level: string; icon: string }) {
 }
 
 export const messageFormatter = {
-  debug: defineLogStyle({ level: 'debug', icon: '' }),
   error: defineLogStyle({
     level: 'error',
-    icon: chalk.red('🚫🚫🚫'),
+    icon: '🚫',
   }),
   failure: defineLogStyle({
     level: 'error',
     icon: chalk.red('[✗]'),
+  }),
+  fatal: defineLogStyle({
+    level: 'error',
+    icon: '🚫🚫🚫',
   }),
   info: defineLogStyle({
     level: 'info',
@@ -59,9 +103,9 @@ export const messageFormatter = {
     level: 'info',
     icon: chalk.keyword('orange')('[→]'),
   }),
-  search: defineLogStyle({
+  searching: defineLogStyle({
     level: 'info',
-    icon: chalk.green('[🔎]'),
+    icon: `${chalk.green('[')}🔎${chalk.green(']')}`,
   }),
   success: defineLogStyle({
     level: 'info',
@@ -91,9 +135,7 @@ export function configureLogger(options: {
     } else {
       destination = options.saveReport;
     }
-    logger.transports.push(
-      new winston.transports.File({ filename: destination })
-    );
+    logger.add(new winston.transports.File({ filename: destination }));
   }
 }
 

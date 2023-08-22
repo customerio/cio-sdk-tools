@@ -1,9 +1,12 @@
 import { logger } from '.';
 
 export function runCatching<T>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   fn: (...args: any[]) => T | Promise<T>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onError?: (error: any) => void
 ) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return async function (...args: any[]) {
     try {
       const result = fn(...args);
@@ -12,9 +15,7 @@ export function runCatching<T>(
       if (onError) {
         onError(error);
       } else {
-        logger.logWithFormat((formatter) =>
-          formatter.error(`An error occurred in function ${fn.name}:`, error)
-        );
+        logger.error(`An error occurred in function ${fn.name}:`, error);
       }
     }
   };
