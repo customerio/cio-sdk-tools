@@ -70,7 +70,11 @@ export async function searchFileInDirectory(
     if (ignoreDirs.some((dir) => filename.includes(dir))) return;
 
     if (stat.isDirectory()) {
-      const subDirResults = await searchFileInDirectory(filename, filters);
+      const subDirResults = await searchFileInDirectory(
+        filename,
+        filters,
+        ignoreDirs,
+      );
       for (const key of filters.keys()) {
         results[key] = results[key].concat(subDirResults[key]);
       }
