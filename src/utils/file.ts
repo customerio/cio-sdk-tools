@@ -28,6 +28,14 @@ export function isDirectoryNonEmpty(path: string): boolean {
   }
 }
 
+export function readDirectory(path: string): string[] | undefined {
+  try {
+    return fs.readdirSync(path, "utf8");
+  } catch (err) {
+    return undefined;
+  }
+}
+
 export function readFileContent(path: string): string | undefined {
   try {
     return fs.readFileSync(path, "utf8");
@@ -110,4 +118,24 @@ export function readFileWithStats(paths: string[]): FileWithStats[] {
     results.push(result);
   }
   return results;
+}
+
+type FileLinkStats = {
+  isDirectory: boolean;
+  isFile: boolean;
+  isSymbolicLink: boolean;
+};
+
+export function getFileLinkStats(path: string): FileLinkStats | undefined {
+  try {
+    const linkStat = fs.statSync(path);
+    return {
+      isDirectory: linkStat.isDirectory(),
+      isFile: linkStat.isFile(),
+      isSymbolicLink: linkStat.isSymbolicLink(),
+    };
+  } catch (err) {
+    /* empty */
+    return undefined;
+  }
 }
