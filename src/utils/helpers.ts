@@ -15,9 +15,7 @@ export function runCatching<T>(
       if (onError) {
         onError(error);
       } else {
-        logger.logWithFormat((formatter) =>
-          formatter.error(`An error occurred in function ${fn.name}:`, error),
-        );
+        logger.error(`An error occurred in function ${fn.name}:`, error);
       }
     }
   };

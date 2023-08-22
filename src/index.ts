@@ -15,35 +15,25 @@ const program = new Command();
 
 async function doctor(projectPath: string) {
   if (!isDirectoryNonEmpty(projectPath)) {
-    logger.logWithFormat((formatter) =>
-      formatter.error(
-        `Project directory is not valid or is empty at ${projectPath}`,
-      ),
+    logger.error(
+      `Project directory is not valid or is empty at ${projectPath}`,
     );
     process.exit(1);
   }
 
   const project = identifyProject(projectPath);
   if (!project) {
-    logger.logWithFormat((formatter) =>
-      formatter.error(`Unable to identify project framework in ${projectPath}`),
-    );
+    logger.error(`Unable to identify project framework in ${projectPath}`);
     process.exit(1);
   }
 
-  logger.logWithFormat((formatter) =>
-    formatter.info(
-      `Detected framework: ${project.framework} in ${projectPath}`,
-    ),
-  );
+  logger.info(`Detected framework: ${project.framework} in ${projectPath}`);
   Context.create(project);
 
   await project.loadFilesContent();
   await project.runAllChecks();
 
-  logger.logWithFormat((formatter) =>
-    formatter.result(`Collecting more information on project`),
-  );
+  logger.result(`Collecting more information on project`);
   for (const summary of project.summary) {
     logger.log(summary);
   }
@@ -102,11 +92,7 @@ program
       logLevel: options.logLevel,
       saveReport: options.report,
     });
-    doctor(path).catch((err) =>
-      logger.logWithFormat((formatter) =>
-        formatter.error("Error running doctor:", err),
-      ),
-    );
+    doctor(path).catch((err) => logger.error("Error running doctor:", err));
   });
 
 program.parse();

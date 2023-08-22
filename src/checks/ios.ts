@@ -31,19 +31,15 @@ async function validateDeploymentTarget(project: iOSProject): Promise<void> {
     const xcodeProject = xcode.project(filepath);
     xcodeProject.parseSync();
 
-    logger.logWithFormat((formatter) =>
-      formatter.search(`Checking project at path: ${filepath}`),
-    );
+    logger.searching(`Checking project at path: ${filepath}`);
 
     const targets = xcodeProject.pbxNativeTargetSection();
     // Check for Notification Service Extension
     await verifyNotificationServiceExtension(project, targets);
 
     const deploymentTarget = getDeploymentTargetVersion(xcodeProject);
-    logger.logWithFormat((formatter) =>
-      formatter.result(
-        `Deployment Target Version for NSE: ${deploymentTarget}. Ensure this version is not higher than the iOS version of the devices where the app will be installed. A higher target version may prevent some features, like rich notifications, from working correctly.`,
-      ),
+    logger.result(
+      `Deployment Target Version for NSE: ${deploymentTarget}. Ensure this version is not higher than the iOS version of the devices where the app will be installed. A higher target version may prevent some features, like rich notifications, from working correctly.`,
     );
   }
 }
@@ -76,9 +72,7 @@ async function verifyNotificationServiceExtension(
       productType &&
       trimQuotes(productType) === "com.apple.product-type.app-extension"
     ) {
-      logger.logWithFormat((formatter) =>
-        formatter.progress(`Found app extension: ${target.name}`),
-      );
+      logger.progress(`Found app extension: ${target.name}`);
 
       const inferredDirectoryName =
         target.name || target.productReference_comment.replace(".appex", "");
@@ -89,18 +83,12 @@ async function verifyNotificationServiceExtension(
         project.iOSProjectPath,
         possibleInfoPlistPath,
       );
-      logger.logWithFormat((formatter) =>
-        formatter.search(`Checking Info.plist at path: ${infoPlistPath}`),
-      );
+      logger.searching(`Checking Info.plist at path: ${infoPlistPath}`);
       const infoPlistContent = await readAndParseXML(infoPlistPath);
 
       // If the Info.plist content represents an NSE, process further
       if (isNotificationServiceExtension(infoPlistContent.plist.dict)) {
-        logger.logWithFormat((formatter) =>
-          formatter.progress(
-            `Found Notification app extension: ${target.name}`,
-          ),
-        );
+        logger.progress(`Found Notification app extension: ${target.name}`);
         extensionCount++;
       }
     }
@@ -109,10 +97,8 @@ async function verifyNotificationServiceExtension(
       productType &&
       trimQuotes(productType) === "com.apple.product-type.application"
     ) {
-      logger.logWithFormat((formatter) =>
-        formatter.search(
-          `Checking if the NSE is embedded into target app: ${target.name}`,
-        ),
+      logger.searching(
+        `Checking if the NSE is embedded into target app: ${target.name}`,
       );
       // Check if the target is listed in the Embed App Extensions build phase.
       if (
@@ -137,33 +123,21 @@ async function verifyNotificationServiceExtension(
   }
 
   if (extensionCount > 1) {
-    logger.logWithFormat((formatter) =>
-      formatter.failure(
-        "Multiple Notification Service Extensions found. Only one should be present.",
-      ),
+    logger.failure(
+      "Multiple Notification Service Extensions found. Only one should be present.",
     );
   } else if (extensionCount === 1) {
     if (isEmbedded) {
-      logger.logWithFormat((formatter) =>
-        formatter.success("Notification Service Extension found and embedded."),
-      );
+      logger.success("Notification Service Extension found and embedded.");
     } else if (isFoundationExtension) {
-      logger.logWithFormat((formatter) =>
-        formatter.warning(
-          "Notification Service Extension found but not embedded as it is a Foundation Extension.",
-        ),
+      logger.warning(
+        "Notification Service Extension found but not embedded as it is a Foundation Extension.",
       );
     } else {
-      logger.logWithFormat((formatter) =>
-        formatter.failure(
-          "Notification Service Extension found but not embedded.",
-        ),
-      );
+      logger.failure("Notification Service Extension found but not embedded.");
     }
   } else {
-    logger.logWithFormat((formatter) =>
-      formatter.failure("Notification Service Extension not found."),
-    );
+    logger.failure("Notification Service Extension not found.");
   }
 }
 
@@ -259,9 +233,7 @@ async function validateUserNotificationCenterDelegate(
   let allRequirementsMet = false;
   for (const appDelegateFile of project.appDelegateFiles) {
     const filepath = appDelegateFile.path;
-    logger.logWithFormat((formatter) =>
-      formatter.search(`Checking AppDelegate at path: ${filepath}`),
-    );
+    logger.searching(`Checking AppDelegate at path: ${filepath}`);
     const contents = readFileContent(filepath)!;
 
     const extension = appDelegateFile.args.get("extension");
@@ -281,13 +253,9 @@ async function validateUserNotificationCenterDelegate(
   }
 
   if (allRequirementsMet) {
-    logger.logWithFormat((formatter) =>
-      formatter.success(`Required method found in AppDelegate`),
-    );
+    logger.success(`Required method found in AppDelegate`);
   } else {
-    logger.logWithFormat((formatter) =>
-      formatter.failure(`Required method not found in AppDelegate`),
-    );
+    logger.failure(`Required method not found in AppDelegate`);
   }
 }
 
@@ -296,39 +264,25 @@ async function validatePushEntitlements(project: iOSProject): Promise<void> {
 
   for (const entitlementsFile of project.entitlementsFiles) {
     const filepath = entitlementsFile.path;
-    logger.logWithFormat((formatter) =>
-      formatter.search(`Checking entitlements file at path: ${filepath}`),
-    );
+    logger.searching(`Checking entitlements file at path: ${filepath}`);
     const contents = readFileContent(filepath)!;
     allRequirementsMet =
       allRequirementsMet || Patterns.iOS_PUSH_ENV_ENTITLEMENT.test(contents);
   }
 
   if (allRequirementsMet) {
-    logger.logWithFormat((formatter) =>
-      formatter.success(`Push Notification capability found in entitlements`),
-    );
+    logger.success(`Push Notification capability found in entitlements`);
   } else {
-    logger.logWithFormat((formatter) =>
-      formatter.failure(
-        `Push Notification capability not found in entitlements`,
-      ),
-    );
+    logger.failure(`Push Notification capability not found in entitlements`);
   }
 }
 
 async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
   const podfileLockPath = project.podfileLock.path;
-  logger.logWithFormat((formatter) =>
-    formatter.search(
-      `Checking for conflicting libraries in: ${podfileLockPath}`,
-    ),
-  );
+  logger.searching(`Checking for conflicting libraries in: ${podfileLockPath}`);
   const podfileLockContent = readFileContent(podfileLockPath);
   if (!podfileLockContent) {
-    logger.logWithFormat((formatter) =>
-      formatter.failure(`No podfile.lock found at ${podfileLockPath}`),
-    );
+    logger.failure(`No podfile.lock found at ${podfileLockPath}`);
     return;
   }
 
@@ -336,15 +290,11 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
     podfileLockContent.includes(lib),
   );
   if (conflictingPods.length === 0) {
-    logger.logWithFormat((formatter) =>
-      formatter.success("No conflicting pods found in Podfile"),
-    );
+    logger.success("No conflicting pods found in Podfile");
   } else {
-    logger.logWithFormat((formatter) =>
-      formatter.warning(
-        "More than one pods found in Podfile for handling push notifications",
-        conflictingPods,
-      ),
+    logger.warning(
+      "More than one pods found in Podfile for handling push notifications",
+      conflictingPods,
     );
   }
 }
@@ -425,11 +375,9 @@ async function collectSummary(project: iOSProject): Promise<void> {
       );
     }
   } catch (err) {
-    logger.logWithFormat((formatter) =>
-      formatter.error(
-        `Unable to read Podfile.lock at ${project.podfileLock.path}: %s`,
-        err,
-      ),
+    logger.error(
+      `Unable to read Podfile.lock at ${project.podfileLock.path}: %s`,
+      err,
     );
   }
 }
