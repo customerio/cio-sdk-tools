@@ -1,7 +1,4 @@
 import * as path from 'path';
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-import xcode from 'xcode';
 import { Conflicts, Patterns } from '../constants';
 import { Context, iOSProject } from '../core';
 import {
@@ -28,18 +25,11 @@ export async function runAllChecks(): Promise<void> {
 async function analyzeNotificationServiceExtensionProperties(
   project: iOSProject
 ): Promise<void> {
-  for (const projectFile of project.projectFiles) {
-    const filepath = projectFile.path;
-    const xcodeProject = xcode.project(filepath);
-    xcodeProject.parseSync();
-
-    logger.searching(`Checking project at path: ${filepath}`);
-
-    logger.searching(`project files: ${projectFile}`);
-
+  for (const xcodeProject of project.xcodeProjectFiles) {
+    logger.searching(`Checking project at path: ${xcodeProject.filepath}`);
     const targets = xcodeProject.pbxNativeTargetSection();
     // Check for Notification Service Extension
-    await validateNotificationServiceExtenstion(xcodeProject, project, targets);
+    await validateNotificationServiceExtension(xcodeProject, project, targets);
   }
 }
 
@@ -48,7 +38,7 @@ async function analyzeNotificationServiceExtensionProperties(
  * @param {Object} targets - Targets from the Xcode project.
  */
 //
-async function validateNotificationServiceExtenstion(
+async function validateNotificationServiceExtension(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   xcodeProject: any,
   project: iOSProject,
@@ -61,8 +51,6 @@ async function validateNotificationServiceExtenstion(
 
   for (const name in targets) {
     const target = targets[name];
-
-    logger.searching(`target: ${target.name}`);
 
     // The following check ensures that we are dealing with a valid 'target' that is an app extension.
     // 'target' and 'target.productType' must exist (i.e., they are truthy).
@@ -142,7 +130,7 @@ async function validateNotificationServiceExtenstion(
     if (isEmbedded) {
       logger.success('Notification Service Extension found and embedded.');
     } else if (isFoundationExtension) {
-      logger.warning(
+      logger.info(
         'Notification Service Extension found but not embedded as it is a Foundation Extension.'
       );
     } else {
@@ -194,6 +182,7 @@ function isNotificationServiceExtension(content: any) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getDeploymentTargetVersion(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   pbxProject: any,

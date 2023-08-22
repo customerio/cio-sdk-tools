@@ -2,11 +2,15 @@ import * as path from 'path';
 import { runAllChecksForIOS, runAllChecksForReactNative } from '../checks';
 import { Patterns } from '../constants';
 import {
+  doesExists,
   readFileContent,
   readFileWithStats,
   searchFileInDirectory,
 } from '../utils/file';
 import { Log } from '../utils/logger';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import xcode from 'xcode';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Constructor = new (...args: any[]) => any;
@@ -44,8 +48,11 @@ export interface iOSProject extends MobileProject {
 
   podfile: File;
   podfileLock: File;
+  isUsingCocoaPods: boolean;
 
   projectFiles: File[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  xcodeProjectFiles: any[];
   entitlementsFiles: File[];
   appDelegateFiles: File[];
 }
@@ -56,8 +63,11 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
     public iOSProjectPath!: string;
     public podfile!: File;
     public podfileLock!: File;
+    public isUsingCocoaPods!: boolean;
 
     public projectFiles: File[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    public xcodeProjectFiles: any[] = [];
     public entitlementsFiles: File[] = [];
     public appDelegateFiles: File[] = [];
 
@@ -71,6 +81,7 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
       this.iOSProjectPath = iOSProjectPath;
       this.podfile = new File(path.join(iOSProjectPath, 'Podfile'));
       this.podfileLock = new File(path.join(iOSProjectPath, 'Podfile.lock'));
+      this.isUsingCocoaPods = doesExists(this.podfile.path);
     }
 
     async locateFiles(projectPath: string): Promise<void> {
@@ -104,6 +115,13 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
 
       this.projectFiles = this.projectFiles.concat(
         results[fileKeys.project].map((result) => new File(result))
+      );
+      this.xcodeProjectFiles = this.xcodeProjectFiles.concat(
+        results[fileKeys.project].map((result) => {
+          const xcodeProject = xcode.project(result);
+          xcodeProject.parseSync();
+          return xcodeProject;
+        })
       );
       this.entitlementsFiles = this.entitlementsFiles.concat(
         results[fileKeys.entitlements].map((result) => new File(result))
