@@ -49,6 +49,7 @@ async function analyzeNotificationServiceExtensionProperties(
  */
 //
 async function validateNotificationServiceExtenstion(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   xcodeProject: any,
   project: iOSProject,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -193,9 +194,10 @@ function isNotificationServiceExtension(content: any) {
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getDeploymentTargetVersion(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   pbxProject: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   notificationExtensionNativeTarget: any
 ) {
   const buildConfig = pbxProject.pbxXCBuildConfigurationSection();
