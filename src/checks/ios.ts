@@ -241,21 +241,21 @@ async function validateUserNotificationCenterDelegate(
       case "swift":
         allRequirementsMet =
           allRequirementsMet ||
-          contents.includes("func userNotificationCenter(");
+          Patterns.SWIFT_USER_NOTIFICATION_CENTER_PATTERN.test(contents);
         break;
       case "Objective-C":
       case "Objective-C++":
         allRequirementsMet =
           allRequirementsMet ||
-          Patterns.iOS_OBJ_C_USER_NOTIFICATION_CENTER.test(contents);
+          Patterns.OBJC_USER_NOTIFICATION_CENTER_PATTERN.test(contents);
         break;
     }
   }
 
   if (allRequirementsMet) {
-    logger.success(`Required method found in AppDelegate`);
+    logger.success(`Found the method in AppDelegate required to track the "open" metric when a push notification is clicked.`);
   } else {
-    logger.failure(`Required method not found in AppDelegate`);
+    logger.failure(`Didn't find the necessary method in AppDelegate to track the "open" metric when a push notification is clicked.`);
   }
 }
 
