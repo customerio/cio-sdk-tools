@@ -30,11 +30,15 @@ class File {
     filepath: string,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     args?: Record<string, any>,
+    loadContent: boolean = false,
   ) {
     this.absolutePath = path.resolve(projectRoot, filepath);
     this.args = new Map(Object.entries(args || {}));
     this.filename = getFilename(this.absolutePath);
     this.readablePath = getReadablePath(projectRoot, this.absolutePath);
+    if (loadContent) {
+      this.loadContent();
+    }
   }
 
   loadContent() {
@@ -134,33 +138,43 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
           const xcodeProject = xcode.project(result);
           xcodeProject.parseSync();
           return {
-            file: new File(this.projectPath, result),
+            file: new File(this.projectPath, result, {}, true),
             xcodeProject: xcodeProject,
           };
         }),
       );
       this.entitlementsFiles = this.entitlementsFiles.concat(
         results[filesRecord.entitlements].map(
-          (result) => new File(this.projectPath, result),
+          (result) => new File(this.projectPath, result, {}, true),
         ),
       );
 
       this.appDelegateFiles = this.appDelegateFiles.concat(
         results[filesRecord.appDelegateSwift].map(
           (result) =>
-            new File(this.projectPath, result, { extension: "swift" }),
+            new File(this.projectPath, result, { extension: "swift" }, true),
         ),
       );
       this.appDelegateFiles = this.appDelegateFiles.concat(
         results[filesRecord.appDelegateObjectiveC].map(
           (result) =>
-            new File(this.projectPath, result, { extension: "Objective-C" }),
+            new File(
+              this.projectPath,
+              result,
+              { extension: "Objective-C" },
+              true,
+            ),
         ),
       );
       this.appDelegateFiles = this.appDelegateFiles.concat(
         results[filesRecord.appDelegateObjectiveCPlusPlus].map(
           (result) =>
-            new File(this.projectPath, result, { extension: "Objective-C++" }),
+            new File(
+              this.projectPath,
+              result,
+              { extension: "Objective-C++" },
+              true,
+            ),
         ),
       );
     }
@@ -168,7 +182,8 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
 
 export class iOSNativeProject
   extends iOSProjectBase(Object)
-  implements MobileProject, iOSProject {
+  implements MobileProject, iOSProject
+{
   public readonly framework: string = "iOS";
   public readonly summary: Log[] = [];
 
@@ -185,8 +200,6 @@ export class iOSNativeProject
     this.podfile.loadContent();
     this.podfileLock.loadContent();
     this.projectFile?.loadContent();
-    this.entitlementsFile?.loadContent();
-    this.appDelegateFile?.loadContent();
   }
 
   async runAllChecks(): Promise<void> {
@@ -196,7 +209,8 @@ export class iOSNativeProject
 
 export class ReactNativeProject
   extends iOSProjectBase(Object)
-  implements MobileProject, iOSProject {
+  implements MobileProject, iOSProject
+{
   public readonly framework: string = "ReactNative";
   public readonly summary: Log[] = [];
 
@@ -257,7 +271,8 @@ export class ReactNativeProject
 
 export class FlutterProject
   extends iOSProjectBase(Object)
-  implements MobileProject, iOSProject {
+  implements MobileProject, iOSProject
+{
   public readonly framework: string = "Flutter";
   public readonly summary: Log[] = [];
 

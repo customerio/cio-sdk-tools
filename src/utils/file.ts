@@ -99,15 +99,26 @@ export async function searchFileInDirectory(
   return results;
 }
 
+export async function parseXML(
+  fileContent: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any | undefined> {
+  try {
+    return await xml2js.parseStringPromise(fileContent, {
+      explicitArray: false,
+    });
+  } catch (err) {
+    /* empty */
+    return undefined;
+  }
+}
+
 export async function readAndParseXML(
   filePath: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any | undefined> {
-  const xml = fs.readFileSync(filePath, "utf8");
-  const content = await xml2js.parseStringPromise(xml, {
-    explicitArray: false,
-  });
-  return content;
+  const content = readFileContent(filePath);
+  return content ? await parseXML(content) : undefined;
 }
 
 type FileWithStats = {
