@@ -68,7 +68,7 @@ async function validateNoConflictingSDKs(
 async function validateSDKInitialization(
   project: ReactNativeProject,
 ): Promise<void> {
-  console.log(`🔎 Checking for SDK Initialization in React Native`);
+  logger.searching(`Checking for SDK Initialization in React Native`);
   const sdkInitializationFile = searchFilesForSDKInitialization(
     project.projectPath,
   );
