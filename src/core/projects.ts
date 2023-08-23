@@ -178,6 +178,10 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
         ),
       );
     }
+
+    async runAllChecks(): Promise<void> {
+      await runAllChecksForIOS();
+    }
   };
 
 export class iOSNativeProject
@@ -203,7 +207,7 @@ export class iOSNativeProject
   }
 
   async runAllChecks(): Promise<void> {
-    await runAllChecksForIOS();
+    await super.runAllChecks();
   }
 }
 
@@ -264,8 +268,9 @@ export class ReactNativeProject
   }
 
   async runAllChecks(): Promise<void> {
+    // Run React Native checks first because wrapper frameworks must be validated before native checks
     await runAllChecksForReactNative();
-    await runAllChecksForIOS();
+    await super.runAllChecks();
   }
 }
 
@@ -299,6 +304,7 @@ export class FlutterProject
   }
 
   async runAllChecks(): Promise<void> {
-    await runAllChecksForIOS();
+    // When added, run Flutter checks first because wrapper frameworks must be validated before native checks
+    await super.runAllChecks();
   }
 }
