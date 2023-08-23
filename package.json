@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "description": "A self service tool to run diagnostics on your mobile SDK installation",
   "scripts": {
-    "compile": "tsc",
-    "diagnose": "tsc && node ./dist/run-diagnostics.js",
-    "doctor": "tsc && node ./dist/entrypoint.js"
+    "build": "tsc",
+    "lint": "eslint 'src/**/*.{js,ts}'",
+    "lint:fix": "eslint 'src/**/*.{js,ts}' --fix",
+    "start": "npx tsc && node dist/index.js",
+    "doctor": "npm start doctor"
   },
   "repository": {
     "type": "git",
@@ -18,15 +20,22 @@
   },
   "homepage": "https://github.com/customerio/sdk-self-service#readme",
   "dependencies": {
+    "chalk": "^4.1.2",
     "commander": "^11.0.0",
-    "fs": "^0.0.1-security",
-    "path": "^0.12.7",
     "winston": "^3.10.0",
     "xcode": "^3.0.1",
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
+    "@tsconfig/node20": "^20.1.1",
     "@types/node": "^20.4.8",
+    "@types/xml2js": "^0.4.11",
+    "@typescript-eslint/eslint-plugin": "^6.3.0",
+    "@typescript-eslint/parser": "^6.3.0",
+    "eslint": "^8.46.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
+    "prettier": "^3.0.1",
     "typescript": "^5.1.6"
   }
 }
