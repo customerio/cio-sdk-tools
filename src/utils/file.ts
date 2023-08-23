@@ -133,7 +133,7 @@ export function readFileWithStats(paths: string[]): FileWithStats[] {
   return results;
 }
 
-type FileLinkStats = {
+export type FileLinkStats = {
   isDirectory: boolean;
   isFile: boolean;
   isSymbolicLink: boolean;
@@ -150,5 +150,35 @@ export function getFileLinkStats(path: string): FileLinkStats | undefined {
   } catch (err) {
     /* empty */
     return undefined;
+  }
+}
+
+export function getFilename(absolutePath: string): string {
+  try {
+    return path.basename(absolutePath);
+  } catch (err) {
+    try {
+      const parts = absolutePath.split(path.sep);
+      return parts[parts.length - 1];
+    } catch (err) {
+      /* empty */
+      return absolutePath;
+    }
+  }
+}
+
+export function getReadablePath(
+  baseDirectoryPath: string,
+  absolutePath: string,
+): string {
+  try {
+    const directoryName = getFilename(baseDirectoryPath);
+    return path.join(
+      directoryName,
+      path.relative(baseDirectoryPath, absolutePath),
+    );
+  } catch (err) {
+    /* empty */
+    return absolutePath;
   }
 }

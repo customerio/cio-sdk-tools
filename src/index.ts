@@ -82,14 +82,15 @@ program
   )
   .argument("[path]", "Path to project directory", ".")
   .addOption(
-    new Option("-l, --log-level [level]", "Log level")
-      .default("info")
-      .choices(["info", "warning", "error"]),
+    new Option(
+      "-v, --verbose",
+      "Enable verbose mode, providing detailed information about the operations",
+    ).default(false),
   )
-  .option("-r, --report <filename>", "Output report to file")
+  .addOption(new Option("-r, --report <filename>", "Output report to file"))
   .action((path, options) => {
     configureLogger({
-      logLevel: options.logLevel,
+      verbose: options.verbose,
       saveReport: options.report,
     });
     doctor(path).catch((err) => logger.error("Error running doctor:", err));

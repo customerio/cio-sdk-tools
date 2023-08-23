@@ -2,12 +2,26 @@ import * as path from "path";
 import { Conflicts, PACKAGE_NAME_REACT_NATIVE, Patterns } from "../constants";
 import { Context, ReactNativeProject } from "../core";
 import {
+  FileLinkStats,
+  extractVersionFromPackageLock,
+  extractVersionFromPodLock,
   getFileLinkStats,
   logger,
   readDirectory,
   readFileContent,
   runCatching,
 } from "../utils";
+
+const codeInspectionFileExtensions = [".js", ".jsx", ".ts", ".tsx"];
+const exactFilesForCodeInspection = ["App", "index"];
+const flexibleFilesForCodeInspection = ["cio", "customerio"];
+const ignoredDirectoryPrefixesForCodeInspection = [
+  ".",
+  "_",
+  "node_modules",
+  "android",
+  "ios",
+];
 
 export async function runAllChecks(): Promise<void> {
   const context = Context.get();
@@ -23,7 +37,7 @@ async function validateNoConflictingSDKs(
 ): Promise<void> {
   const packageFile = project.packageJsonFile;
   logger.searching(
-    `Checking for conflicting libraries in: ${packageFile.path}`,
+    `Checking for conflicting libraries in: ${packageFile.readablePath}`,
   );
 
   const packageJson = JSON.parse(packageFile.content!);
@@ -58,26 +72,12 @@ async function validateSDKInitialization(
   const sdkInitializationFile = searchFilesForSDKInitialization(
     project.projectPath,
   );
-  if (sdkInitializationFile) {
-    logger.success("SDK Initialization found in", sdkInitializationFile);
+  if (sdkInitializationFile !== undefined) {
+    logger.success(`SDK Initialization found in ${sdkInitializationFile}`);
   } else {
-    logger.warning(
-      "SDK Initialization not found in suggested files",
-      sdkInitializationFile,
-    );
+    logger.warning("SDK Initialization not found in suggested files");
   }
 }
-
-const allowedExtensions = [".js", ".jsx", ".ts", ".tsx"];
-const filesForCodeInspection = [
-  "App.js",
-  "App.jsx",
-  "App.ts",
-  "App.tsx",
-  "FeaturesUpdate.js",
-  "CustomerIOService.js",
-  "CustomerIOService.ts",
-];
 
 function searchFilesForSDKInitialization(
   directoryPath: string,
@@ -86,24 +86,39 @@ function searchFilesForSDKInitialization(
   const files = readDirectory(directoryPath);
   if (!files || files.length === 0) return undefined;
 
+  const isValidFile = (file: string, linkStat: FileLinkStats): boolean => {
+    const isIgnoredFile = ignoredDirectoryPrefixesForCodeInspection.some(
+      (dir: string) => file.startsWith(dir),
+    );
+    if (isIgnoredFile) return false;
+    else if (linkStat.isSymbolicLink) return false;
+    else {
+      return (
+        linkStat.isDirectory ||
+        linkStat.isFile ||
+        codeInspectionFileExtensions.includes(path.extname(file))
+      );
+    }
+  };
+
+  const filePatternsForCodeInspection = exactFilesForCodeInspection
+    .map((filename) =>
+      Patterns.constructFilePattern(filename, codeInspectionFileExtensions),
+    )
+    .concat(
+      flexibleFilesForCodeInspection.map((filename) =>
+        Patterns.constructKeywordFilePattern(
+          filename,
+          codeInspectionFileExtensions,
+        ),
+      ),
+    );
+
   for (const file of files) {
     const filePath = path.join(directoryPath, file);
     const linkStat = getFileLinkStats(filePath);
-    if (
-      file.startsWith(".") ||
-      file.startsWith("_") ||
-      file.startsWith("node_modules") ||
-      !linkStat ||
-      linkStat?.isSymbolicLink === true
-    ) {
-      continue;
-    }
 
-    if (
-      !linkStat.isDirectory &&
-      !linkStat.isFile &&
-      !allowedExtensions.includes(path.extname(file))
-    ) {
+    if (!linkStat || !isValidFile(file, linkStat)) {
       continue;
     }
 
@@ -112,10 +127,15 @@ function searchFilesForSDKInitialization(
       if (fileNameForSDKInitialization) {
         break;
       }
-    } else if (linkStat.isFile && filesForCodeInspection.includes(file)) {
-      const fileContent = readFileContent(filePath);
-      if (fileContent && fileContent.includes("CustomerIO.initialize")) {
-        return file;
+    } else if (linkStat.isFile) {
+      const matchingPattern = filePatternsForCodeInspection.find((pattern) =>
+        pattern.test(file),
+      );
+      if (matchingPattern) {
+        const fileContent = readFileContent(filePath);
+        if (fileContent && fileContent.includes("CustomerIO.initialize")) {
+          return file;
+        }
       }
     }
   }
@@ -131,34 +151,23 @@ async function collectSummary(project: ReactNativeProject): Promise<void> {
         logger.formatter.warning(`No lock file found for package.json`),
       );
     } else {
-      let sdkVersionInLockFile: string | undefined;
       const lockFileType = packageLockFile.args.get("type");
 
-      if (lockFileType === "yarn") {
-        const yarnLockVersionMatch = packageLockFile.content.match(
-          new RegExp(
-            `${PACKAGE_NAME_REACT_NATIVE}@[^:]+:\\s*\\n\\s*version\\s*"([^"]+)"`,
-          ),
-        );
-        sdkVersionInLockFile = yarnLockVersionMatch
-          ? yarnLockVersionMatch[1]
-          : undefined;
-      } else if (lockFileType === "npm") {
-        const npmLockJson = JSON.parse(packageLockFile.content);
-        sdkVersionInLockFile =
-          npmLockJson.dependencies[PACKAGE_NAME_REACT_NATIVE].version;
-      }
-
+      const sdkVersionInLockFile = extractVersionFromPackageLock(
+        packageLockFile.content,
+        lockFileType,
+        PACKAGE_NAME_REACT_NATIVE,
+      );
       if (sdkVersionInLockFile) {
         project.summary.push(
           logger.formatter.info(
-            `${PACKAGE_NAME_REACT_NATIVE} version in ${packageLockFile.path} file set to ${sdkVersionInLockFile}`,
+            `${PACKAGE_NAME_REACT_NATIVE} version in ${packageLockFile.readablePath} file set to ${sdkVersionInLockFile}`,
           ),
         );
       } else {
         project.summary.push(
           logger.formatter.warning(
-            `${PACKAGE_NAME_REACT_NATIVE} not found in ${packageLockFile.path}`,
+            `${PACKAGE_NAME_REACT_NATIVE} not found in ${packageLockFile.readablePath}`,
           ),
         );
       }
@@ -171,25 +180,26 @@ async function collectSummary(project: ReactNativeProject): Promise<void> {
     const podfileLock = project.podfileLock;
     const podfileLockContent = podfileLock.content!;
 
-    const reactNativePodMatch = podfileLockContent.match(
-      Patterns.iOS_POD_CIO_REACT_NATIVE,
+    const reactNativePodVersion = extractVersionFromPodLock(
+      podfileLockContent,
+      PACKAGE_NAME_REACT_NATIVE,
     );
-    if (reactNativePodMatch && reactNativePodMatch[1]) {
+    if (reactNativePodVersion) {
       project.summary.push(
         logger.formatter.info(
-          `${PACKAGE_NAME_REACT_NATIVE} version in ${podfileLock.path} set to ${reactNativePodMatch[1]}`,
+          `${PACKAGE_NAME_REACT_NATIVE} version in ${podfileLock.readablePath} set to ${reactNativePodVersion}`,
         ),
       );
     } else {
       project.summary.push(
         logger.formatter.warning(
-          `${PACKAGE_NAME_REACT_NATIVE} not found in ${podfileLock.path}`,
+          `${PACKAGE_NAME_REACT_NATIVE} not found in ${podfileLock.readablePath}`,
         ),
       );
     }
   } catch (err) {
     logger.error(
-      `Unable to read Podfile.lock at ${project.podfileLock.path}: %s`,
+      `Unable to read Podfile.lock at ${project.podfileLock.readablePath}: %s`,
       err,
     );
   }

@@ -119,14 +119,26 @@ export const messageFormatter = {
 
 export { messageFormatter as formatter };
 
+function consoleFormat() {
+  return winston.format.printf(({ message }) => {
+    return message;
+  });
+}
+
+function fileFormat() {
+  return winston.format.printf(({ level, message, timestamp }) => {
+    return `[${timestamp}][${level}]: ${message}`;
+  });
+}
+
 export function configureLogger(options: {
-  logLevel: string;
-  saveReport?: string | boolean;
+  verbose: boolean;
+  saveReport?: string;
 }) {
-  logger.level = options.logLevel;
-  if (options.saveReport) {
+  logger.level = options.verbose ? "info" : "warn";
+  if (options.saveReport !== undefined) {
     let destination: string;
-    if (options.saveReport === true || options.saveReport === "") {
+    if (options.saveReport === "") {
       destination = path.join(
         os.homedir(),
         "Desktop",
@@ -135,23 +147,28 @@ export function configureLogger(options: {
     } else {
       destination = options.saveReport;
     }
-    logger.add(new winston.transports.File({ filename: destination }));
+
+    logger.add(
+      new winston.transports.File({
+        filename: destination,
+        format: winston.format.combine(
+          winston.format.timestamp(),
+          fileFormat(),
+        ),
+      }),
+    );
   }
 }
 
 function createLogger(): winston.Logger {
   const transports: winston.transport[] = [
     new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.colorize(),
-        winston.format.simple(),
-      ),
+      format: consoleFormat(),
     }),
   ];
 
   return winston.createLogger({
     level: "info",
-    format: winston.format.json(),
     transports: transports,
   });
 }
