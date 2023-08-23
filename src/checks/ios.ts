@@ -1,14 +1,21 @@
 import * as path from 'path';
-import { Conflicts, Patterns } from '../constants';
+import {
+  Conflicts,
+  POD_MESSAGING_IN_APP,
+  POD_MESSAGING_PUSH_APN,
+  POD_MESSAGING_PUSH_FCM,
+  POD_TRACKING,
+  Patterns,
+} from '../constants';
 import { Context, iOSProject } from '../core';
 import {
+  extractVersionFromPodLock,
+  getReadablePath,
   logger,
   readAndParseXML,
   readFileContent,
   runCatching,
-  trimEqualOperator,
   trimQuotes,
-  uniqueValues,
 } from '../utils';
 
 export async function runAllChecks(): Promise<void> {
@@ -25,8 +32,8 @@ export async function runAllChecks(): Promise<void> {
 async function analyzeNotificationServiceExtensionProperties(
   project: iOSProject
 ): Promise<void> {
-  for (const xcodeProject of project.xcodeProjectFiles) {
-    logger.searching(`Checking project at path: ${xcodeProject.filepath}`);
+  for (const { file: projectFile, xcodeProject } of project.projectFiles) {
+    logger.searching(`Checking project at path: ${projectFile.readablePath}`);
     const targets = xcodeProject.pbxNativeTargetSection();
     // Check for Notification Service Extension
     await validateNotificationServiceExtension(xcodeProject, project, targets);
@@ -74,7 +81,11 @@ async function validateNotificationServiceExtension(
         project.iOSProjectPath,
         possibleInfoPlistPath
       );
-      logger.searching(`Checking Info.plist at path: ${infoPlistPath}`);
+      const infoPlistReadablePath = getReadablePath(
+        project.projectPath,
+        infoPlistPath
+      );
+      logger.searching(`Checking Info.plist at path: ${infoPlistReadablePath}`);
       const infoPlistContent = await readAndParseXML(infoPlistPath);
 
       // If the Info.plist content represents an NSE, process further
@@ -235,22 +246,23 @@ async function validateUserNotificationCenterDelegate(
 ): Promise<void> {
   let allRequirementsMet = false;
   for (const appDelegateFile of project.appDelegateFiles) {
-    const filepath = appDelegateFile.path;
-    logger.searching(`Checking AppDelegate at path: ${filepath}`);
-    const contents = readFileContent(filepath)!;
+    logger.searching(
+      `Checking AppDelegate at path: ${appDelegateFile.readablePath}`
+    );
+    const contents = readFileContent(appDelegateFile.absolutePath)!;
 
     const extension = appDelegateFile.args.get('extension');
     switch (extension) {
       case 'swift':
         allRequirementsMet =
           allRequirementsMet ||
-          Patterns.SWIFT_USER_NOTIFICATION_CENTER_PATTERN.test(contents);
+          Patterns.iOS_USER_NOTIFICATION_CENTER_SWIFT.test(contents);
         break;
       case 'Objective-C':
       case 'Objective-C++':
         allRequirementsMet =
           allRequirementsMet ||
-          Patterns.OBJC_USER_NOTIFICATION_CENTER_PATTERN.test(contents);
+          Patterns.iOS_USER_NOTIFICATION_CENTER_OBJC.test(contents);
         break;
     }
   }
@@ -270,9 +282,10 @@ async function validatePushEntitlements(project: iOSProject): Promise<void> {
   let allRequirementsMet = false;
 
   for (const entitlementsFile of project.entitlementsFiles) {
-    const filepath = entitlementsFile.path;
-    logger.searching(`Checking entitlements file at path: ${filepath}`);
-    const contents = readFileContent(filepath)!;
+    logger.searching(
+      `Checking entitlements file at path: ${entitlementsFile.readablePath}`
+    );
+    const contents = readFileContent(entitlementsFile.absolutePath)!;
     allRequirementsMet =
       allRequirementsMet || Patterns.iOS_PUSH_ENV_ENTITLEMENT.test(contents);
   }
@@ -290,11 +303,13 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
     return;
   }
 
-  const podfileLockPath = project.podfileLock.path;
-  logger.searching(`Checking for conflicting libraries in: ${podfileLockPath}`);
-  const podfileLockContent = readFileContent(podfileLockPath);
+  const podfileLock = project.podfileLock;
+  logger.searching(
+    `Checking for conflicting libraries in: ${podfileLock.readablePath}`
+  );
+  const podfileLockContent = readFileContent(podfileLock.absolutePath);
   if (!podfileLockContent) {
-    logger.failure(`No podfile.lock found at ${podfileLockPath}`);
+    logger.failure(`No podfile.lock found at ${podfileLock.readablePath}`);
     return;
   }
 
@@ -313,111 +328,73 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
 
 async function collectSummary(project: iOSProject): Promise<void> {
   if (project.isUsingCocoaPods) {
-    try {
-      const podfileLock = project.podfileLock;
-      const podfileLockPath = podfileLock.path;
-      const podfileLockContent = podfileLock.content!;
-
-      const trackingPodVersions = extractPodVersions(
-        podfileLockContent,
-        Patterns.iOS_POD_CIO_TRACKING
-      );
-      if (trackingPodVersions) {
-        project.summary.push(
-          logger.formatter.info(
-            `CustomerIO/Tracking version in ${podfileLockPath} set to ${trackingPodVersions}`
-          )
-        );
-      } else {
-        project.summary.push(
-          logger.formatter.failure(
-            `CustomerIO/Tracking not found in Podfile.lock at ${podfileLockPath}`
-          )
-        );
-      }
-
-      const inAppMessagingPodVersions = extractPodVersions(
-        podfileLockContent,
-        Patterns.iOS_POD_CIO_IN_APP
-      );
-      if (inAppMessagingPodVersions) {
-        project.summary.push(
-          logger.formatter.info(
-            `CustomerIO/MessagingInApp version in ${podfileLockPath} set to ${inAppMessagingPodVersions}`
-          )
-        );
-      } else {
-        project.summary.push(
-          logger.formatter.failure(
-            `CustomerIO/MessagingInApp not found in Podfile.lock at ${podfileLockPath}`
-          )
-        );
-      }
-
-      const messagingPushAPNPodVersions = extractPodVersions(
-        podfileLockContent,
-        Patterns.iOS_POD_CIO_PUSH_APN
-      );
-      const messagingPushFCMPodVersions = extractPodVersions(
-        podfileLockContent,
-        Patterns.iOS_POD_CIO_PUSH_FCM
-      );
-      if (messagingPushAPNPodVersions && messagingPushFCMPodVersions) {
-        project.summary.push(
-          logger.formatter.failure(
-            `CustomerIO/MessagingPushAPN and CustomerIO/MessagingPushFCM found in Podfile.lock at ${podfileLockPath}. Both cannot be used at a time, please use only one of them.`
-          )
-        );
-      } else if (messagingPushAPNPodVersions) {
-        project.summary.push(
-          logger.formatter.info(
-            `CustomerIO/MessagingPushAPN version in ${podfileLockPath} set to ${messagingPushAPNPodVersions}`
-          )
-        );
-      } else if (messagingPushFCMPodVersions) {
-        project.summary.push(
-          logger.formatter.info(
-            `CustomerIO/MessagingPushFCM version in ${podfileLockPath} set to ${messagingPushFCMPodVersions}`
-          )
-        );
-      } else {
-        project.summary.push(
-          logger.formatter.warning(
-            `CustomerIO/MessagingPush not found in Podfile.lock at ${podfileLockPath}`
-          )
-        );
-      }
-    } catch (err) {
-      logger.error(
-        `Unable to read Podfile.lock at ${project.podfileLock.path}: %s`,
-        err
-      );
-    }
+    await runCatching(extractPodVersions)(project);
   } else {
     project.summary.push(
       logger.formatter.warning(
-        `No Podfile found at ${project.podfile.path}. The project appears to be using Swift Package Manager (SPM).`
+        `No Podfile found at ${project.podfile.readablePath}. The project appears to be using Swift Package Manager (SPM).`
       )
     );
   }
 }
 
-function extractPodVersions(
-  podfileLockContent: string,
-  podPattern: RegExp
-): string | undefined {
-  let match;
-  const versions: string[] = [];
-  while ((match = podPattern.exec(podfileLockContent)) !== null) {
-    versions.push(match[1]);
-  }
+async function extractPodVersions(project: iOSProject): Promise<void> {
+  const podfileLock = project.podfileLock;
+  const podfileLockContent = podfileLock.content;
 
-  if (versions.length > 0) {
-    const distinctValues = uniqueValues(
-      versions.map((version) => trimEqualOperator(version))
+  const validatePod = (
+    podName: string
+  ): { found: boolean; logs: logger.Log[] } => {
+    let podVersions: string | undefined;
+    const logs: logger.Log[] = [];
+
+    if (podfileLockContent) {
+      podVersions = extractVersionFromPodLock(podfileLockContent, podName);
+      if (podVersions) {
+        logs.push(
+          logger.formatter.info(
+            `${podName} version in ${podfileLock.readablePath} set to ${podVersions}`
+          )
+        );
+      }
+    }
+
+    const found = podVersions !== undefined;
+    if (!found) {
+      logs.push(
+        logger.formatter.failure(
+          `${podName} not found in ${podfileLock.filename} at ${podfileLock.readablePath}`
+        )
+      );
+    }
+    return {
+      found: found,
+      logs: logs,
+    };
+  };
+
+  const trackingPod = validatePod(POD_TRACKING);
+  project.summary.push(...trackingPod.logs);
+  const inAppMessagingPod = validatePod(POD_MESSAGING_IN_APP);
+  project.summary.push(...inAppMessagingPod.logs);
+
+  const pushMessagingAPNPod = validatePod(POD_MESSAGING_PUSH_APN);
+  const pushMessagingFCMPod = validatePod(POD_MESSAGING_PUSH_FCM);
+  if (pushMessagingAPNPod.found && pushMessagingFCMPod.found) {
+    project.summary.push(
+      logger.formatter.failure(
+        `${POD_MESSAGING_PUSH_APN} and ${POD_MESSAGING_PUSH_FCM} found in ${podfileLock.filename} at ${podfileLock.readablePath}. Both cannot be used at a time, please use only one of them.`
+      )
     );
-    return distinctValues.join(', ');
+  } else if (pushMessagingAPNPod.found) {
+    project.summary.push(...pushMessagingAPNPod.logs);
+  } else if (pushMessagingFCMPod.found) {
+    project.summary.push(...pushMessagingFCMPod.logs);
   } else {
-    return undefined;
+    project.summary.push(
+      logger.formatter.warning(
+        `None of ${POD_MESSAGING_PUSH_APN} or ${POD_MESSAGING_PUSH_FCM} found in ${podfileLock.filename} at ${podfileLock.readablePath}`
+      )
+    );
   }
 }

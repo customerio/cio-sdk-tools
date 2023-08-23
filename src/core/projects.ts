@@ -3,6 +3,8 @@ import { runAllChecksForIOS, runAllChecksForReactNative } from '../checks';
 import { Patterns } from '../constants';
 import {
   doesExists,
+  getFilename,
+  getReadablePath,
   readFileContent,
   readFileWithStats,
   searchFileInDirectory,
@@ -18,18 +20,30 @@ type Constructor = new (...args: any[]) => any;
 class File {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly args: Map<string, any>;
-  readonly path: string;
+  readonly filename: string;
+  readonly absolutePath: string;
+  readonly readablePath: string;
   content: string | undefined;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(path: string, args?: Record<string, any>) {
-    this.path = path;
+  constructor(
+    projectRoot: string,
+    filepath: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    args?: Record<string, any>,
+    loadContent: boolean = false
+  ) {
+    this.absolutePath = path.resolve(projectRoot, filepath);
     this.args = new Map(Object.entries(args || {}));
+    this.filename = getFilename(this.absolutePath);
+    this.readablePath = getReadablePath(projectRoot, this.absolutePath);
+    if (loadContent) {
+      this.loadContent();
+    }
   }
 
   loadContent() {
     if (!this.content) {
-      this.content = readFileContent(this.path);
+      this.content = readFileContent(this.absolutePath);
     }
   }
 }
@@ -50,9 +64,11 @@ export interface iOSProject extends MobileProject {
   podfileLock: File;
   isUsingCocoaPods: boolean;
 
-  projectFiles: File[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  xcodeProjectFiles: any[];
+  projectFiles: {
+    file: File;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    xcodeProject: any;
+  }[];
   entitlementsFiles: File[];
   appDelegateFiles: File[];
 }
@@ -60,88 +76,111 @@ export interface iOSProject extends MobileProject {
 // Use mixins to reuse code between classes
 const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
   class extends Base {
+    public projectPath!: string;
     public iOSProjectPath!: string;
     public podfile!: File;
     public podfileLock!: File;
     public isUsingCocoaPods!: boolean;
 
-    public projectFiles: File[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    public xcodeProjectFiles: any[] = [];
+    projectFiles: {
+      file: File;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      xcodeProject: any;
+    }[];
     public entitlementsFiles: File[] = [];
     public appDelegateFiles: File[] = [];
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     constructor(...args: any[]) {
       super(...args);
+      this.projectFiles = [];
     }
 
     // Must be called from constructor only
-    initIOSProject(iOSProjectPath: string) {
-      this.iOSProjectPath = iOSProjectPath;
-      this.podfile = new File(path.join(iOSProjectPath, 'Podfile'));
-      this.podfileLock = new File(path.join(iOSProjectPath, 'Podfile.lock'));
-      this.isUsingCocoaPods = doesExists(this.podfile.path);
+    initIOSProject() {
+      // Pass project path to File constructor for relative path calculation
+      this.podfile = new File(
+        this.projectPath,
+        path.join(this.iOSProjectPath, 'Podfile')
+      );
+      this.podfileLock = new File(
+        this.projectPath,
+        path.join(this.iOSProjectPath, 'Podfile.lock')
+      );
+      this.isUsingCocoaPods = doesExists(this.podfile.absolutePath);
     }
 
-    async locateFiles(projectPath: string): Promise<void> {
+    async locateFiles(): Promise<void> {
       const ignoreDirs = ['/Pods/'];
 
-      const fileKeys = {
+      const filesRecord: Record<string, string> = {
         appDelegateObjectiveC: 'AppDelegate.m',
         appDelegateObjectiveCPlusPlus: 'AppDelegate.mm',
         appDelegateSwift: 'AppDelegate.swift',
-        entitlements: 'entitlements',
-        project: 'pbxproj',
+        entitlements: '.entitlements',
+        project: '.pbxproj',
       };
+
       const filters = new Map<string, RegExp>();
-      filters.set(fileKeys.project, Patterns.iOS_PROJECT_XCODE);
-      filters.set(fileKeys.entitlements, Patterns.iOS_ENTITLEMENTS);
-      filters.set(fileKeys.appDelegateSwift, Patterns.iOS_APP_DELEGATE_SWIFT);
-      filters.set(
-        fileKeys.appDelegateObjectiveC,
-        Patterns.iOS_APP_DELEGATE_OBJECTIVE_C
-      );
-      filters.set(
-        fileKeys.appDelegateObjectiveCPlusPlus,
-        Patterns.iOS_APP_DELEGATE_OBJECTIVE_C_PLUS_PLUS
-      );
+      for (const key in filesRecord) {
+        const filename = filesRecord[key];
+        filters.set(filename, Patterns.createFilePattern(filename));
+      }
 
       const results = await searchFileInDirectory(
-        projectPath,
+        this.iOSProjectPath,
         filters,
         ignoreDirs
       );
 
       this.projectFiles = this.projectFiles.concat(
-        results[fileKeys.project].map((result) => new File(result))
-      );
-      this.xcodeProjectFiles = this.xcodeProjectFiles.concat(
-        results[fileKeys.project].map((result) => {
+        results[filesRecord.project].map((result) => {
           const xcodeProject = xcode.project(result);
           xcodeProject.parseSync();
-          return xcodeProject;
+          return {
+            file: new File(this.projectPath, result, {}, true),
+            xcodeProject: xcodeProject,
+          };
         })
       );
       this.entitlementsFiles = this.entitlementsFiles.concat(
-        results[fileKeys.entitlements].map((result) => new File(result))
+        results[filesRecord.entitlements].map(
+          (result) => new File(this.projectPath, result, {}, true)
+        )
       );
 
       this.appDelegateFiles = this.appDelegateFiles.concat(
-        results[fileKeys.appDelegateSwift].map(
-          (result) => new File(result, { extension: 'swift' })
+        results[filesRecord.appDelegateSwift].map(
+          (result) =>
+            new File(this.projectPath, result, { extension: 'swift' }, true)
         )
       );
       this.appDelegateFiles = this.appDelegateFiles.concat(
-        results[fileKeys.appDelegateObjectiveC].map(
-          (result) => new File(result, { extension: 'Objective-C' })
+        results[filesRecord.appDelegateObjectiveC].map(
+          (result) =>
+            new File(
+              this.projectPath,
+              result,
+              { extension: 'Objective-C' },
+              true
+            )
         )
       );
       this.appDelegateFiles = this.appDelegateFiles.concat(
-        results[fileKeys.appDelegateObjectiveCPlusPlus].map(
-          (result) => new File(result, { extension: 'Objective-C++' })
+        results[filesRecord.appDelegateObjectiveCPlusPlus].map(
+          (result) =>
+            new File(
+              this.projectPath,
+              result,
+              { extension: 'Objective-C++' },
+              true
+            )
         )
       );
+    }
+
+    async runAllChecks(): Promise<void> {
+      await runAllChecksForIOS();
     }
   };
 
@@ -150,27 +189,25 @@ export class iOSNativeProject
   implements MobileProject, iOSProject
 {
   public readonly framework: string = 'iOS';
-  public readonly projectPath: string;
   public readonly summary: Log[] = [];
 
   constructor(projectPath: string) {
     super();
     this.projectPath = projectPath;
-    this.initIOSProject(this.projectPath);
+    this.iOSProjectPath = projectPath;
+    this.initIOSProject();
   }
 
   async loadFilesContent(): Promise<void> {
-    await this.locateFiles(this.projectPath);
+    await this.locateFiles();
 
     this.podfile.loadContent();
     this.podfileLock.loadContent();
     this.projectFile?.loadContent();
-    this.entitlementsFile?.loadContent();
-    this.appDelegateFile?.loadContent();
   }
 
   async runAllChecks(): Promise<void> {
-    await runAllChecksForIOS();
+    await super.runAllChecks();
   }
 }
 
@@ -179,7 +216,6 @@ export class ReactNativeProject
   implements MobileProject, iOSProject
 {
   public readonly framework: string = 'ReactNative';
-  public readonly projectPath: string;
   public readonly summary: Log[] = [];
 
   public readonly packageJsonFile: File;
@@ -190,12 +226,12 @@ export class ReactNativeProject
     this.projectPath = projectPath;
     this.iOSProjectPath = path.join(projectPath, 'ios');
 
-    this.initIOSProject(this.iOSProjectPath);
-    this.packageJsonFile = new File(path.join(projectPath, 'package.json'));
+    this.initIOSProject();
+    this.packageJsonFile = new File(projectPath, 'package.json');
   }
 
   async loadFilesContent(): Promise<void> {
-    await this.locateFiles(this.iOSProjectPath);
+    await this.locateFiles();
     this.findPreferredLockFile();
 
     this.packageJsonFile.loadContent();
@@ -224,14 +260,17 @@ export class ReactNativeProject
         type = 'npm';
       }
 
-      this.packageLockFile = new File(result.path, { type: type });
+      this.packageLockFile = new File(this.projectPath, result.path, {
+        type: type,
+      });
       this.packageLockFile.content = result.content;
     }
   }
 
   async runAllChecks(): Promise<void> {
+    // Run React Native checks first because wrapper frameworks must be validated before native checks
     await runAllChecksForReactNative();
-    await runAllChecksForIOS();
+    await super.runAllChecks();
   }
 }
 
@@ -240,7 +279,6 @@ export class FlutterProject
   implements MobileProject, iOSProject
 {
   public readonly framework: string = 'Flutter';
-  public readonly projectPath: string;
   public readonly summary: Log[] = [];
 
   public readonly pubspecYamlFile: File;
@@ -251,13 +289,13 @@ export class FlutterProject
     this.projectPath = projectPath;
     this.iOSProjectPath = path.join(projectPath, 'ios');
 
-    this.initIOSProject(this.iOSProjectPath);
-    this.pubspecYamlFile = new File(path.join(projectPath, 'pubspec.yaml'));
-    this.pubspecLockFile = new File(path.join(projectPath, 'pubspec.lock'));
+    this.initIOSProject();
+    this.pubspecYamlFile = new File(projectPath, 'pubspec.yaml');
+    this.pubspecLockFile = new File(projectPath, 'pubspec.lock');
   }
 
   async loadFilesContent(): Promise<void> {
-    await this.locateFiles(this.iOSProjectPath);
+    await this.locateFiles();
 
     this.pubspecYamlFile.loadContent();
     this.pubspecLockFile.loadContent();
@@ -266,6 +304,7 @@ export class FlutterProject
   }
 
   async runAllChecks(): Promise<void> {
-    await runAllChecksForIOS();
+    // When added, run Flutter checks first because wrapper frameworks must be validated before native checks
+    await super.runAllChecks();
   }
 }

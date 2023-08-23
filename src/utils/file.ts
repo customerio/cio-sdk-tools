@@ -99,15 +99,26 @@ export async function searchFileInDirectory(
   return results;
 }
 
+export async function parseXML(
+  fileContent: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any | undefined> {
+  try {
+    return await xml2js.parseStringPromise(fileContent, {
+      explicitArray: false,
+    });
+  } catch (err) {
+    /* empty */
+    return undefined;
+  }
+}
+
 export async function readAndParseXML(
   filePath: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any | undefined> {
-  const xml = fs.readFileSync(filePath, 'utf8');
-  const content = await xml2js.parseStringPromise(xml, {
-    explicitArray: false,
-  });
-  return content;
+  const content = readFileContent(filePath);
+  return content ? await parseXML(content) : undefined;
 }
 
 type FileWithStats = {
@@ -133,7 +144,7 @@ export function readFileWithStats(paths: string[]): FileWithStats[] {
   return results;
 }
 
-type FileLinkStats = {
+export type FileLinkStats = {
   isDirectory: boolean;
   isFile: boolean;
   isSymbolicLink: boolean;
@@ -150,5 +161,35 @@ export function getFileLinkStats(path: string): FileLinkStats | undefined {
   } catch (err) {
     /* empty */
     return undefined;
+  }
+}
+
+export function getFilename(absolutePath: string): string {
+  try {
+    return path.basename(absolutePath);
+  } catch (err) {
+    try {
+      const parts = absolutePath.split(path.sep);
+      return parts[parts.length - 1];
+    } catch (err) {
+      /* empty */
+      return absolutePath;
+    }
+  }
+}
+
+export function getReadablePath(
+  baseDirectoryPath: string,
+  absolutePath: string
+): string {
+  try {
+    const directoryName = getFilename(baseDirectoryPath);
+    return path.join(
+      directoryName,
+      path.relative(baseDirectoryPath, absolutePath)
+    );
+  } catch (err) {
+    /* empty */
+    return absolutePath;
   }
 }
