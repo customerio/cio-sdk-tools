@@ -1,6 +1,6 @@
-import * as path from "path";
-import { Conflicts, PACKAGE_NAME_REACT_NATIVE, Patterns } from "../constants";
-import { Context, ReactNativeProject } from "../core";
+import * as path from 'path';
+import { Conflicts, PACKAGE_NAME_REACT_NATIVE, Patterns } from '../constants';
+import { Context, ReactNativeProject } from '../core';
 import {
   FileLinkStats,
   extractVersionFromPackageLock,
@@ -10,17 +10,17 @@ import {
   readDirectory,
   readFileContent,
   runCatching,
-} from "../utils";
+} from '../utils';
 
-const codeInspectionFileExtensions = [".js", ".jsx", ".ts", ".tsx"];
-const exactFilesForCodeInspection = ["App", "index"];
-const flexibleFilesForCodeInspection = ["cio", "customerio"];
+const codeInspectionFileExtensions = ['.js', '.jsx', '.ts', '.tsx'];
+const exactFilesForCodeInspection = ['App', 'index'];
+const flexibleFilesForCodeInspection = ['cio', 'customerio'];
 const ignoredDirectoryPrefixesForCodeInspection = [
-  ".",
-  "_",
-  "node_modules",
-  "android",
-  "ios",
+  '.',
+  '_',
+  'node_modules',
+  'android',
+  'ios',
 ];
 
 export async function runAllChecks(): Promise<void> {
@@ -33,11 +33,11 @@ export async function runAllChecks(): Promise<void> {
 }
 
 async function validateNoConflictingSDKs(
-  project: ReactNativeProject,
+  project: ReactNativeProject
 ): Promise<void> {
   const packageFile = project.packageJsonFile;
   logger.searching(
-    `Checking for conflicting libraries in: ${packageFile.readablePath}`,
+    `Checking for conflicting libraries in: ${packageFile.readablePath}`
   );
 
   const packageJson = JSON.parse(packageFile.content!);
@@ -47,40 +47,40 @@ async function validateNoConflictingSDKs(
     packageJson.dependencies[PACKAGE_NAME_REACT_NATIVE];
   project.summary.push(
     logger.formatter.info(
-      `${PACKAGE_NAME_REACT_NATIVE} version in package.json: ${sdkVersionInPackageJson}`,
-    ),
+      `${PACKAGE_NAME_REACT_NATIVE} version in package.json: ${sdkVersionInPackageJson}`
+    )
   );
 
   const conflictingLibraries = Conflicts.reactNativePackages.filter((lib) =>
-    dependencies.includes(lib),
+    dependencies.includes(lib)
   );
 
   if (conflictingLibraries.length === 0) {
-    logger.success("No conflicting libraries found in package.json");
+    logger.success('No conflicting libraries found in package.json');
   } else {
     logger.warning(
-      "More than one libraries found in package.json for handling push notifications",
-      conflictingLibraries,
+      'More than one libraries found in package.json for handling push notifications',
+      conflictingLibraries
     );
   }
 }
 
 async function validateSDKInitialization(
-  project: ReactNativeProject,
+  project: ReactNativeProject
 ): Promise<void> {
   logger.searching(`Checking for SDK Initialization in React Native`);
   const sdkInitializationFile = searchFilesForSDKInitialization(
-    project.projectPath,
+    project.projectPath
   );
   if (sdkInitializationFile !== undefined) {
     logger.success(`SDK Initialization found in ${sdkInitializationFile}`);
   } else {
-    logger.warning("SDK Initialization not found in suggested files");
+    logger.warning('SDK Initialization not found in suggested files');
   }
 }
 
 function searchFilesForSDKInitialization(
-  directoryPath: string,
+  directoryPath: string
 ): string | undefined {
   let fileNameForSDKInitialization = undefined;
   const files = readDirectory(directoryPath);
@@ -88,7 +88,7 @@ function searchFilesForSDKInitialization(
 
   const isValidFile = (file: string, linkStat: FileLinkStats): boolean => {
     const isIgnoredFile = ignoredDirectoryPrefixesForCodeInspection.some(
-      (dir: string) => file.startsWith(dir),
+      (dir: string) => file.startsWith(dir)
     );
     if (isIgnoredFile) return false;
     else if (linkStat.isSymbolicLink) return false;
@@ -103,15 +103,15 @@ function searchFilesForSDKInitialization(
 
   const filePatternsForCodeInspection = exactFilesForCodeInspection
     .map((filename) =>
-      Patterns.constructFilePattern(filename, codeInspectionFileExtensions),
+      Patterns.constructFilePattern(filename, codeInspectionFileExtensions)
     )
     .concat(
       flexibleFilesForCodeInspection.map((filename) =>
         Patterns.constructKeywordFilePattern(
           filename,
-          codeInspectionFileExtensions,
-        ),
-      ),
+          codeInspectionFileExtensions
+        )
+      )
     );
 
   for (const file of files) {
@@ -129,11 +129,11 @@ function searchFilesForSDKInitialization(
       }
     } else if (linkStat.isFile) {
       const matchingPattern = filePatternsForCodeInspection.find((pattern) =>
-        pattern.test(file),
+        pattern.test(file)
       );
       if (matchingPattern) {
         const fileContent = readFileContent(filePath);
-        if (fileContent && fileContent.includes("CustomerIO.initialize")) {
+        if (fileContent && fileContent.includes('CustomerIO.initialize')) {
           return file;
         }
       }
@@ -148,32 +148,32 @@ async function collectSummary(project: ReactNativeProject): Promise<void> {
     const packageLockFile = project.packageLockFile;
     if (!packageLockFile || !packageLockFile.content) {
       project.summary.push(
-        logger.formatter.warning(`No lock file found for package.json`),
+        logger.formatter.warning(`No lock file found for package.json`)
       );
     } else {
-      const lockFileType = packageLockFile.args.get("type");
+      const lockFileType = packageLockFile.args.get('type');
 
       const sdkVersionInLockFile = extractVersionFromPackageLock(
         packageLockFile.content,
         lockFileType,
-        PACKAGE_NAME_REACT_NATIVE,
+        PACKAGE_NAME_REACT_NATIVE
       );
       if (sdkVersionInLockFile) {
         project.summary.push(
           logger.formatter.info(
-            `${PACKAGE_NAME_REACT_NATIVE} version in ${packageLockFile.readablePath} file set to ${sdkVersionInLockFile}`,
-          ),
+            `${PACKAGE_NAME_REACT_NATIVE} version in ${packageLockFile.readablePath} file set to ${sdkVersionInLockFile}`
+          )
         );
       } else {
         project.summary.push(
           logger.formatter.warning(
-            `${PACKAGE_NAME_REACT_NATIVE} not found in ${packageLockFile.readablePath}`,
-          ),
+            `${PACKAGE_NAME_REACT_NATIVE} not found in ${packageLockFile.readablePath}`
+          )
         );
       }
     }
   } catch (err) {
-    logger.error("Unable to read lock files for package.json: %s", err);
+    logger.error('Unable to read lock files for package.json: %s', err);
   }
 
   try {
@@ -182,25 +182,25 @@ async function collectSummary(project: ReactNativeProject): Promise<void> {
 
     const reactNativePodVersion = extractVersionFromPodLock(
       podfileLockContent,
-      PACKAGE_NAME_REACT_NATIVE,
+      PACKAGE_NAME_REACT_NATIVE
     );
     if (reactNativePodVersion) {
       project.summary.push(
         logger.formatter.info(
-          `${PACKAGE_NAME_REACT_NATIVE} version in ${podfileLock.readablePath} set to ${reactNativePodVersion}`,
-        ),
+          `${PACKAGE_NAME_REACT_NATIVE} version in ${podfileLock.readablePath} set to ${reactNativePodVersion}`
+        )
       );
     } else {
       project.summary.push(
         logger.formatter.warning(
-          `${PACKAGE_NAME_REACT_NATIVE} not found in ${podfileLock.readablePath}`,
-        ),
+          `${PACKAGE_NAME_REACT_NATIVE} not found in ${podfileLock.readablePath}`
+        )
       );
     }
   } catch (err) {
     logger.error(
       `Unable to read Podfile.lock at ${project.podfileLock.readablePath}: %s`,
-      err,
+      err
     );
   }
 }

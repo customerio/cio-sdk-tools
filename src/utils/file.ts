@@ -1,13 +1,13 @@
-import * as fs from "fs";
-import * as path from "path";
-import * as xml2js from "xml2js";
-import { logger } from ".";
+import * as fs from 'fs';
+import * as path from 'path';
+import * as xml2js from 'xml2js';
+import { logger } from '.';
 
 export function doesExists(path: string): boolean {
   try {
     return fs.existsSync(path);
   } catch (err) {
-    logger.error("Error checking directory: %s", err);
+    logger.error('Error checking directory: %s', err);
     return false;
   }
 }
@@ -17,7 +17,7 @@ export function isDirectory(path: string): boolean {
     const stat = fs.statSync(path);
     return stat.isDirectory();
   } catch (err) {
-    logger.error("Error checking directory: %s", err);
+    logger.error('Error checking directory: %s', err);
     return false;
   }
 }
@@ -32,14 +32,14 @@ export function isDirectoryNonEmpty(path: string): boolean {
     const files = fs.readdirSync(path);
     return files.length > 0;
   } catch (err) {
-    logger.error("Error checking directory: %s", err);
+    logger.error('Error checking directory: %s', err);
     return false;
   }
 }
 
 export function readDirectory(path: string): string[] | undefined {
   try {
-    return fs.readdirSync(path, "utf8");
+    return fs.readdirSync(path, 'utf8');
   } catch (err) {
     return undefined;
   }
@@ -47,7 +47,7 @@ export function readDirectory(path: string): string[] | undefined {
 
 export function readFileContent(path: string): string | undefined {
   try {
-    return fs.readFileSync(path, "utf8");
+    return fs.readFileSync(path, 'utf8');
   } catch (err) {
     return undefined;
   }
@@ -64,10 +64,10 @@ export function readFileContent(path: string): string | undefined {
 export async function searchFileInDirectory(
   directoryPath: string,
   filters: Map<string, RegExp>,
-  ignoreDirs: string[] = [],
+  ignoreDirs: string[] = []
 ): Promise<Record<string, string[]>> {
   const results: Record<string, string[]> = Object.fromEntries(
-    [...filters.keys()].map((key) => [key, []]),
+    [...filters.keys()].map((key) => [key, []])
   );
 
   const files = fs.readdirSync(directoryPath);
@@ -82,7 +82,7 @@ export async function searchFileInDirectory(
       const subDirResults = await searchFileInDirectory(
         filename,
         filters,
-        ignoreDirs,
+        ignoreDirs
       );
       for (const key of filters.keys()) {
         results[key] = results[key].concat(subDirResults[key]);
@@ -100,7 +100,7 @@ export async function searchFileInDirectory(
 }
 
 export async function parseXML(
-  fileContent: string,
+  fileContent: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any | undefined> {
   try {
@@ -114,7 +114,7 @@ export async function parseXML(
 }
 
 export async function readAndParseXML(
-  filePath: string,
+  filePath: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any | undefined> {
   const content = readFileContent(filePath);
@@ -134,7 +134,7 @@ export function readFileWithStats(paths: string[]): FileWithStats[] {
       path: path,
     };
     try {
-      result.content = fs.readFileSync(path, "utf8");
+      result.content = fs.readFileSync(path, 'utf8');
       result.lastUpdated = fs.statSync(path).mtime.getTime();
     } catch (err) {
       /* empty */
@@ -180,13 +180,13 @@ export function getFilename(absolutePath: string): string {
 
 export function getReadablePath(
   baseDirectoryPath: string,
-  absolutePath: string,
+  absolutePath: string
 ): string {
   try {
     const directoryName = getFilename(baseDirectoryPath);
     return path.join(
       directoryName,
-      path.relative(baseDirectoryPath, absolutePath),
+      path.relative(baseDirectoryPath, absolutePath)
     );
   } catch (err) {
     /* empty */

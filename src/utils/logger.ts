@@ -1,7 +1,7 @@
-import chalk from "chalk";
-import * as os from "os";
-import * as path from "path";
-import winston from "winston";
+import chalk from 'chalk';
+import * as os from 'os';
+import * as path from 'path';
+import winston from 'winston';
 
 const logger: winston.Logger = createLogger();
 
@@ -10,7 +10,7 @@ export function log(log: Log) {
 }
 
 export function logWithFormat(
-  callback: (formatter: typeof messageFormatter) => Log,
+  callback: (formatter: typeof messageFormatter) => Log
 ) {
   log(callback(messageFormatter));
 }
@@ -80,40 +80,40 @@ function defineLogStyle(config: { level: string; icon: string }) {
 
 export const messageFormatter = {
   error: defineLogStyle({
-    level: "error",
-    icon: "🚫",
+    level: 'error',
+    icon: '🚫',
   }),
   failure: defineLogStyle({
-    level: "error",
-    icon: chalk.red("[✗]"),
+    level: 'error',
+    icon: chalk.red('[✗]'),
   }),
   fatal: defineLogStyle({
-    level: "error",
-    icon: "🚫🚫🚫",
+    level: 'error',
+    icon: '🚫🚫🚫',
   }),
   info: defineLogStyle({
-    level: "info",
-    icon: chalk.cyan("[i]"),
+    level: 'info',
+    icon: chalk.cyan('[i]'),
   }),
   progress: defineLogStyle({
-    level: "info",
-    icon: chalk.blue("[○]"),
+    level: 'info',
+    icon: chalk.blue('[○]'),
   }),
   result: defineLogStyle({
-    level: "info",
-    icon: chalk.keyword("orange")("[→]"),
+    level: 'info',
+    icon: chalk.keyword('orange')('[→]'),
   }),
   searching: defineLogStyle({
-    level: "info",
-    icon: chalk.green("[⠏]"),
+    level: 'info',
+    icon: chalk.green('[⠏]'),
   }),
   success: defineLogStyle({
-    level: "info",
-    icon: chalk.green("[✓]"),
+    level: 'info',
+    icon: chalk.green('[✓]'),
   }),
   warning: defineLogStyle({
-    level: "warn",
-    icon: chalk.yellow("[!]"),
+    level: 'warn',
+    icon: chalk.yellow('[!]'),
   }),
 };
 
@@ -135,14 +135,14 @@ export function configureLogger(options: {
   verbose: boolean;
   saveReport?: string;
 }) {
-  logger.level = options.verbose ? "info" : "warn";
+  logger.level = options.verbose ? 'info' : 'warn';
   if (options.saveReport !== undefined) {
     let destination: string;
-    if (options.saveReport === "") {
+    if (options.saveReport === '') {
       destination = path.join(
         os.homedir(),
-        "Desktop",
-        "cio-sdk-tools-output.logs",
+        'Desktop',
+        'cio-sdk-tools-output.logs'
       );
     } else {
       destination = options.saveReport;
@@ -153,9 +153,9 @@ export function configureLogger(options: {
         filename: destination,
         format: winston.format.combine(
           winston.format.timestamp(),
-          fileFormat(),
+          fileFormat()
         ),
-      }),
+      })
     );
   }
 }
@@ -168,7 +168,7 @@ function createLogger(): winston.Logger {
   ];
 
   return winston.createLogger({
-    level: "info",
+    level: 'info',
     transports: transports,
   });
 }

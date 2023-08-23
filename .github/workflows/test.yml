@@ -1,0 +1,47 @@
+name: Test
+
+on: [push, pull_request]
+
+jobs:
+  test-deploy:
+    name: Test able to deploy to npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Check for known vulnerabilities
+        run: npm audit
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Publish test
+        run: npm publish --dry-run
+
+  assert-lint:
+    name: Assert lint check passes and no lint errors exist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint:report
+
+      - name: Annotate Code Linting Results
+        uses: ataylorme/eslint-annotate-action@v2
+        with:
+          check-name: 'eslint results'
+          only-pr-files: false 
+          fail-on-warning: false 
+          fail-on-error: true 
+          markdown-report-on-step-summary: true 
+          repo-token: "${{ secrets.GITHUB_TOKEN }}"
+          report-json: "eslint_report.json"

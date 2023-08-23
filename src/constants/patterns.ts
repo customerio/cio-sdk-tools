@@ -4,21 +4,21 @@ export function createFilePattern(fileNameWithExtension: string): RegExp {
 
 export function constructFilePattern(
   fileName: string,
-  extensions: string[],
+  extensions: string[]
 ): RegExp {
   const joinedExtensions = extensions
-    .map((ext) => ext.replace(".", "\\."))
-    .join("|"); // Escape the dots and join with |
+    .map((ext) => ext.replace('.', '\\.'))
+    .join('|'); // Escape the dots and join with |
   return new RegExp(`${fileName}(${joinedExtensions})$`);
 }
 export function constructKeywordFilePattern(
   keyword: string,
-  extensions: string[],
+  extensions: string[]
 ): RegExp {
   const joinedExtensions = extensions
-    .map((ext) => ext.replace(".", "\\."))
-    .join("|"); // Escape the dots and join with |
-  return new RegExp(`${keyword}.*(${joinedExtensions})$`, "i");
+    .map((ext) => ext.replace('.', '\\.'))
+    .join('|'); // Escape the dots and join with |
+  return new RegExp(`${keyword}.*(${joinedExtensions})$`, 'i');
 }
 
 export const iOS_USER_NOTIFICATION_CENTER_SWIFT: RegExp =

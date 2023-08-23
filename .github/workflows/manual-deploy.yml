@@ -1,0 +1,35 @@
+name: Manual Deploy to npm 
+
+# This workflow is designed to be triggered manually.
+on:
+  workflow_dispatch: 
+    inputs:
+      tagToDeploy:
+        description: 'Type name of existing git tag (example: 1.0.3) to push to npm'
+        required: true
+        type: string 
+
+jobs:
+  deploy-npm:
+    name: Deploy package to npm 
+    runs-on: macos-12
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Checkout provided git tag  
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ github.event.inputs.tagToDeploy }}
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Deploy to npm
+        run: ./scripts/deploy-code.sh
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          IS_PRERELEASE: false
+

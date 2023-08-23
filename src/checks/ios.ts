@@ -1,4 +1,4 @@
-import * as path from "path";
+import * as path from 'path';
 import {
   Conflicts,
   POD_MESSAGING_IN_APP,
@@ -6,8 +6,8 @@ import {
   POD_MESSAGING_PUSH_FCM,
   POD_TRACKING,
   Patterns,
-} from "../constants";
-import { Context, iOSProject } from "../core";
+} from '../constants';
+import { Context, iOSProject } from '../core';
 import {
   extractVersionFromPodLock,
   getReadablePath,
@@ -16,7 +16,7 @@ import {
   readFileContent,
   runCatching,
   trimQuotes,
-} from "../utils";
+} from '../utils';
 
 export async function runAllChecks(): Promise<void> {
   const context = Context.get();
@@ -30,7 +30,7 @@ export async function runAllChecks(): Promise<void> {
 }
 
 async function analyzeNotificationServiceExtensionProperties(
-  project: iOSProject,
+  project: iOSProject
 ): Promise<void> {
   for (const { file: projectFile, xcodeProject } of project.projectFiles) {
     logger.searching(`Checking project at path: ${projectFile.readablePath}`);
@@ -50,7 +50,7 @@ async function validateNotificationServiceExtension(
   xcodeProject: any,
   project: iOSProject,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  targets: any[],
+  targets: any[]
 ) {
   let extensionCount = 0;
   let isEmbedded = false;
@@ -68,22 +68,22 @@ async function validateNotificationServiceExtension(
 
     if (
       productType &&
-      trimQuotes(productType) === "com.apple.product-type.app-extension"
+      trimQuotes(productType) === 'com.apple.product-type.app-extension'
     ) {
       logger.progress(`Found app extension: ${target.name}`);
 
       const inferredDirectoryName =
-        target.name || target.productReference_comment.replace(".appex", "");
+        target.name || target.productReference_comment.replace('.appex', '');
       const possibleInfoPlistPath =
-        `./${inferredDirectoryName}/Info.plist`.replace(/"/g, "");
+        `./${inferredDirectoryName}/Info.plist`.replace(/"/g, '');
 
       const infoPlistPath = path.join(
         project.iOSProjectPath,
-        possibleInfoPlistPath,
+        possibleInfoPlistPath
       );
       const infoPlistReadablePath = getReadablePath(
         project.projectPath,
-        infoPlistPath,
+        infoPlistPath
       );
       logger.searching(`Checking Info.plist at path: ${infoPlistReadablePath}`);
       const infoPlistContent = await readAndParseXML(infoPlistPath);
@@ -96,27 +96,27 @@ async function validateNotificationServiceExtension(
         // Check for deployment target for NSE
         const deploymentTarget = getDeploymentTargetVersion(
           xcodeProject,
-          target,
+          target
         );
         logger.result(
-          `Deployment Target Version for NSE: ${deploymentTarget}. Ensure this version is not higher than the iOS version of the devices where the app will be installed. A higher target version may prevent some features, like rich notifications, from working correctly.`,
+          `Deployment Target Version for NSE: ${deploymentTarget}. Ensure this version is not higher than the iOS version of the devices where the app will be installed. A higher target version may prevent some features, like rich notifications, from working correctly.`
         );
       }
     }
 
     if (
       productType &&
-      trimQuotes(productType) === "com.apple.product-type.application"
+      trimQuotes(productType) === 'com.apple.product-type.application'
     ) {
       logger.searching(
-        `Checking if the NSE is embedded into target app: ${target.name}`,
+        `Checking if the NSE is embedded into target app: ${target.name}`
       );
       // Check if the target is listed in the Embed App Extensions build phase.
       if (
         target.buildPhases &&
         target.buildPhases.find(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (phase: any) => trimQuotes(phase.comment) === "Embed App Extensions",
+          (phase: any) => trimQuotes(phase.comment) === 'Embed App Extensions'
         )
       ) {
         isEmbedded = true;
@@ -125,7 +125,7 @@ async function validateNotificationServiceExtension(
         target.buildPhases.find(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (phase: any) =>
-            trimQuotes(phase.comment) === "Embed Foundation Extensions",
+            trimQuotes(phase.comment) === 'Embed Foundation Extensions'
         )
       ) {
         isFoundationExtension = true;
@@ -135,20 +135,20 @@ async function validateNotificationServiceExtension(
 
   if (extensionCount > 1) {
     logger.failure(
-      "Multiple Notification Service Extensions found. Only one should be present.",
+      'Multiple Notification Service Extensions found. Only one should be present.'
     );
   } else if (extensionCount === 1) {
     if (isEmbedded) {
-      logger.success("Notification Service Extension found and embedded.");
+      logger.success('Notification Service Extension found and embedded.');
     } else if (isFoundationExtension) {
       logger.info(
-        "Notification Service Extension found but not embedded as it is a Foundation Extension.",
+        'Notification Service Extension found but not embedded as it is a Foundation Extension.'
       );
     } else {
-      logger.failure("Notification Service Extension found but not embedded.");
+      logger.failure('Notification Service Extension found but not embedded.');
     }
   } else {
-    logger.failure("Notification Service Extension not found.");
+    logger.failure('Notification Service Extension not found.');
   }
 }
 
@@ -170,20 +170,20 @@ async function validateNotificationServiceExtension(
 function isNotificationServiceExtension(content: any) {
   // Check if 'NSExtension' is present as a key, accounting for both string and array type.
   const hasNSExtensionKey = Array.isArray(content.key)
-    ? content.key.includes("NSExtension")
-    : content.key === "NSExtension";
+    ? content.key.includes('NSExtension')
+    : content.key === 'NSExtension';
 
   // Check if 'NSExtensionPointIdentifier' is present inside the nested dict, accounting for both string and array type.
   const hasNSExtensionPointIdentifier =
     content.dict && Array.isArray(content.dict.key)
-      ? content.dict.key.includes("NSExtensionPointIdentifier")
-      : content.dict.key === "NSExtensionPointIdentifier";
+      ? content.dict.key.includes('NSExtensionPointIdentifier')
+      : content.dict.key === 'NSExtensionPointIdentifier';
 
   // Check if the value associated with 'NSExtensionPointIdentifier' is 'com.apple.usernotifications.service'.
   const hasUserNotificationsService =
     content.dict && Array.isArray(content.dict.string)
-      ? content.dict.string.includes("com.apple.usernotifications.service")
-      : content.dict.string === "com.apple.usernotifications.service";
+      ? content.dict.string.includes('com.apple.usernotifications.service')
+      : content.dict.string === 'com.apple.usernotifications.service';
 
   // If all checks pass, return true; otherwise, return false.
   return (
@@ -198,7 +198,7 @@ function getDeploymentTargetVersion(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   pbxProject: any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  notificationExtensionNativeTarget: any,
+  notificationExtensionNativeTarget: any
 ) {
   const buildConfig = pbxProject.pbxXCBuildConfigurationSection();
   const configList = pbxProject.pbxXCConfigurationList();
@@ -212,14 +212,14 @@ function getDeploymentTargetVersion(
 
   if (
     productType &&
-    trimQuotes(productType) === "com.apple.product-type.app-extension"
+    trimQuotes(productType) === 'com.apple.product-type.app-extension'
   ) {
     const configListKey =
       notificationExtensionNativeTarget.buildConfigurationList;
     const buildConfigurations = configList[configListKey].buildConfigurations;
     nseBuildConfigKeys = buildConfigurations.map(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (config: any) => config.value,
+      (config: any) => config.value
     );
   }
 
@@ -231,9 +231,9 @@ function getDeploymentTargetVersion(
       if (
         nseBuildConfigKeys.includes(key) &&
         config.buildSettings &&
-        config.buildSettings["IPHONEOS_DEPLOYMENT_TARGET"]
+        config.buildSettings['IPHONEOS_DEPLOYMENT_TARGET']
       ) {
-        return config.buildSettings["IPHONEOS_DEPLOYMENT_TARGET"];
+        return config.buildSettings['IPHONEOS_DEPLOYMENT_TARGET'];
       }
     }
   }
@@ -242,24 +242,24 @@ function getDeploymentTargetVersion(
 }
 
 async function validateUserNotificationCenterDelegate(
-  project: iOSProject,
+  project: iOSProject
 ): Promise<void> {
   let allRequirementsMet = false;
   for (const appDelegateFile of project.appDelegateFiles) {
     logger.searching(
-      `Checking AppDelegate at path: ${appDelegateFile.readablePath}`,
+      `Checking AppDelegate at path: ${appDelegateFile.readablePath}`
     );
     const contents = readFileContent(appDelegateFile.absolutePath)!;
 
-    const extension = appDelegateFile.args.get("extension");
+    const extension = appDelegateFile.args.get('extension');
     switch (extension) {
-      case "swift":
+      case 'swift':
         allRequirementsMet =
           allRequirementsMet ||
           Patterns.iOS_USER_NOTIFICATION_CENTER_SWIFT.test(contents);
         break;
-      case "Objective-C":
-      case "Objective-C++":
+      case 'Objective-C':
+      case 'Objective-C++':
         allRequirementsMet =
           allRequirementsMet ||
           Patterns.iOS_USER_NOTIFICATION_CENTER_OBJC.test(contents);
@@ -269,11 +269,11 @@ async function validateUserNotificationCenterDelegate(
 
   if (allRequirementsMet) {
     logger.success(
-      `Found the method in AppDelegate required to track the "open" metric when a push notification is clicked.`,
+      `Found the method in AppDelegate required to track the "open" metric when a push notification is clicked.`
     );
   } else {
     logger.failure(
-      `Didn't find the necessary method in AppDelegate to track the "open" metric when a push notification is clicked.`,
+      `Didn't find the necessary method in AppDelegate to track the "open" metric when a push notification is clicked.`
     );
   }
 }
@@ -283,7 +283,7 @@ async function validatePushEntitlements(project: iOSProject): Promise<void> {
 
   for (const entitlementsFile of project.entitlementsFiles) {
     logger.searching(
-      `Checking entitlements file at path: ${entitlementsFile.readablePath}`,
+      `Checking entitlements file at path: ${entitlementsFile.readablePath}`
     );
     const contents = readFileContent(entitlementsFile.absolutePath)!;
     allRequirementsMet =
@@ -305,7 +305,7 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
 
   const podfileLock = project.podfileLock;
   logger.searching(
-    `Checking for conflicting libraries in: ${podfileLock.readablePath}`,
+    `Checking for conflicting libraries in: ${podfileLock.readablePath}`
   );
   const podfileLockContent = readFileContent(podfileLock.absolutePath);
   if (!podfileLockContent) {
@@ -314,14 +314,14 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
   }
 
   const conflictingPods = Conflicts.iosPods.filter((lib) =>
-    podfileLockContent.includes(lib),
+    podfileLockContent.includes(lib)
   );
   if (conflictingPods.length === 0) {
-    logger.success("No conflicting pods found in Podfile");
+    logger.success('No conflicting pods found in Podfile');
   } else {
     logger.warning(
-      "More than one pods found in Podfile for handling push notifications",
-      conflictingPods,
+      'More than one pods found in Podfile for handling push notifications',
+      conflictingPods
     );
   }
 }
@@ -332,8 +332,8 @@ async function collectSummary(project: iOSProject): Promise<void> {
   } else {
     project.summary.push(
       logger.formatter.warning(
-        `No Podfile found at ${project.podfile.readablePath}. The project appears to be using Swift Package Manager (SPM).`,
-      ),
+        `No Podfile found at ${project.podfile.readablePath}. The project appears to be using Swift Package Manager (SPM).`
+      )
     );
   }
 }
@@ -343,7 +343,7 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
   const podfileLockContent = podfileLock.content;
 
   const validatePod = (
-    podName: string,
+    podName: string
   ): { found: boolean; logs: logger.Log[] } => {
     let podVersions: string | undefined;
     const logs: logger.Log[] = [];
@@ -353,8 +353,8 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
       if (podVersions) {
         logs.push(
           logger.formatter.info(
-            `${podName} version in ${podfileLock.readablePath} set to ${podVersions}`,
-          ),
+            `${podName} version in ${podfileLock.readablePath} set to ${podVersions}`
+          )
         );
       }
     }
@@ -363,8 +363,8 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
     if (!found) {
       logs.push(
         logger.formatter.failure(
-          `${podName} not found in ${podfileLock.filename} at ${podfileLock.readablePath}`,
-        ),
+          `${podName} not found in ${podfileLock.filename} at ${podfileLock.readablePath}`
+        )
       );
     }
     return {
@@ -383,8 +383,8 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
   if (pushMessagingAPNPod.found && pushMessagingFCMPod.found) {
     project.summary.push(
       logger.formatter.failure(
-        `${POD_MESSAGING_PUSH_APN} and ${POD_MESSAGING_PUSH_FCM} found in ${podfileLock.filename} at ${podfileLock.readablePath}. Both cannot be used at a time, please use only one of them.`,
-      ),
+        `${POD_MESSAGING_PUSH_APN} and ${POD_MESSAGING_PUSH_FCM} found in ${podfileLock.filename} at ${podfileLock.readablePath}. Both cannot be used at a time, please use only one of them.`
+      )
     );
   } else if (pushMessagingAPNPod.found) {
     project.summary.push(...pushMessagingAPNPod.logs);
@@ -393,8 +393,8 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
   } else {
     project.summary.push(
       logger.formatter.warning(
-        `None of ${POD_MESSAGING_PUSH_APN} or ${POD_MESSAGING_PUSH_FCM} found in ${podfileLock.filename} at ${podfileLock.readablePath}`,
-      ),
+        `None of ${POD_MESSAGING_PUSH_APN} or ${POD_MESSAGING_PUSH_FCM} found in ${podfileLock.filename} at ${podfileLock.readablePath}`
+      )
     );
   }
 }

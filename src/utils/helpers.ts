@@ -1,10 +1,10 @@
-import { logger } from ".";
+import { logger } from '.';
 
 export function runCatching<T>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   fn: (...args: any[]) => T | Promise<T>,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  onError?: (error: any) => void,
+  onError?: (error: any) => void
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return async function (...args: any[]) {
