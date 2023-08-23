@@ -8,7 +8,12 @@ import {
   ReactNativeProject,
   iOSNativeProject,
 } from "./core";
-import { isDirectoryNonEmpty, logger, readFileContent } from "./utils";
+import {
+  getFilename,
+  isDirectoryNonEmpty,
+  logger,
+  readFileContent,
+} from "./utils";
 import { configureLogger } from "./utils/logger";
 
 const program = new Command();
@@ -27,7 +32,9 @@ async function doctor(projectPath: string) {
     process.exit(1);
   }
 
-  logger.info(`Detected framework: ${project.framework} in ${projectPath}`);
+  logger.info(
+    `Detected framework: ${project.framework} in ${getFilename(projectPath)}`,
+  );
   Context.create(project);
 
   await project.loadFilesContent();
