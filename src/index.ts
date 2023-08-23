@@ -85,7 +85,7 @@ program
     new Option(
       "-v, --verbose",
       "Enable verbose mode, providing detailed information about the operations",
-    ).default(false),
+    ).default(true),
   )
   .addOption(new Option("-r, --report <filename>", "Output report to file"))
   .action((path, options) => {
