@@ -105,7 +105,7 @@ export const messageFormatter = {
   }),
   searching: defineLogStyle({
     level: "info",
-    icon: `${chalk.green("[")}🔎${chalk.green("]")}`,
+    icon: chalk.green("[⠏]"),
   }),
   success: defineLogStyle({
     level: "info",
