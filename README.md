@@ -24,6 +24,7 @@ The tool assists in diagnosing and troubleshooting the Customer.io mobile SDK in
 | SDK Initialization     | [Read More](https://www.customer.io/docs/sdk/ios/getting-started/#initialize-the-sdk) | [Read More](https://www.customer.io/docs/sdk/react-native/getting-started/#initialize-the-sdk) | [Read More](https://www.customer.io/docs/sdk/flutter/getting-started/#initialize-the-sdk) |
 | Push Notification Setup| [Read More](https://www.customer.io/docs/sdk/ios/push/#rich-push) | [Read More](https://www.customer.io/docs/sdk/react-native/push-notifications/push/) | [Read More](https://www.customer.io/docs/sdk/flutter/push-notifications/push/) |
 
+
 ## Installation
 To install the tool:
 
