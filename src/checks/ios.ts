@@ -5,7 +5,6 @@ import {
   POD_MESSAGING_PUSH_APN,
   POD_MESSAGING_PUSH_FCM,
   POD_TRACKING,
-  Patterns,
 } from '../constants';
 import { Context, iOSProject } from '../core';
 import {
@@ -13,7 +12,6 @@ import {
   getReadablePath,
   logger,
   readAndParseXML,
-  readFileContent,
   runCatching,
   trimQuotes,
 } from '../utils';
@@ -247,26 +245,31 @@ async function validateUserNotificationCenterDelegate(
   project: iOSProject
 ): Promise<void> {
   let allRequirementsMet = false;
+  const userNotificationCenterPatternSwift =
+    /func\s+userNotificationCenter\(\s*_\s*center:\s*UNUserNotificationCenter,\s*didReceive\s*response:\s*UNNotificationResponse,\s*withCompletionHandler\s*completionHandler:/;
+  const userNotificationCenterPatternObjC =
+    /-\s*\(\s*void\s*\)\s*userNotificationCenter:\s*\(UNUserNotificationCenter\s*\*\)\s*center\s*didReceiveNotificationResponse:\s*\(UNNotificationResponse\s*\*\)\s*response\s*withCompletionHandler:\s*\(void\s*\(\^\)\(void\)\)\s*completionHandler/;
+
   for (const appDelegateFile of project.appDelegateFiles) {
     logger.searching(
       `Checking AppDelegate at path: ${appDelegateFile.readablePath}`
     );
-    const contents = readFileContent(appDelegateFile.absolutePath)!;
-
     const extension = appDelegateFile.args.get('extension');
+    let pattern: RegExp;
     switch (extension) {
       case 'swift':
-        allRequirementsMet =
-          allRequirementsMet ||
-          Patterns.iOS_USER_NOTIFICATION_CENTER_SWIFT.test(contents);
+        pattern = userNotificationCenterPatternSwift;
         break;
       case 'Objective-C':
       case 'Objective-C++':
-        allRequirementsMet =
-          allRequirementsMet ||
-          Patterns.iOS_USER_NOTIFICATION_CENTER_OBJC.test(contents);
+        pattern = userNotificationCenterPatternObjC;
         break;
+      default:
+        continue;
     }
+
+    allRequirementsMet =
+      allRequirementsMet || pattern.test(appDelegateFile.content!);
   }
 
   if (allRequirementsMet) {
@@ -307,14 +310,14 @@ async function validateSDKInitialization(project: iOSProject): Promise<void> {
 
 async function validatePushEntitlements(project: iOSProject): Promise<void> {
   let allRequirementsMet = false;
+  const pushEnvPattern = /<key>\s*aps-environment\s*<\/key>/;
 
   for (const entitlementsFile of project.entitlementsFiles) {
     logger.searching(
       `Checking entitlements file at path: ${entitlementsFile.readablePath}`
     );
-    const contents = readFileContent(entitlementsFile.absolutePath)!;
     allRequirementsMet =
-      allRequirementsMet || Patterns.iOS_PUSH_ENV_ENTITLEMENT.test(contents);
+      allRequirementsMet || pushEnvPattern.test(entitlementsFile.content!);
   }
 
   if (allRequirementsMet) {
@@ -334,7 +337,7 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
   logger.searching(
     `Checking for conflicting libraries in: ${podfileLock.readablePath}`
   );
-  const podfileLockContent = readFileContent(podfileLock.absolutePath);
+  const podfileLockContent = podfileLock.content;
   if (!podfileLockContent) {
     logger.failure(`No podfile.lock found at ${podfileLock.readablePath}`);
     return;
