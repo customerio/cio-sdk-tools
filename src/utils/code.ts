@@ -1,8 +1,9 @@
 import path from 'path';
-import { Patterns } from '../constants';
 import { Context } from '../core';
 import {
   FileLinkStats,
+  constructFilePattern,
+  constructKeywordFilePattern,
   getFileLinkStats,
   getReadablePath,
   readDirectory,
@@ -45,12 +46,10 @@ function searchFilesRecursivelyForCode(
 
   const targetExtensions = Object.keys(config.codePatternByExtension);
   const filePatternsForCodeInspection = config.targetFileNames
-    .map((filename) =>
-      Patterns.constructFilePattern(filename, targetExtensions)
-    )
+    .map((filename) => constructFilePattern(filename, targetExtensions))
     .concat(
       config.targetFilePatterns.map((filename) =>
-        Patterns.constructKeywordFilePattern(filename, targetExtensions)
+        constructKeywordFilePattern(filename, targetExtensions)
       )
     );
 

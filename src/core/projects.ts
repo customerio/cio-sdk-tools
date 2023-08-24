@@ -1,6 +1,5 @@
 import * as path from 'path';
 import { runAllChecksForIOS, runAllChecksForReactNative } from '../checks';
-import { Patterns } from '../constants';
 import {
   doesExists,
   getFilename,
@@ -13,6 +12,7 @@ import { Log } from '../utils/logger';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import xcode from 'xcode';
+import { createFilePattern } from '../utils';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Constructor = new (...args: any[]) => any;
@@ -122,7 +122,7 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
       const filters = new Map<string, RegExp>();
       for (const key in filesRecord) {
         const filename = filesRecord[key];
-        filters.set(filename, Patterns.createFilePattern(filename));
+        filters.set(filename, createFilePattern(filename));
       }
 
       const results = await searchFileInDirectory(this.iOSProjectPath, filters);
