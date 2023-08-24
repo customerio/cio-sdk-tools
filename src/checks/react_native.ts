@@ -1,27 +1,12 @@
-import * as path from 'path';
-import { Conflicts, PACKAGE_NAME_REACT_NATIVE, Patterns } from '../constants';
+import { Conflicts, PACKAGE_NAME_REACT_NATIVE } from '../constants';
 import { Context, ReactNativeProject } from '../core';
 import {
-  FileLinkStats,
   extractVersionFromPackageLock,
   extractVersionFromPodLock,
-  getFileLinkStats,
   logger,
-  readDirectory,
-  readFileContent,
   runCatching,
 } from '../utils';
-
-const codeInspectionFileExtensions = ['.js', '.jsx', '.ts', '.tsx'];
-const exactFilesForCodeInspection = ['App', 'index'];
-const flexibleFilesForCodeInspection = ['cio', 'customerio'];
-const ignoredDirectoryPrefixesForCodeInspection = [
-  '.',
-  '_',
-  'node_modules',
-  'android',
-  'ios',
-];
+import { searchFilesForCode } from '../utils/code';
 
 export async function runAllChecks(): Promise<void> {
   const context = Context.get();
@@ -69,78 +54,28 @@ async function validateSDKInitialization(
   project: ReactNativeProject
 ): Promise<void> {
   logger.searching(`Checking for SDK Initialization in React Native`);
-  const sdkInitializationFile = searchFilesForSDKInitialization(
+
+  const sdkInitializationPattern = /CustomerIO\.initialize/;
+  const sdkInitializationFiles = searchFilesForCode(
+    {
+      codePatternByExtension: {
+        '.js': sdkInitializationPattern,
+        '.jsx': sdkInitializationPattern,
+        '.ts': sdkInitializationPattern,
+        '.tsx': sdkInitializationPattern,
+      },
+      ignoreDirectories: ['android', 'ios'],
+      targetFileNames: ['App', 'index'],
+      targetFilePatterns: ['cio', 'customerio'],
+    },
     project.projectPath
   );
-  if (sdkInitializationFile !== undefined) {
-    logger.success(`SDK Initialization found in ${sdkInitializationFile}`);
+
+  if (sdkInitializationFiles !== undefined) {
+    logger.success(`SDK Initialization found in ${sdkInitializationFiles}`);
   } else {
     logger.warning('SDK Initialization not found in suggested files');
   }
-}
-
-function searchFilesForSDKInitialization(
-  directoryPath: string
-): string | undefined {
-  let fileNameForSDKInitialization = undefined;
-  const files = readDirectory(directoryPath);
-  if (!files || files.length === 0) return undefined;
-
-  const isValidFile = (file: string, linkStat: FileLinkStats): boolean => {
-    const isIgnoredFile = ignoredDirectoryPrefixesForCodeInspection.some(
-      (dir: string) => file.startsWith(dir)
-    );
-    if (isIgnoredFile) return false;
-    else if (linkStat.isSymbolicLink) return false;
-    else {
-      return (
-        linkStat.isDirectory ||
-        linkStat.isFile ||
-        codeInspectionFileExtensions.includes(path.extname(file))
-      );
-    }
-  };
-
-  const filePatternsForCodeInspection = exactFilesForCodeInspection
-    .map((filename) =>
-      Patterns.constructFilePattern(filename, codeInspectionFileExtensions)
-    )
-    .concat(
-      flexibleFilesForCodeInspection.map((filename) =>
-        Patterns.constructKeywordFilePattern(
-          filename,
-          codeInspectionFileExtensions
-        )
-      )
-    );
-
-  for (const file of files) {
-    const filePath = path.join(directoryPath, file);
-    const linkStat = getFileLinkStats(filePath);
-
-    if (!linkStat || !isValidFile(file, linkStat)) {
-      continue;
-    }
-
-    if (linkStat.isDirectory) {
-      fileNameForSDKInitialization = searchFilesForSDKInitialization(filePath);
-      if (fileNameForSDKInitialization) {
-        break;
-      }
-    } else if (linkStat.isFile) {
-      const matchingPattern = filePatternsForCodeInspection.find((pattern) =>
-        pattern.test(file)
-      );
-      if (matchingPattern) {
-        const fileContent = readFileContent(filePath);
-        if (fileContent && fileContent.includes('CustomerIO.initialize')) {
-          return file;
-        }
-      }
-    }
-  }
-
-  return fileNameForSDKInitialization;
 }
 
 async function collectSummary(project: ReactNativeProject): Promise<void> {

@@ -111,8 +111,6 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
     }
 
     async locateFiles(): Promise<void> {
-      const ignoreDirs = ['/Pods/'];
-
       const filesRecord: Record<string, string> = {
         appDelegateObjectiveC: 'AppDelegate.m',
         appDelegateObjectiveCPlusPlus: 'AppDelegate.mm',
@@ -127,11 +125,7 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
         filters.set(filename, Patterns.createFilePattern(filename));
       }
 
-      const results = await searchFileInDirectory(
-        this.iOSProjectPath,
-        filters,
-        ignoreDirs
-      );
+      const results = await searchFileInDirectory(this.iOSProjectPath, filters);
 
       this.projectFiles = this.projectFiles.concat(
         results[filesRecord.project].map((result) => {

@@ -17,6 +17,7 @@ import {
   runCatching,
   trimQuotes,
 } from '../utils';
+import { searchFilesForCode } from '../utils/code';
 
 export async function runAllChecks(): Promise<void> {
   const context = Context.get();
@@ -24,6 +25,7 @@ export async function runAllChecks(): Promise<void> {
 
   await runCatching(analyzeNotificationServiceExtensionProperties)(project);
   await runCatching(validateUserNotificationCenterDelegate)(project);
+  await runCatching(validateSDKInitialization)(project);
   await runCatching(validatePushEntitlements)(project);
   await runCatching(validateNoConflictingSDKs)(project);
   await runCatching(collectSummary)(project);
@@ -275,6 +277,31 @@ async function validateUserNotificationCenterDelegate(
     logger.failure(
       `Didn't find the necessary method in AppDelegate to track the "open" metric when a push notification is clicked.`
     );
+  }
+}
+
+async function validateSDKInitialization(project: iOSProject): Promise<void> {
+  logger.searching(`Checking for SDK Initialization in iOS`);
+
+  const sdkInitializationPattern = /CustomerIO\.initialize/;
+  const sdkInitializationFiles = searchFilesForCode(
+    {
+      codePatternByExtension: {
+        '.swift': sdkInitializationPattern,
+        '.m': sdkInitializationPattern,
+        '.mm': sdkInitializationPattern,
+      },
+      ignoreDirectories: ['Images.xcassets'],
+      targetFileNames: ['AppDelegate'],
+      targetFilePatterns: ['cio', 'customerio', 'notification', 'push'],
+    },
+    project.iOSProjectPath
+  );
+
+  if (sdkInitializationFiles !== undefined) {
+    logger.success(`SDK Initialization found in ${sdkInitializationFiles}`);
+  } else {
+    logger.warning('SDK Initialization not found in suggested files');
   }
 }
 
