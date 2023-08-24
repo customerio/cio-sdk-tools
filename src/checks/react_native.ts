@@ -5,8 +5,8 @@ import {
   extractVersionFromPodLock,
   logger,
   runCatching,
+  searchFilesForCode,
 } from '../utils';
-import { searchFilesForCode } from '../utils/code';
 
 export async function runAllChecks(): Promise<void> {
   const context = Context.get();

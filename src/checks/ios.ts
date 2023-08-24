@@ -13,9 +13,9 @@ import {
   logger,
   readAndParseXML,
   runCatching,
+  searchFilesForCode,
   trimQuotes,
 } from '../utils';
-import { searchFilesForCode } from '../utils/code';
 
 export async function runAllChecks(): Promise<void> {
   const context = Context.get();
