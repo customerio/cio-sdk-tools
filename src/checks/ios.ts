@@ -245,10 +245,10 @@ async function validateUserNotificationCenterDelegate(
   project: iOSProject
 ): Promise<void> {
   let allRequirementsMet = false;
-  const userNotificationCenterPatternSwift =
-    /func\s+userNotificationCenter\(\s*_\s*center:\s*UNUserNotificationCenter,\s*didReceive\s*response:\s*UNNotificationResponse,\s*withCompletionHandler\s*completionHandler:/;
-  const userNotificationCenterPatternObjC =
-    /-\s*\(\s*void\s*\)\s*userNotificationCenter:\s*\(UNUserNotificationCenter\s*\*\)\s*center\s*didReceiveNotificationResponse:\s*\(UNNotificationResponse\s*\*\)\s*response\s*withCompletionHandler:\s*\(void\s*\(\^\)\(void\)\)\s*completionHandler/;
+ const userNotificationCenterPatternSwift =
+  /func\s+userNotificationCenter\(\s*_*[a-zA-Z][a-zA-Z0-9]*:\s*UNUserNotificationCenter,\s*_*[a-zA-Z][a-zA-Z0-9]*:\s*UNNotificationResponse,\s*withCompletionHandler\s*\w+:/;
+const userNotificationCenterPatternObjC =
+  /-\s*\(\s*void\s*\)\s*userNotificationCenter:\s*\(UNUserNotificationCenter\s*\*\)\s*\w+\s*didReceiveNotificationResponse:\s*\(UNNotificationResponse\s*\*\)\s*\w+\s*withCompletionHandler:\s*\(void\s*\(\^\)\(void\)\)\s*\w+/;
 
   for (const appDelegateFile of project.appDelegateFiles) {
     logger.searching(
