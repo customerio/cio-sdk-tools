@@ -38,7 +38,7 @@ npm install cio-sdk-tools -g
 To run the diagnostic tool:
 
 ```bash
-npm run doctor
+npx cio-sdk-tools doctor
 ```
 #### Arguments & Options
 - `[path]`: Path to the project directory.
