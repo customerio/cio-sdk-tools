@@ -72,8 +72,8 @@ export function shouldIgnoreDirectory(
   ];
   const excludedNames = ignoreDirs.concat(commonlyExcludedNames);
   return (
-    excludedNames.some((dir: string) => directoryName === dir) ||
-    excludedPrefixes.some((dir: string) => directoryName.startsWith(dir))
+    excludedPrefixes.some((dir: string) => directoryName.startsWith(dir)) ||
+    excludedNames.some((dir: string) => directoryName === dir)
   );
 }
 
