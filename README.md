@@ -8,13 +8,21 @@ The tool assists in diagnosing and troubleshooting the Customer.io mobile SDK in
 
 1. **Project Setup**: Recognizing your mobile framework, such as React Native.
 2. **SDK Initialization**: Verification of the SDK's initiation within key project files.
-3. **Library Conflicts**: Validation against any conflicting libraries in `package.json` and `Podfile`.
-4. **Push Notification Setup**:
+3. **Push Notification Setup**:
     - Validation of the presence and correct embedding of Notification Service Extensions.
     - Verification of deployment target versions to ensure compatibility with the CIO SDK.
     - Examination of `AppDelegate` to ensure correct metrics tracking for push notifications.
     - Checking entitlements for push notification capabilities and potential conflicts.
-5. **Version Validation**: Consolidates and displays versions of key integrations like the Customer.io SDK in various configuration files.
+4. **Dependencies**: 
+    - Validation against any conflicting libraries in `package.json` and `Podfile` for now.
+    - Consolidates and displays versions of key integrations like the Customer.io SDK in various configuration files.
+
+### Learn More
+
+| Section                | iOS                             | React Native                       | Flutter                         |
+|------------------------|---------------------------------|------------------------------------|---------------------------------|
+| SDK Initialization     | [Read More](https://www.customer.io/docs/sdk/ios/getting-started/#initialize-the-sdk) | [Read More](https://www.customer.io/docs/sdk/react-native/getting-started/#initialize-the-sdk) | [Read More](https://www.customer.io/docs/sdk/flutter/getting-started/#initialize-the-sdk) |
+| Push Notification Setup| [Read More](https://www.customer.io/docs/sdk/ios/push/#rich-push) | [Read More](https://www.customer.io/docs/sdk/react-native/push-notifications/push/) | [Read More](https://www.customer.io/docs/sdk/flutter/push-notifications/push/) |
 
 ## Installation
 To install the tool:
