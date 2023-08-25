@@ -1,6 +1,4 @@
 import chalk from 'chalk';
-import * as os from 'os';
-import * as path from 'path';
 import winston from 'winston';
 
 const logger: winston.Logger = createLogger();
@@ -137,20 +135,9 @@ export function configureLogger(options: {
 }) {
   logger.level = options.verbose ? 'info' : 'warn';
   if (options.saveReport !== undefined) {
-    let destination: string;
-    if (options.saveReport === '') {
-      destination = path.join(
-        os.homedir(),
-        'Desktop',
-        'cio-sdk-tools-output.logs'
-      );
-    } else {
-      destination = options.saveReport;
-    }
-
     logger.add(
       new winston.transports.File({
-        filename: destination,
+        filename: options.saveReport,
         format: winston.format.combine(
           winston.format.timestamp(),
           fileFormat()

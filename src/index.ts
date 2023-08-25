@@ -1,5 +1,6 @@
 import { Command, Option } from 'commander';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import {
   Context,
@@ -94,7 +95,11 @@ program
       'Enable verbose mode, providing detailed information about the operations'
     ).default(true)
   )
-  .addOption(new Option('-r, --report <filename>', 'Output report to file'))
+  .addOption(
+    new Option('-r, --report [filename]', 'Output report to file').preset(
+      path.join(os.homedir(), 'Desktop', 'cio-sdk-tools-output.logs')
+    )
+  )
   .action((path, options) => {
     configureLogger({
       verbose: options.verbose,
