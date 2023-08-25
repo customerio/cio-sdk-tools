@@ -69,6 +69,10 @@ export function shouldIgnoreDirectory(
     'assets',
     'docs',
     'fastlane',
+    'images',
+    'styles',
+    'icons',
+    'fonts',
   ];
   const excludedNames = ignoreDirs.concat(commonlyExcludedNames);
   return (
