@@ -12,28 +12,25 @@ export async function runAllChecks(): Promise<void> {
   const context = Context.get();
   const project = context.project as ReactNativeProject;
 
-  await runCatching(validateSDKInitialization)(project);
+  logger.linebreak();
+  logger.bold(`Dependencies`);
+
+  await runCatching(validateReactNativeSDKVersion)(project);
   await runCatching(validateNoConflictingSDKs)(project);
-  await runCatching(collectSummary)(project);
+  await runCatching(validateSDKInitialization)(project);
 }
 
 async function validateNoConflictingSDKs(
   project: ReactNativeProject
 ): Promise<void> {
   const packageFile = project.packageJsonFile;
-  logger.searching(
-    `Checking for conflicting libraries in: ${packageFile.readablePath}`
-  );
-
   const packageJson = JSON.parse(packageFile.content!);
   const dependencies = [...Object.keys(packageJson.dependencies || {})];
 
   const sdkVersionInPackageJson =
     packageJson.dependencies[PACKAGE_NAME_REACT_NATIVE];
-  project.summary.push(
-    logger.formatter.info(
-      `${PACKAGE_NAME_REACT_NATIVE} version in package.json: ${sdkVersionInPackageJson}`
-    )
+  logger.success(
+    `${PACKAGE_NAME_REACT_NATIVE} version in package.json: ${sdkVersionInPackageJson}`
   );
 
   const conflictingLibraries = Conflicts.reactNativePackages.filter((lib) =>
@@ -41,11 +38,13 @@ async function validateNoConflictingSDKs(
   );
 
   if (conflictingLibraries.length === 0) {
-    logger.success('No conflicting libraries found in package.json');
+    logger.success('No conflicting libraries found');
   } else {
-    logger.warning(
-      'More than one libraries found in package.json for handling push notifications',
-      conflictingLibraries
+    logger.warning('Potential conflicting libraries found.');
+    logger.alert(
+      `It seems that your app is using multiple push messaging libraries (${conflictingLibraries}).` +
+        ` We're continuing to improve support for multiple libraries, but there are some limitations.` +
+        ` Learn more at: https://customer.io/docs/sdk/react-native/push-notifications/multiple-push-providers/`
     );
   }
 }
@@ -53,7 +52,8 @@ async function validateNoConflictingSDKs(
 async function validateSDKInitialization(
   project: ReactNativeProject
 ): Promise<void> {
-  logger.searching(`Checking for SDK Initialization in React Native`);
+  logger.linebreak();
+  logger.bold(`Initialization`);
 
   const sdkInitializationPattern = /CustomerIO\.initialize/;
   const sdkInitializationFiles = searchFilesForCode(
@@ -74,17 +74,17 @@ async function validateSDKInitialization(
   if (sdkInitializationFiles !== undefined) {
     logger.success(`SDK Initialization found in ${sdkInitializationFiles}`);
   } else {
-    logger.warning('SDK Initialization not found in suggested files');
+    logger.failure('SDK Initialization not found');
   }
 }
 
-async function collectSummary(project: ReactNativeProject): Promise<void> {
+async function validateReactNativeSDKVersion(
+  project: ReactNativeProject
+): Promise<void> {
   try {
     const packageLockFile = project.packageLockFile;
     if (!packageLockFile || !packageLockFile.content) {
-      project.summary.push(
-        logger.formatter.warning(`No lock file found for package.json`)
-      );
+      logger.failure(`No lock file found for package.json`);
     } else {
       const lockFileType = packageLockFile.args.get('type');
 
@@ -94,21 +94,17 @@ async function collectSummary(project: ReactNativeProject): Promise<void> {
         PACKAGE_NAME_REACT_NATIVE
       );
       if (sdkVersionInLockFile) {
-        project.summary.push(
-          logger.formatter.info(
-            `${PACKAGE_NAME_REACT_NATIVE} version in ${packageLockFile.readablePath} file set to ${sdkVersionInLockFile}`
-          )
+        logger.success(
+          `Customer.io React Native SDK version: ${sdkVersionInLockFile}`
         );
       } else {
-        project.summary.push(
-          logger.formatter.warning(
-            `${PACKAGE_NAME_REACT_NATIVE} not found in ${packageLockFile.readablePath}`
-          )
+        logger.failure(
+          `Customer.io React Native SDK not found in ${packageLockFile.readablePath}`
         );
       }
     }
   } catch (err) {
-    logger.error('Unable to read lock files for package.json: %s', err);
+    logger.failure('Unable to read lock files for package.json: %s', err);
   }
 
   try {
@@ -120,20 +116,16 @@ async function collectSummary(project: ReactNativeProject): Promise<void> {
       PACKAGE_NAME_REACT_NATIVE
     );
     if (reactNativePodVersion) {
-      project.summary.push(
-        logger.formatter.info(
-          `${PACKAGE_NAME_REACT_NATIVE} version in ${podfileLock.readablePath} set to ${reactNativePodVersion}`
-        )
+      logger.success(
+        `Customer.io React Native SDK POD version: ${reactNativePodVersion}`
       );
     } else {
-      project.summary.push(
-        logger.formatter.warning(
-          `${PACKAGE_NAME_REACT_NATIVE} not found in ${podfileLock.readablePath}`
-        )
+      logger.failure(
+        `Customer.io React Native SDK not found in ${podfileLock.readablePath}`
       );
     }
   } catch (err) {
-    logger.error(
+    logger.failure(
       `Unable to read Podfile.lock at ${project.podfileLock.readablePath}: %s`,
       err
     );

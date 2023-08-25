@@ -7,7 +7,7 @@ export function doesExists(path: string): boolean {
   try {
     return fs.existsSync(path);
   } catch (err) {
-    logger.error('Error checking directory: %s', err);
+    logger.failure('Error checking directory: %s', err);
     return false;
   }
 }
@@ -17,7 +17,7 @@ export function isDirectory(path: string): boolean {
     const stat = fs.statSync(path);
     return stat.isDirectory();
   } catch (err) {
-    logger.error('Error checking directory: %s', err);
+    logger.failure('Error checking directory: %s', err);
     return false;
   }
 }
@@ -32,7 +32,7 @@ export function isDirectoryNonEmpty(path: string): boolean {
     const files = fs.readdirSync(path);
     return files.length > 0;
   } catch (err) {
-    logger.error('Error checking directory: %s', err);
+    logger.failure('Error checking directory: %s', err);
     return false;
   }
 }

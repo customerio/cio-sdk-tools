@@ -3,119 +3,87 @@ import winston from 'winston';
 
 const logger: winston.Logger = createLogger();
 
-export function log(log: Log) {
-  logger.log(log.level, log.message, ...log.args);
-}
-
-export function logWithFormat(
-  callback: (formatter: typeof messageFormatter) => Log
-) {
-  log(callback(messageFormatter));
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LogFunction = (message: string, ...args: any[]) => void;
-
-export const error: LogFunction = (message, ...args) => {
-  log(messageFormatter.error(message, ...args));
-};
-
-export const failure: LogFunction = (message, ...args) => {
-  log(messageFormatter.failure(message, ...args));
-};
-
-export const fatal: LogFunction = (message, ...args) => {
-  log(messageFormatter.fatal(message, ...args));
-};
-
-export const info: LogFunction = (message, ...args) => {
-  log(messageFormatter.info(message, ...args));
-};
-
-export const progress: LogFunction = (message, ...args) => {
-  log(messageFormatter.progress(message, ...args));
-};
-
-export const result: LogFunction = (message, ...args) => {
-  log(messageFormatter.result(message, ...args));
-};
-
-export const searching: LogFunction = (message, ...args) => {
-  log(messageFormatter.searching(message, ...args));
-};
-
-export const success: LogFunction = (message, ...args) => {
-  log(messageFormatter.success(message, ...args));
-};
-
-export const warning: LogFunction = (message, ...args) => {
-  log(messageFormatter.warning(message, ...args));
-};
-
-export interface Log {
+type Log = {
   level: string;
   message: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   args: any[];
-}
-
-function defineLogStyle(config: { level: string; icon: string }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return function format(message: string, ...args: any[]): Log {
-    const formattedMessage = config.icon
-      ? `${config.icon} ${message}`
-      : message;
-
-    const msg: Log = {
-      level: config.level,
-      message: formattedMessage,
-      args,
-    };
-
-    return msg;
-  };
-}
-
-export const messageFormatter = {
-  error: defineLogStyle({
-    level: 'error',
-    icon: '🚫',
-  }),
-  failure: defineLogStyle({
-    level: 'error',
-    icon: chalk.red('[✗]'),
-  }),
-  fatal: defineLogStyle({
-    level: 'error',
-    icon: '🚫🚫🚫',
-  }),
-  info: defineLogStyle({
-    level: 'info',
-    icon: chalk.cyan('[i]'),
-  }),
-  progress: defineLogStyle({
-    level: 'info',
-    icon: chalk.blue('[○]'),
-  }),
-  result: defineLogStyle({
-    level: 'info',
-    icon: chalk.keyword('orange')('[→]'),
-  }),
-  searching: defineLogStyle({
-    level: 'info',
-    icon: chalk.green('[⠏]'),
-  }),
-  success: defineLogStyle({
-    level: 'info',
-    icon: chalk.green('[✓]'),
-  }),
-  warning: defineLogStyle({
-    level: 'warn',
-    icon: chalk.yellow('[!]'),
-  }),
 };
 
-export { messageFormatter as formatter };
+export function log(log: Log) {
+  logger.log(log.level, log.message, ...log.args);
+}
+
+export function linebreak() {
+  log({
+    level: 'info',
+    message: '',
+    args: [],
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function bold(message: string = '', ...args: any[]) {
+  log({
+    level: 'info',
+    message: chalk.bold(message),
+    args: args,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function success(message: string = '', ...args: any[]) {
+  log({
+    level: 'info',
+    message: `${chalk.green('[✓]')} ${message}`,
+    args: args,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function failure(message: string = '', ...args: any[]) {
+  log({
+    level: 'error',
+    message: `${chalk.red('[✗]')} ${message}`,
+    args: args,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function warning(message: string = '', ...args: any[]) {
+  log({
+    level: 'warn',
+    message: `${chalk.yellow('[!]')} ${message}`,
+    args: args,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function alert(message: string = '', ...args: any[]) {
+  log({
+    level: 'warn',
+    message: chalk.yellow(`Warning: ${message}`),
+    args: args,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function error(message: string = '', ...args: any[]) {
+  log({
+    level: 'error',
+    message: chalk.red(`Warning: ${message}`),
+    args: args,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function debug(message: string = '', ...args: any[]) {
+  log({
+    level: 'debug',
+    message: chalk.blue(message),
+    args: args,
+  });
+}
 
 function consoleFormat() {
   return winston.format.printf(({ message }) => {
@@ -131,13 +99,13 @@ function fileFormat() {
 
 export function configureLogger(options: {
   verbose: boolean;
-  saveReport?: string;
+  logFilePath?: string;
 }) {
-  logger.level = options.verbose ? 'info' : 'warn';
-  if (options.saveReport !== undefined) {
+  logger.level = options.verbose ? 'debug' : 'info';
+  if (options.logFilePath && options.logFilePath !== '') {
     logger.add(
       new winston.transports.File({
-        filename: options.saveReport,
+        filename: options.logFilePath,
         format: winston.format.combine(
           winston.format.timestamp(),
           fileFormat()
