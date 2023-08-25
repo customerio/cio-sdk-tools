@@ -223,3 +223,15 @@ export function getReadablePath(
     return absolutePath;
   }
 }
+
+export function getAbsolutePath(
+  baseDirectoryPath: string,
+  filepath: string
+): string {
+  try {
+    return path.resolve(baseDirectoryPath, filepath);
+  } catch (err) {
+    /* empty */
+    return filepath;
+  }
+}
