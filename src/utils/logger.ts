@@ -14,6 +14,24 @@ export function log(log: Log) {
   logger.log(log.level, log.message, ...log.args);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function debug(message: string = '', ...args: any[]) {
+  log({
+    level: 'debug',
+    message: chalk.blue(message),
+    args: args,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function exception(message: string = '', ...args: any[]) {
+  log({
+    level: 'error',
+    message: chalk.red(`ERROR: ${message}`),
+    args: args,
+  });
+}
+
 export function linebreak() {
   log({
     level: 'info',
@@ -50,6 +68,15 @@ export function failure(message: string = '', ...args: any[]) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function error(message: string = '', ...args: any[]) {
+  log({
+    level: 'error',
+    message: chalk.red(`Error: ${message}`),
+    args: args,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function warning(message: string = '', ...args: any[]) {
   log({
     level: 'warn',
@@ -63,24 +90,6 @@ export function alert(message: string = '', ...args: any[]) {
   log({
     level: 'warn',
     message: chalk.yellow(`Warning: ${message}`),
-    args: args,
-  });
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function error(message: string = '', ...args: any[]) {
-  log({
-    level: 'error',
-    message: chalk.red(`Warning: ${message}`),
-    args: args,
-  });
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function debug(message: string = '', ...args: any[]) {
-  log({
-    level: 'debug',
-    message: chalk.blue(message),
     args: args,
   });
 }

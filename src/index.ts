@@ -26,7 +26,7 @@ type DoctorCommandOptions = {
 
 async function doctor(projectPath: string, options: DoctorCommandOptions) {
   if (!isDirectoryNonEmpty(projectPath)) {
-    logger.failure(
+    logger.error(
       `Project directory is not valid or is empty at ${projectPath}`
     );
     process.exit(1);
@@ -34,7 +34,7 @@ async function doctor(projectPath: string, options: DoctorCommandOptions) {
 
   const project = identifyProject(projectPath);
   if (!project) {
-    logger.failure(`Unable to identify project in ${projectPath}`);
+    logger.error(`Unable to identify project in ${projectPath}`);
     process.exit(1);
   }
 
@@ -115,7 +115,7 @@ program
       logFilePath: options.report,
     });
     doctor(path, options).catch((err) =>
-      logger.failure('Error running doctor:', err)
+      logger.error('Error running doctor:', err)
     );
   });
 

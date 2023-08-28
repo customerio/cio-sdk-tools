@@ -104,7 +104,7 @@ async function validateReactNativeSDKVersion(
       }
     }
   } catch (err) {
-    logger.failure('Unable to read lock files for package.json: %s', err);
+    logger.exception('Unable to read lock files for package.json: %s', err);
   }
 
   try {
@@ -125,7 +125,7 @@ async function validateReactNativeSDKVersion(
       );
     }
   } catch (err) {
-    logger.failure(
+    logger.exception(
       `Unable to read Podfile.lock at ${project.podfileLock.readablePath}: %s`,
       err
     );
