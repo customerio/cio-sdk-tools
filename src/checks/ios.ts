@@ -154,12 +154,15 @@ async function validateNotificationServiceExtension(
     if (isEmbedded) {
       logger.success('Notification Service Extension (NSE) found');
     } else if (isFoundationExtension) {
-      logger.warning(
+      logger.success(
         'Notification Service Extension (NSE) found but not embedded as it is a Foundation Extension'
       );
     } else {
       logger.failure(
         'Notification Service Extension (NSE) found but not embedded'
+      );
+      logger.error(
+        'The Notification Service Extension should be embedded in order to send and track push notifications.'
       );
     }
   } else {
