@@ -366,14 +366,6 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
     podfileLockContent.includes(lib)
   );
   if (conflictingPods.length === 0) {
-    logger.success('No conflicting pods found in Podfile');
-  } else {
-    logger.warning(
-      'More than one pods found in Podfile for handling push notifications',
-      conflictingPods
-    );
-  }
-  if (conflictingPods.length === 0) {
     logger.success('No conflicting pods found');
   } else {
     logger.warning('Potential conflicting libraries found.');
