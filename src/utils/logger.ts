@@ -114,6 +114,7 @@ export function configureLogger(options: {
   if (options.logFilePath && options.logFilePath !== '') {
     logger.add(
       new winston.transports.File({
+        level: 'debug',
         filename: options.logFilePath,
         format: winston.format.combine(
           winston.format.timestamp(),
