@@ -1,5 +1,6 @@
 import { Conflicts, PACKAGE_NAME_REACT_NATIVE } from '../constants';
 import { Context, ReactNativeProject } from '../core';
+import { CheckGroup } from '../enums/checkGroup';
 import {
   extractVersionFromPackageLock,
   extractVersionFromPodLock,
@@ -8,16 +9,26 @@ import {
   searchFilesForCode,
 } from '../utils';
 
-export async function runAllChecks(): Promise<void> {
-  const context = Context.get();
-  const project = context.project as ReactNativeProject;
+export async function runChecks(group: CheckGroup): Promise<void> {
+  switch (group) {
+    case CheckGroup.Dependencies:
+      break;
 
-  logger.linebreak();
-  logger.bold(`Dependencies`);
+    case CheckGroup.Initialization:
+      break;
 
-  await runCatching(validateReactNativeSDKVersion)(project);
-  await runCatching(validateNoConflictingSDKs)(project);
-  await runCatching(validateSDKInitialization)(project);
+    case CheckGroup.PushSetup:
+      break;
+  }
+  // const context = Context.get();
+  // const project = context.project as ReactNativeProject;
+
+  // logger.linebreak();
+  // logger.bold(`Dependencies`);
+
+  // await runCatching(validateReactNativeSDKVersion)(project);
+  // await runCatching(validateNoConflictingSDKs)(project);
+  // await runCatching(validateSDKInitialization)(project);
 }
 
 async function validateNoConflictingSDKs(

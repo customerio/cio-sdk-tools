@@ -8,6 +8,7 @@ import {
   iOS_DEPLOYMENT_TARGET_MIN_REQUIRED,
 } from '../constants';
 import { Context, iOSProject } from '../core';
+import { CheckGroup } from '../enums/checkGroup';
 import {
   extractVersionFromPodLock,
   getReadablePath,
@@ -18,16 +19,27 @@ import {
   trimQuotes,
 } from '../utils';
 
-export async function runAllChecks(): Promise<void> {
-  const context = Context.get();
-  const project = context.project as iOSProject;
+export async function runChecks(group: CheckGroup): Promise<void> {
+  switch (group) {
+    case CheckGroup.Dependencies:
+      break;
 
-  await runCatching(validateSDKInitialization)(project);
-  await runCatching(analyzeNotificationServiceExtensionProperties)(project);
-  await runCatching(validateUserNotificationCenterDelegate)(project);
-  await runCatching(validatePushEntitlements)(project);
-  await runCatching(validateNoConflictingSDKs)(project);
-  await runCatching(collectSummary)(project);
+    case CheckGroup.Initialization:
+      break;
+
+    case CheckGroup.PushSetup:
+      break;
+  }
+
+  // const context = Context.get();
+  // const project = context.project as iOSProject;
+
+  // await runCatching(validateSDKInitialization)(project);
+  // await runCatching(analyzeNotificationServiceExtensionProperties)(project);
+  // await runCatching(validateUserNotificationCenterDelegate)(project);
+  // await runCatching(validatePushEntitlements)(project);
+  // await runCatching(validateNoConflictingSDKs)(project);
+  // await runCatching(collectSummary)(project);
 }
 
 async function analyzeNotificationServiceExtensionProperties(

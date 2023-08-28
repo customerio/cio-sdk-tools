@@ -1,2 +1,2 @@
-export { runAllChecks as runAllChecksForIOS } from './ios';
-export { runAllChecks as runAllChecksForReactNative } from './react_native';
+export { runChecks as runChecksForIOS } from './ios';
+export { runChecks as runChecksForReactNative } from './react_native';
