@@ -5,6 +5,7 @@ import {
   POD_MESSAGING_PUSH_APN,
   POD_MESSAGING_PUSH_FCM,
   POD_TRACKING,
+  iOS_DEPLOYMENT_TARGET_MIN_REQUIRED,
 } from '../constants';
 import { Context, iOSProject } from '../core';
 import {
@@ -97,16 +98,20 @@ async function validateNotificationServiceExtension(
         extensionCount++;
 
         // Check for deployment target for NSE
-        const deploymentTarget = getDeploymentTargetVersion(
+        const deploymentTargetString = getDeploymentTargetVersion(
           xcodeProject,
           target
         );
-        if (parseFloat(deploymentTarget) >= 13.0) {
+        const deploymentTarget = parseFloat(deploymentTargetString);
+        if (
+          !isNaN(deploymentTarget) &&
+          deploymentTarget >= iOS_DEPLOYMENT_TARGET_MIN_REQUIRED
+        ) {
           logger.success(`Deployment Target for NSE: ${deploymentTarget}`);
         } else {
           logger.failure(`Deployment Target for NSE: ${deploymentTarget}`);
           logger.error(
-            `The SDK requires an iOS deployment target of 13 or higher.`
+            `The SDK requires an iOS deployment target of ${iOS_DEPLOYMENT_TARGET_MIN_REQUIRED} or higher.`
           );
         }
       }
