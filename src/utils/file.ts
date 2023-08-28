@@ -7,7 +7,7 @@ export function doesExists(path: string): boolean {
   try {
     return fs.existsSync(path);
   } catch (err) {
-    logger.error('Error checking directory: %s', err);
+    logger.exception('Error checking directory: %s', err);
     return false;
   }
 }
@@ -17,7 +17,7 @@ export function isDirectory(path: string): boolean {
     const stat = fs.statSync(path);
     return stat.isDirectory();
   } catch (err) {
-    logger.error('Error checking directory: %s', err);
+    logger.exception('Error checking directory: %s', err);
     return false;
   }
 }
@@ -32,7 +32,7 @@ export function isDirectoryNonEmpty(path: string): boolean {
     const files = fs.readdirSync(path);
     return files.length > 0;
   } catch (err) {
-    logger.error('Error checking directory: %s', err);
+    logger.exception('Error checking directory: %s', err);
     return false;
   }
 }
@@ -221,5 +221,17 @@ export function getReadablePath(
   } catch (err) {
     /* empty */
     return absolutePath;
+  }
+}
+
+export function getAbsolutePath(
+  baseDirectoryPath: string,
+  filepath: string
+): string {
+  try {
+    return path.resolve(baseDirectoryPath, filepath);
+  } catch (err) {
+    /* empty */
+    return filepath;
   }
 }

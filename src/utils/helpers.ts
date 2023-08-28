@@ -15,7 +15,7 @@ export function runCatching<T>(
       if (onError) {
         onError(error);
       } else {
-        logger.error(`An error occurred in function ${fn.name}:`, error);
+        logger.exception(`An error occurred in function ${fn.name}:`, error);
       }
     }
   };

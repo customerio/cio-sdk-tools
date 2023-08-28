@@ -12,7 +12,7 @@ import {
   iOSNativeProject,
 } from './core';
 import {
-  getFilename,
+  getAbsolutePath,
   isDirectoryNonEmpty,
   logger,
   readFileContent,
@@ -21,7 +21,15 @@ import { configureLogger } from './utils/logger';
 
 const program = new Command();
 
-async function doctor(projectPath: string) {
+type DoctorCommandOptions = {
+  verbose: boolean;
+  report: string;
+};
+
+async function doctor(projectPathArg: string, options: DoctorCommandOptions) {
+  // Get absolute path to project directory to run diagnostics on
+  const projectPath = getAbsolutePath(process.cwd(), projectPathArg);
+
   if (!isDirectoryNonEmpty(projectPath)) {
     logger.error(
       `Project directory is not valid or is empty at ${projectPath}`
@@ -31,21 +39,25 @@ async function doctor(projectPath: string) {
 
   const project = identifyProject(projectPath);
   if (!project) {
-    logger.error(`Unable to identify project framework in ${projectPath}`);
+    logger.error(`Unable to identify project in ${projectPath}`);
     process.exit(1);
   }
 
-  logger.info(
-    `Detected framework: ${project.framework} in ${getFilename(projectPath)}`
-  );
+  logger.linebreak();
+  logger.bold(`Starting diagnostic for ${project.framework} project...`);
+  logger.success(`Project Path: ${projectPath}`);
+
   Context.create(project);
 
   await project.loadFilesContent();
   await project.runAllChecks();
 
-  logger.result(`Collecting more information on project`);
-  for (const summary of project.summary) {
-    logger.log(summary);
+  logger.linebreak();
+  if (options.report) {
+    const reportPath = getAbsolutePath(projectPath, options.report);
+    logger.bold(`Diagnostic complete! File saved to: ${reportPath}`);
+  } else {
+    logger.bold(`Diagnostic complete!`);
   }
 }
 
@@ -95,19 +107,21 @@ program
     new Option(
       '-v, --verbose',
       'Enable verbose mode, providing detailed information about the operations'
-    ).default(true)
+    )
   )
   .addOption(
     new Option('-r, --report [filename]', 'Output report to file').preset(
       path.join(os.homedir(), 'Desktop', 'cio-sdk-tools-output.logs')
     )
   )
-  .action((path, options) => {
+  .action((path: string, options: DoctorCommandOptions) => {
     configureLogger({
       verbose: options.verbose,
-      saveReport: options.report,
+      logFilePath: options.report,
     });
-    doctor(path).catch((err) => logger.error('Error running doctor:', err));
+    doctor(path, options).catch((err) =>
+      logger.error('Error running doctor:', err)
+    );
   });
 
 program.parse();

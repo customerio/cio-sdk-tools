@@ -1,18 +1,19 @@
 import * as path from 'path';
 import { runAllChecksForIOS, runAllChecksForReactNative } from '../checks';
+import { Links } from '../constants';
+import { createFilePattern } from '../utils';
 import {
   doesExists,
+  getAbsolutePath,
   getFilename,
   getReadablePath,
   readFileContent,
   readFileWithStats,
   searchFileInDirectory,
 } from '../utils/file';
-import { Log } from '../utils/logger';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import xcode from 'xcode';
-import { createFilePattern } from '../utils';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Constructor = new (...args: any[]) => any;
@@ -32,7 +33,7 @@ class File {
     args?: Record<string, any>,
     loadContent: boolean = false
   ) {
-    this.absolutePath = path.resolve(projectRoot, filepath);
+    this.absolutePath = getAbsolutePath(projectRoot, filepath);
     this.args = new Map(Object.entries(args || {}));
     this.filename = getFilename(this.absolutePath);
     this.readablePath = getReadablePath(projectRoot, this.absolutePath);
@@ -51,7 +52,7 @@ class File {
 export interface MobileProject {
   readonly framework: string;
   readonly projectPath: string;
-  readonly summary: Log[];
+  readonly documentation: Links.Documentation;
 
   loadFilesContent(): Promise<void>;
   runAllChecks(): Promise<void>;
@@ -183,7 +184,7 @@ export class iOSNativeProject
   implements MobileProject, iOSProject
 {
   public readonly framework: string = 'iOS';
-  public readonly summary: Log[] = [];
+  public readonly documentation: Links.Documentation = Links.iOSDocumentation;
 
   constructor(projectPath: string) {
     super();
@@ -209,8 +210,9 @@ export class ReactNativeProject
   extends iOSProjectBase(Object)
   implements MobileProject, iOSProject
 {
-  public readonly framework: string = 'ReactNative';
-  public readonly summary: Log[] = [];
+  public readonly framework: string = 'React Native';
+  public readonly documentation: Links.Documentation =
+    Links.ReactNativeDocumentation;
 
   public readonly packageJsonFile: File;
   public packageLockFile?: File;
@@ -273,7 +275,8 @@ export class FlutterProject
   implements MobileProject, iOSProject
 {
   public readonly framework: string = 'Flutter';
-  public readonly summary: Log[] = [];
+  public readonly documentation: Links.Documentation =
+    Links.FlutterDocumentation;
 
   public readonly pubspecYamlFile: File;
   public readonly pubspecLockFile: File;
