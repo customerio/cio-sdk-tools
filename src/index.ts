@@ -54,7 +54,7 @@ async function doctor(projectPathArg: string, options: DoctorCommandOptions) {
 
   logger.linebreak();
   if (options.report) {
-    const reportPath = getAbsolutePath(projectPath, options.report);
+    const reportPath = getAbsolutePath('.', options.report);
     logger.bold(`Diagnostic complete! File saved to: ${reportPath}`);
   } else {
     logger.bold(`Diagnostic complete!`);
