@@ -1,5 +1,7 @@
 import * as path from 'path';
 import { runAllChecksForIOS, runAllChecksForReactNative } from '../checks';
+import { Links } from '../constants';
+import { createFilePattern } from '../utils';
 import {
   doesExists,
   getAbsolutePath,
@@ -12,7 +14,6 @@ import {
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import xcode from 'xcode';
-import { createFilePattern } from '../utils';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Constructor = new (...args: any[]) => any;
@@ -51,6 +52,7 @@ class File {
 export interface MobileProject {
   readonly framework: string;
   readonly projectPath: string;
+  readonly documentationLinks: Links.Documentation;
 
   loadFilesContent(): Promise<void>;
   runAllChecks(): Promise<void>;
@@ -182,6 +184,8 @@ export class iOSNativeProject
   implements MobileProject, iOSProject
 {
   public readonly framework: string = 'iOS';
+  public readonly documentationLinks: Links.Documentation =
+    Links.iOSDocumentation;
 
   constructor(projectPath: string) {
     super();
@@ -208,6 +212,8 @@ export class ReactNativeProject
   implements MobileProject, iOSProject
 {
   public readonly framework: string = 'React Native';
+  public readonly documentationLinks: Links.Documentation =
+    Links.ReactNativeDocumentation;
 
   public readonly packageJsonFile: File;
   public packageLockFile?: File;
@@ -270,6 +276,8 @@ export class FlutterProject
   implements MobileProject, iOSProject
 {
   public readonly framework: string = 'Flutter';
+  public readonly documentationLinks: Links.Documentation =
+    Links.FlutterDocumentation;
 
   public readonly pubspecYamlFile: File;
   public readonly pubspecLockFile: File;

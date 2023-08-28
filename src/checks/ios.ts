@@ -380,7 +380,7 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
     logger.alert(
       `It seems that your app is using multiple push messaging libraries (${conflictingPods}).` +
         ` We're continuing to improve support for multiple libraries, but there are some limitations.` +
-        ` Learn more at: https://customer.io/docs/sdk/react-native/push-notifications/multiple-push-providers/`
+        ` Learn more at: ${project.documentationLinks.multiplePushProviders}`
     );
   }
 }
