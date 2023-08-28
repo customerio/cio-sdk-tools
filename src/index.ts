@@ -28,24 +28,24 @@ type DoctorCommandOptions = {
 
 async function doctor(projectPathArg: string, options: DoctorCommandOptions) {
   // Get absolute path to project directory to run diagnostics on
-  const projectPathAbsolute = getAbsolutePath(process.cwd(), projectPathArg);
+  const projectPath = getAbsolutePath(process.cwd(), projectPathArg);
 
-  if (!isDirectoryNonEmpty(projectPathAbsolute)) {
+  if (!isDirectoryNonEmpty(projectPath)) {
     logger.error(
-      `Project directory is not valid or is empty at ${projectPathArg}`
+      `Project directory is not valid or is empty at ${projectPath}`
     );
     process.exit(1);
   }
 
-  const project = identifyProject(projectPathAbsolute);
+  const project = identifyProject(projectPath);
   if (!project) {
-    logger.error(`Unable to identify project in ${projectPathArg}`);
+    logger.error(`Unable to identify project in ${projectPath}`);
     process.exit(1);
   }
 
   logger.linebreak();
   logger.bold(`Starting diagnostic for ${project.framework} project...`);
-  logger.success(`Project Path: ${projectPathArg}`);
+  logger.success(`Project Path: ${projectPath}`);
 
   Context.create(project);
 
@@ -54,7 +54,7 @@ async function doctor(projectPathArg: string, options: DoctorCommandOptions) {
 
   logger.linebreak();
   if (options.report) {
-    const reportPath = getAbsolutePath(projectPathAbsolute, options.report);
+    const reportPath = getAbsolutePath(projectPath, options.report);
     logger.bold(`Diagnostic complete! File saved to: ${reportPath}`);
   } else {
     logger.bold(`Diagnostic complete!`);
