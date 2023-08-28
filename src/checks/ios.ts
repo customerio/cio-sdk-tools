@@ -162,13 +162,13 @@ async function validateNotificationServiceExtension(
         'Notification Service Extension (NSE) found but not embedded'
       );
       logger.error(
-        'The Notification Service Extension should be embedded in order to send and track push notifications.'
+        'The Notification Service Extension should be embedded in order to display and track push notifications.'
       );
     }
   } else {
     logger.failure('Notification Service Extension (NSE) not found');
     logger.error(
-      'The Notification Service Extension is required in order to send and track push notifications.'
+      'The Notification Service Extension is required in order to display and track push notifications.'
     );
   }
 }
@@ -361,7 +361,7 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
   );
   const podfileLockContent = podfileLock.content;
   if (!podfileLockContent) {
-    logger.error(`No podfile.lock found at ${podfileLock.readablePath}`);
+    logger.error(`No Podfile.lock found at ${podfileLock.readablePath}`);
     return;
   }
 
