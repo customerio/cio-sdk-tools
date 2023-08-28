@@ -58,3 +58,6 @@ Encounter problems or have suggestions? [Create an issue on GitHub](https://gith
 
 ## License
 MIT License. See `LICENSE` for details.
+
+# Contributing
+We value an open, welcoming, diverse, inclusive, and healthy community for this project. We expect all contributors to follow [code of conduct](CODE_OF_CONDUCT.md).
