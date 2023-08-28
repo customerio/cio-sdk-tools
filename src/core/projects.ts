@@ -52,7 +52,7 @@ class File {
 export interface MobileProject {
   readonly framework: string;
   readonly projectPath: string;
-  readonly documentationLinks: Links.Documentation;
+  readonly documentation: Links.Documentation;
 
   loadFilesContent(): Promise<void>;
   runAllChecks(): Promise<void>;
@@ -184,8 +184,7 @@ export class iOSNativeProject
   implements MobileProject, iOSProject
 {
   public readonly framework: string = 'iOS';
-  public readonly documentationLinks: Links.Documentation =
-    Links.iOSDocumentation;
+  public readonly documentation: Links.Documentation = Links.iOSDocumentation;
 
   constructor(projectPath: string) {
     super();
@@ -212,7 +211,7 @@ export class ReactNativeProject
   implements MobileProject, iOSProject
 {
   public readonly framework: string = 'React Native';
-  public readonly documentationLinks: Links.Documentation =
+  public readonly documentation: Links.Documentation =
     Links.ReactNativeDocumentation;
 
   public readonly packageJsonFile: File;
@@ -276,7 +275,7 @@ export class FlutterProject
   implements MobileProject, iOSProject
 {
   public readonly framework: string = 'Flutter';
-  public readonly documentationLinks: Links.Documentation =
+  public readonly documentation: Links.Documentation =
     Links.FlutterDocumentation;
 
   public readonly pubspecYamlFile: File;

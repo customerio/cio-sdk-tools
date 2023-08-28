@@ -44,7 +44,7 @@ async function validateNoConflictingSDKs(
     logger.alert(
       `It seems that your app is using multiple push messaging libraries (${conflictingLibraries}).` +
         ` We're continuing to improve support for multiple libraries, but there are some limitations.` +
-        ` Learn more at: ${project.documentationLinks.multiplePushProviders}`
+        ` Learn more at: ${project.documentation.multiplePushProviders}`
     );
   }
 }
