@@ -1,6 +1,7 @@
 import * as path from 'path';
-import { runAllChecksForIOS, runAllChecksForReactNative } from '../checks';
+import { runChecksForIOS, runChecksForReactNative } from '../checks';
 import { Links } from '../constants';
+import { CheckGroup } from '../enums/checkGroup';
 import { createFilePattern } from '../utils';
 import {
   doesExists,
@@ -55,7 +56,7 @@ export interface MobileProject {
   readonly documentation: Links.Documentation;
 
   loadFilesContent(): Promise<void>;
-  runAllChecks(): Promise<void>;
+  runChecks(group: CheckGroup): Promise<void>;
 }
 
 export interface iOSProject extends MobileProject {
@@ -174,8 +175,8 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
       );
     }
 
-    async runAllChecks(): Promise<void> {
-      await runAllChecksForIOS();
+    async runChecks(group: CheckGroup): Promise<void> {
+      await runChecksForIOS(group);
     }
   };
 
@@ -199,10 +200,6 @@ export class iOSNativeProject
     this.podfile.loadContent();
     this.podfileLock.loadContent();
     this.projectFile?.loadContent();
-  }
-
-  async runAllChecks(): Promise<void> {
-    await super.runAllChecks();
   }
 }
 
@@ -263,10 +260,10 @@ export class ReactNativeProject
     }
   }
 
-  async runAllChecks(): Promise<void> {
+  async runChecks(group: CheckGroup): Promise<void> {
     // Run React Native checks first because wrapper frameworks must be validated before native checks
-    await runAllChecksForReactNative();
-    await super.runAllChecks();
+    await runChecksForReactNative(group);
+    await super.runChecks(group);
   }
 }
 
@@ -300,8 +297,8 @@ export class FlutterProject
     this.podfileLock.loadContent();
   }
 
-  async runAllChecks(): Promise<void> {
+  async runChecks(group: CheckGroup): Promise<void> {
     // When added, run Flutter checks first because wrapper frameworks must be validated before native checks
-    await super.runAllChecks();
+    await super.runChecks(group);
   }
 }
