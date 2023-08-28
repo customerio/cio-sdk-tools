@@ -53,6 +53,34 @@ export function readFileContent(path: string): string | undefined {
   }
 }
 
+export function shouldIgnoreDirectory(
+  directoryName: string,
+  ignoreDirs: string[]
+): boolean {
+  // Directory names that start with given prefixes should be ignored for code inspection and other checks
+  const excludedPrefixes = ['.', '_'];
+  // Directory names that match given names should be ignored for code inspection and other checks
+  const commonlyExcludedNames = [
+    'node_modules',
+    'build',
+    'Pods',
+    'gradle',
+    'scripts',
+    'assets',
+    'docs',
+    'fastlane',
+    'images',
+    'styles',
+    'icons',
+    'fonts',
+  ];
+  const excludedNames = ignoreDirs.concat(commonlyExcludedNames);
+  return (
+    excludedPrefixes.some((dir: string) => directoryName.startsWith(dir)) ||
+    excludedNames.some((dir: string) => directoryName === dir)
+  );
+}
+
 /**
  * Recursively searches for files in a directory that match the given filters, ignoring specified directories.
  *
@@ -76,7 +104,7 @@ export async function searchFileInDirectory(
     const stat = fs.lstatSync(filename);
 
     // Skip the specified directories and their subdirectories
-    if (ignoreDirs.some((dir) => filename.includes(dir))) return;
+    if (shouldIgnoreDirectory(file, ignoreDirs)) return;
 
     if (stat.isDirectory()) {
       const subDirResults = await searchFileInDirectory(
@@ -145,15 +173,17 @@ export function readFileWithStats(paths: string[]): FileWithStats[] {
 }
 
 export type FileLinkStats = {
+  extension: string;
   isDirectory: boolean;
   isFile: boolean;
   isSymbolicLink: boolean;
 };
 
-export function getFileLinkStats(path: string): FileLinkStats | undefined {
+export function getFileLinkStats(filepath: string): FileLinkStats | undefined {
   try {
-    const linkStat = fs.statSync(path);
+    const linkStat = fs.statSync(filepath);
     return {
+      extension: path.extname(filepath),
       isDirectory: linkStat.isDirectory(),
       isFile: linkStat.isFile(),
       isSymbolicLink: linkStat.isSymbolicLink(),
