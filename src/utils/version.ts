@@ -1,3 +1,4 @@
+import fetch from 'npm-registry-fetch';
 import { trimEqualOperator, uniqueValues } from '.';
 
 function createPodRegex(podName: string): RegExp {
@@ -48,4 +49,11 @@ export function extractVersionFromPackageLock(
   } else {
     return undefined;
   }
+}
+
+export async function fetchNPMVersion(packageName: string) {
+  const response = await fetch(`https://registry.npmjs.org/${packageName}`);
+  const packageInfo = await response.json();
+  const latestVersion = packageInfo['dist-tags'].latest;
+  return latestVersion;
 }
