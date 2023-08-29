@@ -17,14 +17,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/customerio/sdk-self-service.git"
+    "url": "git+https://github.com/customerio/cio-sdk-tools.git"
   },
   "author": "CustomerIO Team",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/customerio/sdk-self-service/issues"
+    "url": "https://github.com/customerio/cio-sdk-tools/issues"
   },
-  "homepage": "https://github.com/customerio/sdk-self-service#readme",
+  "homepage": "https://github.com/customerio/cio-sdk-tools#readme",
   "dependencies": {
     "chalk": "^4.1.2",
     "commander": "^11.0.0",
