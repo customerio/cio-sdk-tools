@@ -96,7 +96,7 @@ async function validateSDKVersion(project: ReactNativeProject): Promise<void> {
 
   if (packageFileSDKVersion) {
     const sdkVersionMessage = `Customer.io React Native SDK version: ${packageFileSDKVersion}`;
-    if (packageFileSDKVersion === latestSdkVersion) {
+    if (!latestSdkVersion || packageFileSDKVersion === latestSdkVersion) {
       logger.success(sdkVersionMessage);
     } else {
       logger.warning(sdkVersionMessage);

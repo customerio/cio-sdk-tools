@@ -51,7 +51,9 @@ export function extractVersionFromPackageLock(
   }
 }
 
-export async function fetchNPMVersion(packageName: string) {
+export async function fetchNPMVersion(
+  packageName: string
+): Promise<string | undefined> {
   const response = await fetch(`https://registry.npmjs.org/${packageName}`);
   const packageInfo = await response.json();
   const latestVersion = packageInfo['dist-tags'].latest;
