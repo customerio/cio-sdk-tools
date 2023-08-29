@@ -1,34 +1,34 @@
-import { Conflicts, PACKAGE_NAME_REACT_NATIVE } from '../constants';
+import { Commands, Conflicts, PACKAGE_NAME_REACT_NATIVE } from '../constants';
 import { Context, ReactNativeProject } from '../core';
 import { CheckGroup } from '../enums/checkGroup';
 import {
   extractVersionFromPackageLock,
-  extractVersionFromPodLock,
+  fetchNPMVersion,
   logger,
   runCatching,
   searchFilesForCode,
 } from '../utils';
 
 export async function runChecks(group: CheckGroup): Promise<void> {
+  const context = Context.get();
+  const project = context.project as ReactNativeProject;
+
   switch (group) {
-    case CheckGroup.Dependencies:
+    case CheckGroup.Diagnostics:
+      await runCatching(validateSDKVersion)(project);
       break;
 
     case CheckGroup.Initialization:
+      await runCatching(validateSDKInitialization)(project);
       break;
 
     case CheckGroup.PushSetup:
       break;
+
+    case CheckGroup.Dependencies:
+      await runCatching(validateNoConflictingSDKs)(project);
+      break;
   }
-  // const context = Context.get();
-  // const project = context.project as ReactNativeProject;
-
-  // logger.linebreak();
-  // logger.bold(`Dependencies`);
-
-  // await runCatching(validateReactNativeSDKVersion)(project);
-  // await runCatching(validateNoConflictingSDKs)(project);
-  // await runCatching(validateSDKInitialization)(project);
 }
 
 async function validateNoConflictingSDKs(
@@ -63,9 +63,6 @@ async function validateNoConflictingSDKs(
 async function validateSDKInitialization(
   project: ReactNativeProject
 ): Promise<void> {
-  logger.linebreak();
-  logger.bold(`Initialization`);
-
   const sdkInitializationPattern = /CustomerIO\.initialize/;
   const sdkInitializationFiles = searchFilesForCode(
     {
@@ -91,56 +88,53 @@ async function validateSDKInitialization(
   }
 }
 
-async function validateReactNativeSDKVersion(
+async function validateSDKVersion(project: ReactNativeProject): Promise<void> {
+  const latestSdkVersion = await fetchNPMVersion(PACKAGE_NAME_REACT_NATIVE);
+
+  const packageFileSDKVersion =
+    getSDKVersionPackageLock(project) ?? getSDKVersionPackageFile(project);
+
+  if (packageFileSDKVersion) {
+    const sdkVersionMessage = `Customer.io React Native SDK version: ${packageFileSDKVersion}`;
+    if (packageFileSDKVersion === latestSdkVersion) {
+      logger.success(sdkVersionMessage);
+    } else {
+      logger.warning(sdkVersionMessage);
+      logger.alert(`Update to the latest SDK version ${latestSdkVersion}`);
+    }
+  } else {
+    logger.failure(
+      `Customer.io React Native SDK not found in ${project.packageLockFile?.readablePath}`
+    );
+  }
+}
+
+function getSDKVersionPackageLock(
   project: ReactNativeProject
-): Promise<void> {
-  try {
-    const packageLockFile = project.packageLockFile;
-    if (!packageLockFile || !packageLockFile.content) {
-      logger.failure(`No lock file found for package.json`);
-    } else {
-      const lockFileType = packageLockFile.args.get('type');
-
-      const sdkVersionInLockFile = extractVersionFromPackageLock(
-        packageLockFile.content,
-        lockFileType,
-        PACKAGE_NAME_REACT_NATIVE
-      );
-      if (sdkVersionInLockFile) {
-        logger.success(
-          `Customer.io React Native SDK version: ${sdkVersionInLockFile}`
-        );
-      } else {
-        logger.failure(
-          `Customer.io React Native SDK not found in ${packageLockFile.readablePath}`
-        );
-      }
-    }
-  } catch (err) {
-    logger.exception('Unable to read lock files for package.json: %s', err);
+): string | undefined {
+  const packageLockFile = project.packageLockFile;
+  if (!packageLockFile || !packageLockFile.content) {
+    logger.warning(
+      `No lock file found for package.json. Make sure to run ${Commands.REACT_NATIVE.INSTALL_DEPENDENCIES} before running the project.`
+    );
+    return undefined;
   }
 
-  try {
-    const podfileLock = project.podfileLock;
-    const podfileLockContent = podfileLock.content!;
+  return extractVersionFromPackageLock(
+    packageLockFile.content,
+    packageLockFile.args.get('type'),
+    PACKAGE_NAME_REACT_NATIVE
+  );
+}
 
-    const reactNativePodVersion = extractVersionFromPodLock(
-      podfileLockContent,
-      PACKAGE_NAME_REACT_NATIVE
-    );
-    if (reactNativePodVersion) {
-      logger.success(
-        `Customer.io React Native SDK POD version: ${reactNativePodVersion}`
-      );
-    } else {
-      logger.failure(
-        `Customer.io React Native SDK not found in ${podfileLock.readablePath}`
-      );
-    }
-  } catch (err) {
-    logger.exception(
-      `Unable to read Podfile.lock at ${project.podfileLock.readablePath}: %s`,
-      err
-    );
+function getSDKVersionPackageFile(
+  project: ReactNativeProject
+): string | undefined {
+  const packageFile = project.packageJsonFile;
+  if (!packageFile || !packageFile.content) {
+    return undefined;
   }
+
+  const packageJson = JSON.parse(packageFile.content!);
+  return packageJson[PACKAGE_NAME_REACT_NATIVE];
 }

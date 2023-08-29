@@ -20,34 +20,34 @@ import {
 } from '../utils';
 
 export async function runChecks(group: CheckGroup): Promise<void> {
+  const context = Context.get();
+  const project = context.project as iOSProject;
+
   switch (group) {
-    case CheckGroup.Dependencies:
+    case CheckGroup.Diagnostics:
+      // await runCatching(validateDeploymentTargetVersion)(project);
       break;
 
     case CheckGroup.Initialization:
+      await runCatching(validateSDKInitialization)(project);
       break;
 
     case CheckGroup.PushSetup:
+      await runCatching(validatePushEntitlements)(project);
+      await runCatching(analyzeNotificationServiceExtensionProperties)(project);
+      await runCatching(validateUserNotificationCenterDelegate)(project);
+      break;
+
+    case CheckGroup.Dependencies:
+      await runCatching(validateDependencies)(project);
+      await runCatching(validateNoConflictingSDKs)(project);
       break;
   }
-
-  // const context = Context.get();
-  // const project = context.project as iOSProject;
-
-  // await runCatching(validateSDKInitialization)(project);
-  // await runCatching(analyzeNotificationServiceExtensionProperties)(project);
-  // await runCatching(validateUserNotificationCenterDelegate)(project);
-  // await runCatching(validatePushEntitlements)(project);
-  // await runCatching(validateNoConflictingSDKs)(project);
-  // await runCatching(collectSummary)(project);
 }
 
 async function analyzeNotificationServiceExtensionProperties(
   project: iOSProject
 ): Promise<void> {
-  logger.linebreak();
-  logger.bold(`Push Setup`);
-
   for (const { file: projectFile, xcodeProject } of project.projectFiles) {
     logger.debug(`Checking project at path: ${projectFile.readablePath}`);
     const targets = xcodeProject.pbxNativeTargetSection();
@@ -392,10 +392,7 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
   }
 }
 
-async function collectSummary(project: iOSProject): Promise<void> {
-  logger.linebreak();
-  logger.bold(`Dependencies`);
-
+async function validateDependencies(project: iOSProject): Promise<void> {
   if (project.isUsingCocoaPods) {
     await runCatching(extractPodVersions)(project);
   } else {
@@ -405,7 +402,7 @@ async function collectSummary(project: iOSProject): Promise<void> {
   }
 }
 
-async function extractPodVersions(project: iOSProject): Promise<void> {
+function extractPodVersions(project: iOSProject) {
   const podfileLock = project.podfileLock;
   const podfileLockContent = podfileLock.content;
 
