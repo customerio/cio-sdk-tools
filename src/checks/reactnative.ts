@@ -91,12 +91,25 @@ async function validateSDKInitialization(
 async function validateSDKVersion(project: ReactNativeProject): Promise<void> {
   const latestSdkVersion = await fetchNPMVersion(PACKAGE_NAME_REACT_NATIVE);
 
-  const packageFileSDKVersion =
-    getSDKVersionPackageLock(project) ?? getSDKVersionPackageFile(project);
+  let packageFileSDKVersion = getSDKVersionPackageLock(project);
+  let parsedSDKVersion: string | undefined;
+
+  if (packageFileSDKVersion) {
+    parsedSDKVersion = packageFileSDKVersion;
+  } else {
+    logger.failure(
+      `Customer.io React Native SDK not found in package lock file.` +
+        ` Make sure to run ${Commands.REACT_NATIVE.INSTALL_DEPENDENCIES} before running the project.`
+    );
+    packageFileSDKVersion = getSDKVersionPackageFile(project);
+    parsedSDKVersion = packageFileSDKVersion
+      ? packageFileSDKVersion.replace(/[^0-9.]/g, '')
+      : undefined;
+  }
 
   if (packageFileSDKVersion) {
     const sdkVersionMessage = `Customer.io React Native SDK version: ${packageFileSDKVersion}`;
-    if (!latestSdkVersion || packageFileSDKVersion === latestSdkVersion) {
+    if (!latestSdkVersion || parsedSDKVersion === latestSdkVersion) {
       logger.success(sdkVersionMessage);
     } else {
       logger.warning(sdkVersionMessage);
@@ -104,7 +117,7 @@ async function validateSDKVersion(project: ReactNativeProject): Promise<void> {
     }
   } else {
     logger.failure(
-      `Customer.io React Native SDK not found in ${project.packageLockFile?.readablePath}`
+      `Customer.io React Native SDK not found in ${project.projectPath}`
     );
   }
 }
@@ -114,9 +127,6 @@ function getSDKVersionPackageLock(
 ): string | undefined {
   const packageLockFile = project.packageLockFile;
   if (!packageLockFile || !packageLockFile.content) {
-    logger.warning(
-      `No lock file found for package.json. Make sure to run ${Commands.REACT_NATIVE.INSTALL_DEPENDENCIES} before running the project.`
-    );
     return undefined;
   }
 
@@ -136,5 +146,6 @@ function getSDKVersionPackageFile(
   }
 
   const packageJson = JSON.parse(packageFile.content!);
-  return packageJson[PACKAGE_NAME_REACT_NATIVE];
+  const dependencies = packageJson.dependencies;
+  return dependencies[PACKAGE_NAME_REACT_NATIVE];
 }
