@@ -11,6 +11,7 @@ import {
   ReactNativeProject,
   iOSNativeProject,
 } from './core';
+import { CheckGroup } from './enums';
 import {
   getAbsolutePath,
   isDirectoryNonEmpty,
@@ -18,7 +19,6 @@ import {
   readFileContent,
 } from './utils';
 import { configureLogger } from './utils/logger';
-import { CheckGroup } from './enums/checkGroup';
 
 const program = new Command();
 

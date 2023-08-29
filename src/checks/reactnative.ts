@@ -1,6 +1,6 @@
 import { Commands, Conflicts, PACKAGE_NAME_REACT_NATIVE } from '../constants';
 import { Context, ReactNativeProject } from '../core';
-import { CheckGroup } from '../enums/checkGroup';
+import { CheckGroup } from '../enums';
 import {
   extractVersionFromPackageLock,
   fetchNPMVersion,

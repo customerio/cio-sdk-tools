@@ -8,7 +8,7 @@ import {
   iOS_DEPLOYMENT_TARGET_MIN_REQUIRED,
 } from '../constants';
 import { Context, iOSProject } from '../core';
-import { CheckGroup } from '../enums/checkGroup';
+import { CheckGroup } from '../enums';
 import {
   extractVersionFromPodLock,
   getReadablePath,
