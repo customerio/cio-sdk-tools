@@ -335,7 +335,7 @@ async function validateSDKInitialization(project: iOSProject): Promise<void> {
   if (sdkInitializationFiles !== undefined) {
     logger.success(`iOS SDK Initialization found in ${sdkInitializationFiles}`);
   } else {
-    logger.warning('iOS SDK Initialization not found in suggested files');
+    logger.warning('iOS SDK Initialization not found');
   }
 }
 
