@@ -38,23 +38,17 @@ async function validateNoConflictingSDKs(
   const packageJson = JSON.parse(packageFile.content!);
   const dependencies = [...Object.keys(packageJson.dependencies || {})];
 
-  const sdkVersionInPackageJson =
-    packageJson.dependencies[PACKAGE_NAME_REACT_NATIVE];
-  logger.success(
-    `${PACKAGE_NAME_REACT_NATIVE} version in package.json: ${sdkVersionInPackageJson}`
-  );
-
   const conflictingLibraries = Conflicts.reactNativePackages.filter((lib) =>
     dependencies.includes(lib)
   );
 
   if (conflictingLibraries.length === 0) {
-    logger.success('No conflicting libraries found');
+    logger.success('No conflicting packages found');
   } else {
-    logger.warning('Potential conflicting libraries found.');
+    logger.warning('Potential conflicting packages found.');
     logger.alert(
-      `It seems that your app is using multiple push messaging libraries (${conflictingLibraries}).` +
-        ` We're continuing to improve support for multiple libraries, but there are some limitations.` +
+      `It seems that your app is using multiple push messaging packages (${conflictingLibraries}).` +
+        ` We're continuing to improve support for multiple packages, but there are some limitations.` +
         ` Learn more at: ${project.documentation.multiplePushProviders}`
     );
   }

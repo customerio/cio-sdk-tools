@@ -39,8 +39,8 @@ export async function runChecks(group: CheckGroup): Promise<void> {
       break;
 
     case CheckGroup.Dependencies:
-      await runCatching(validateDependencies)(project);
       await runCatching(validateNoConflictingSDKs)(project);
+      await runCatching(validateDependencies)(project);
       break;
   }
 }
