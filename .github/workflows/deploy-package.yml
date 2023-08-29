@@ -4,8 +4,7 @@ name: Deploy SDK
 # bot account runs write operations on the github repo to push a tag.
 on:
   push:
-    # Note: to prevent making any deployments at this time, the below line of code is using `none`. Replace with `main` when we are ready for first deployment. 
-    branches: [none] # all branches where deployments currently occur. Make sure this list matches list of branches in  `.releaserc` file.
+    branches: [main] # all branches where deployments currently occur. Make sure this list matches list of branches in  `.releaserc` file.
 
 permissions:
   contents: write # access to push the git tag
