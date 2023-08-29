@@ -83,9 +83,11 @@ async function validateSDKInitialization(
   );
 
   if (sdkInitializationFiles !== undefined) {
-    logger.success(`SDK Initialization found in ${sdkInitializationFiles}`);
+    logger.success(
+      `React Native SDK Initialization found in ${sdkInitializationFiles}`
+    );
   } else {
-    logger.failure('SDK Initialization not found');
+    logger.failure('React Native SDK Initialization not found');
   }
 }
 
