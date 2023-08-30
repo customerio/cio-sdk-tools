@@ -332,10 +332,28 @@ async function validateSDKInitialization(project: iOSProject): Promise<void> {
     project.iOSProjectPath
   );
 
-  if (sdkInitializationFiles !== undefined) {
-    logger.success(`iOS SDK Initialization found in ${sdkInitializationFiles}`);
+  if (sdkInitializationFiles.matchedFiles.length > 0) {
+    logger.success(
+      `iOS SDK Initialization found in ${sdkInitializationFiles.formattedMatchedFiles}`
+    );
   } else {
-    logger.warning('iOS SDK Initialization not found');
+    logger.debug(`Search Criteria:`);
+    logger.debug(
+      `Target File Names: ${sdkInitializationFiles.formattedTargetFileNames}`
+    );
+    logger.debug(
+      `Target File Patterns: ${sdkInitializationFiles.formattedTargetPatterns}`
+    );
+    logger.debug(
+      `Looked into the following files: ${sdkInitializationFiles.formattedSearchedFiles}`
+    );
+    if (logger.isDebug()) {
+      logger.warning('iOS SDK Initialization not found');
+    } else {
+      logger.warning(
+        'iOS SDK Initialization not found. For more details, run the script with the -v flag'
+      );
+    }
   }
 }
 

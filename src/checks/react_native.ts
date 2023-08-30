@@ -59,6 +59,8 @@ async function validateNoConflictingSDKs(
 async function validateSDKInitialization(
   project: ReactNativeProject
 ): Promise<void> {
+  logger.debug(`Checking for SDK Initialization in React Native`);
+
   const sdkInitializationPattern = /CustomerIO\.initialize/;
   const sdkInitializationFiles = searchFilesForCode(
     {
@@ -69,18 +71,45 @@ async function validateSDKInitialization(
         '.tsx': sdkInitializationPattern,
       },
       ignoreDirectories: ['android', 'ios'],
-      targetFileNames: ['App', 'index'],
+      targetFileNames: [
+        'App',
+        'index',
+        'init',
+        'setup',
+        'config',
+        'start',
+        'main',
+        'route',
+        'navigation',
+        'provider',
+      ],
       targetFilePatterns: ['cio', 'customerio'],
     },
     project.projectPath
   );
 
-  if (sdkInitializationFiles !== undefined) {
+  if (sdkInitializationFiles.matchedFiles.length > 0) {
     logger.success(
-      `React Native SDK Initialization found in ${sdkInitializationFiles}`
+      `React Native SDK Initialization found in ${sdkInitializationFiles.formattedMatchedFiles}`
     );
   } else {
-    logger.failure('React Native SDK Initialization not found');
+    logger.debug(`Search Criteria:`);
+    logger.debug(
+      `Target File Names: ${sdkInitializationFiles.formattedTargetFileNames}`
+    );
+    logger.debug(
+      `Target File Patterns: ${sdkInitializationFiles.formattedTargetPatterns}`
+    );
+    logger.debug(
+      `Looked into the following files: ${sdkInitializationFiles.formattedSearchedFiles}`
+    );
+    if (logger.isDebug()) {
+      logger.failure('React Native SDK Initialization not found');
+    } else {
+      logger.warning(
+        'React Native SDK Initialization not found. For more details, run the script with the -v flag'
+      );
+    }
   }
 }
 
