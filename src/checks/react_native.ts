@@ -90,10 +90,10 @@ async function validateSDKVersion(project: ReactNativeProject): Promise<void> {
   let packageFileSDKVersion: string | undefined;
   let parsedSDKVersion: string | undefined;
 
-  const packageLockFileContent = project.packageLockFile?.content;
-  if (packageLockFileContent) {
+  const packageLockContent = project.packageLockFile?.content;
+  if (packageLockContent) {
     packageFileSDKVersion = extractVersionFromPackageLock(
-      packageLockFileContent,
+      packageLockContent,
       project.packageLockFile!.args.get('type'),
       PACKAGE_NAME_REACT_NATIVE
     );
@@ -105,16 +105,16 @@ async function validateSDKVersion(project: ReactNativeProject): Promise<void> {
       `Customer.io React Native SDK not found in package lock file.` +
         ` Make sure to run ${Commands.ReactNative.INSTALL_DEPENDENCIES} before running the project.`
     );
-    const packageFileContent = project.packageJsonFile?.content;
-    if (packageFileContent) {
+    const packageJsonContent = project.packageJsonFile?.content;
+    if (packageJsonContent) {
       packageFileSDKVersion = extractVersionFromPackageJson(
-        packageFileContent,
+        packageJsonContent,
         PACKAGE_NAME_REACT_NATIVE
       );
     }
-    parsedSDKVersion = packageFileSDKVersion
-      ? parseVersionString(packageFileSDKVersion)
-      : undefined;
+    if (packageFileSDKVersion) {
+      parsedSDKVersion = parseVersionString(packageFileSDKVersion);
+    }
   }
 
   if (packageFileSDKVersion) {
