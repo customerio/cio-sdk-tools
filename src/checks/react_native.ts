@@ -87,8 +87,17 @@ async function validateSDKInitialization(
 async function validateSDKVersion(project: ReactNativeProject): Promise<void> {
   const latestSdkVersion = await fetchNPMVersion(PACKAGE_NAME_REACT_NATIVE);
 
-  let packageFileSDKVersion = getSDKVersionPackageLock(project);
+  let packageFileSDKVersion: string | undefined;
   let parsedSDKVersion: string | undefined;
+
+  const packageLockFileContent = project.packageLockFile?.content;
+  if (packageLockFileContent) {
+    packageFileSDKVersion = extractVersionFromPackageLock(
+      packageLockFileContent,
+      project.packageLockFile!.args.get('type'),
+      PACKAGE_NAME_REACT_NATIVE
+    );
+  }
 
   if (packageFileSDKVersion) {
     parsedSDKVersion = packageFileSDKVersion;
@@ -122,19 +131,4 @@ async function validateSDKVersion(project: ReactNativeProject): Promise<void> {
       `Customer.io React Native SDK not found in ${project.projectPath}`
     );
   }
-}
-
-function getSDKVersionPackageLock(
-  project: ReactNativeProject
-): string | undefined {
-  const packageLockFile = project.packageLockFile;
-  if (!packageLockFile || !packageLockFile.content) {
-    return undefined;
-  }
-
-  return extractVersionFromPackageLock(
-    packageLockFile.content,
-    packageLockFile.args.get('type'),
-    PACKAGE_NAME_REACT_NATIVE
-  );
 }
