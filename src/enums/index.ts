@@ -1,1 +1,1 @@
-export * from './checkGroup';
+export * from './check_group';
