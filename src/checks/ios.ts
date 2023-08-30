@@ -25,7 +25,7 @@ export async function runChecks(group: CheckGroup): Promise<void> {
 
   switch (group) {
     case CheckGroup.Diagnostics:
-      // await runCatching(validateDeploymentTargetVersion)(project);
+      // Get deployment target version;
       break;
 
     case CheckGroup.Initialization:
