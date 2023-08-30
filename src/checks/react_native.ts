@@ -97,11 +97,10 @@ async function validateSDKVersion(project: ReactNativeProject): Promise<void> {
       project.packageLockFile!.args.get('type'),
       PACKAGE_NAME_REACT_NATIVE
     );
+    parsedSDKVersion = packageFileSDKVersion;
   }
 
-  if (packageFileSDKVersion) {
-    parsedSDKVersion = packageFileSDKVersion;
-  } else {
+  if (!packageFileSDKVersion) {
     logger.failure(
       `Customer.io React Native SDK not found in package lock file.` +
         ` Make sure to run ${Commands.ReactNative.INSTALL_DEPENDENCIES} before running the project.`
