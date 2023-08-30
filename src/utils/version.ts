@@ -1,5 +1,5 @@
 import fetch from 'npm-registry-fetch';
-import { trimEqualOperator, uniqueValues } from '.';
+import { logger, trimEqualOperator, uniqueValues } from '.';
 
 function createPodRegex(podName: string): RegExp {
   return new RegExp(`- ${podName}\\s+\\(([^)]+)\\)`, 'g');
@@ -63,8 +63,13 @@ export function extractVersionFromPackageJson(
 export async function fetchNPMVersion(
   packageName: string
 ): Promise<string | undefined> {
-  const response = await fetch(`https://registry.npmjs.org/${packageName}`);
-  const packageInfo = await response.json();
-  const latestVersion = packageInfo['dist-tags'].latest;
-  return latestVersion;
+  try {
+    const response = await fetch(`https://registry.npmjs.org/${packageName}`);
+    const packageInfo = await response.json();
+    const latestVersion = packageInfo['dist-tags'].latest;
+    return latestVersion;
+  } catch (err) {
+    logger.debug(`Unable to fetch latest package version for ${packageName}`);
+    return undefined;
+  }
 }
