@@ -74,10 +74,16 @@ export function shouldIgnoreDirectory(
     'icons',
     'fonts',
   ];
+  // Directory names that contain these substrings should be ignored
+  const excludedSubstrings = ['temp', 'cache', 'test'];
+
   const excludedNames = ignoreDirs.concat(commonlyExcludedNames);
   return (
     excludedPrefixes.some((dir: string) => directoryName.startsWith(dir)) ||
-    excludedNames.some((dir: string) => directoryName === dir)
+    excludedNames.some((dir: string) => directoryName === dir) ||
+    excludedSubstrings.some((substring: string) =>
+      directoryName.toLowerCase().includes(substring.toLowerCase())
+    )
   );
 }
 
