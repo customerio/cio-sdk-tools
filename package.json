@@ -1,6 +1,6 @@
 {
   "name": "cio-sdk-tools",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A self service tool to run diagnostics on your mobile SDK installation",
   "main": "src/core/index",
   "scripts": {
@@ -17,14 +17,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/customerio/sdk-self-service.git"
+    "url": "git+https://github.com/customerio/cio-sdk-tools.git"
   },
   "author": "CustomerIO Team",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/customerio/sdk-self-service/issues"
+    "url": "https://github.com/customerio/cio-sdk-tools/issues"
   },
-  "homepage": "https://github.com/customerio/sdk-self-service#readme",
+  "homepage": "https://github.com/customerio/cio-sdk-tools#readme",
   "dependencies": {
     "chalk": "^4.1.2",
     "commander": "^11.0.0",
