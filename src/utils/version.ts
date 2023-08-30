@@ -51,6 +51,15 @@ export function extractVersionFromPackageLock(
   }
 }
 
+export function extractVersionFromPackageJson(
+  packageFileContent: string,
+  packageName: string
+): string | undefined {
+  const packageJson = JSON.parse(packageFileContent);
+  const dependencies = packageJson.dependencies;
+  return dependencies[packageName];
+}
+
 export async function fetchNPMVersion(
   packageName: string
 ): Promise<string | undefined> {
