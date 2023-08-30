@@ -1,3 +1,3 @@
-export const REACT_NATIVE = {
+export const ReactNative = {
   INSTALL_DEPENDENCIES: '`yarn install` or `npm install`',
 };
