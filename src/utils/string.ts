@@ -10,3 +10,7 @@ export function trimQuotes(input: string) {
 export function trimEqualOperator(input: string) {
   return input.replace(/^=/, '').trim();
 }
+
+export function parseVersionString(input: string): string {
+  return input.replace(/[^0-9a-zA-Z.-]/g, '').trim();
+}

@@ -2,6 +2,7 @@ import { Commands, Conflicts, PACKAGE_NAME_REACT_NATIVE } from '../constants';
 import { Context, ReactNativeProject } from '../core';
 import { CheckGroup } from '../enums';
 import {
+  parseVersionString,
   extractVersionFromPackageLock,
   fetchNPMVersion,
   logger,
@@ -97,7 +98,7 @@ async function validateSDKVersion(project: ReactNativeProject): Promise<void> {
     );
     packageFileSDKVersion = getSDKVersionPackageFile(project);
     parsedSDKVersion = packageFileSDKVersion
-      ? packageFileSDKVersion.replace(/[^0-9.]/g, '')
+      ? parseVersionString(packageFileSDKVersion)
       : undefined;
   }
 
