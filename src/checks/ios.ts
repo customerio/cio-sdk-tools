@@ -430,9 +430,5 @@ function extractPodVersions(project: iOSProject) {
     logger.error(
       `${POD_MESSAGING_PUSH_APN} and ${POD_MESSAGING_PUSH_FCM} modules found. Both cannot be used at a time, please use only one of them.`
     );
-  } else if (!pushMessagingAPNPod && !pushMessagingFCMPod) {
-    logger.error(
-      `None of ${POD_MESSAGING_PUSH_APN} and ${POD_MESSAGING_PUSH_FCM} modules found.`
-    );
   }
 }
