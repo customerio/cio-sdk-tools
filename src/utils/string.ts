@@ -12,5 +12,6 @@ export function trimEqualOperator(input: string) {
 }
 
 export function parseVersionString(input: string): string {
-  return input.replace(/[^0-9a-zA-Z.-]/g, '').trim();
+  // Remove any non-alphanumeric characters from the beginning of the string.
+  return input.replace(/^[^a-zA-Z0-9]+/, '').trim();
 }
