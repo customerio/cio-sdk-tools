@@ -402,7 +402,7 @@ async function validateDependencies(project: iOSProject): Promise<void> {
   }
 }
 
-async function extractPodVersions(project: iOSProject) {
+async function extractPodVersions(project: iOSProject): Promise<void> {
   const podfileLock = project.podfileLock;
   const podfileLockContent = podfileLock.content;
 
