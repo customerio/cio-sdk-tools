@@ -106,7 +106,7 @@ async function validateSDKInitialization(
     if (logger.isDebug()) {
       logger.failure('React Native SDK Initialization not found');
     } else {
-      logger.warning(
+      logger.failure(
         'React Native SDK Initialization not found. For more details, run the script with the -v flag'
       );
     }
