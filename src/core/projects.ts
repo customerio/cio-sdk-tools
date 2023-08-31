@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { runChecksForIOS, runChecksForReactNative } from '../checks';
 import { Links } from '../constants';
-import { CheckGroup } from '../enums';
+import { CheckGroup } from '../types';
 import { createFilePattern } from '../utils';
 import {
   doesExists,

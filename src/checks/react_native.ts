@@ -1,12 +1,12 @@
 import { Commands, Conflicts, PACKAGE_NAME_REACT_NATIVE } from '../constants';
 import { Context, ReactNativeProject } from '../core';
-import { CheckGroup } from '../enums';
+import { CheckGroup } from '../types';
 import {
   extractVersionFromPackageJson,
   extractVersionFromPackageLock,
-  fetchNPMVersion,
+  fetchLatestVersion,
   logger,
-  parseVersionString,
+  removeNonAlphanumericChars,
   runCatching,
   searchFilesForCode,
 } from '../utils';
@@ -114,7 +114,7 @@ async function validateSDKInitialization(
 }
 
 async function validateSDKVersion(project: ReactNativeProject): Promise<void> {
-  const latestSdkVersion = await fetchNPMVersion(PACKAGE_NAME_REACT_NATIVE);
+  const latestSdkVersion = await fetchLatestVersion(PACKAGE_NAME_REACT_NATIVE);
 
   let packageFileSDKVersion: string | undefined;
   let parsedSDKVersion: string | undefined;
@@ -142,7 +142,7 @@ async function validateSDKVersion(project: ReactNativeProject): Promise<void> {
       );
     }
     if (packageFileSDKVersion) {
-      parsedSDKVersion = parseVersionString(packageFileSDKVersion);
+      parsedSDKVersion = removeNonAlphanumericChars(packageFileSDKVersion);
     }
   }
 
