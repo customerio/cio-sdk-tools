@@ -71,9 +71,10 @@ async function validateSDKInitialization(
         '.tsx': sdkInitializationPattern,
       },
       ignoreDirectories: ['android', 'ios'],
-      targetFileNames: [
-        'App',
-        'index',
+      targetFileNames: ['App', 'index'],
+      targetFilePatterns: [
+        'cio',
+        'customerio',
         'init',
         'setup',
         'config',
@@ -83,7 +84,6 @@ async function validateSDKInitialization(
         'navigation',
         'provider',
       ],
-      targetFilePatterns: ['cio', 'customerio'],
     },
     project.projectPath
   );
@@ -95,10 +95,10 @@ async function validateSDKInitialization(
   } else {
     logger.debug(`Search Criteria:`);
     logger.debug(
-      `Target File Names: ${sdkInitializationFiles.formattedTargetFileNames}`
+      `Searching files with names: ${sdkInitializationFiles.formattedTargetFileNames}`
     );
     logger.debug(
-      `Target File Patterns: ${sdkInitializationFiles.formattedTargetPatterns}`
+      `Searching files with keywords: ${sdkInitializationFiles.formattedTargetPatterns}`
     );
     logger.debug(
       `Looked into the following files: ${sdkInitializationFiles.formattedSearchedFiles}`

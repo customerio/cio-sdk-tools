@@ -339,10 +339,10 @@ async function validateSDKInitialization(project: iOSProject): Promise<void> {
   } else {
     logger.debug(`Search Criteria:`);
     logger.debug(
-      `Target File Names: ${sdkInitializationFiles.formattedTargetFileNames}`
+      `Searching files with names: ${sdkInitializationFiles.formattedTargetFileNames}`
     );
     logger.debug(
-      `Target File Patterns: ${sdkInitializationFiles.formattedTargetPatterns}`
+      `Searching files with keywords: ${sdkInitializationFiles.formattedTargetPatterns}`
     );
     logger.debug(
       `Looked into the following files: ${sdkInitializationFiles.formattedSearchedFiles}`
