@@ -18,27 +18,58 @@ export type CodeSearchConfig = {
   targetFilePatterns: string[];
 };
 
+class CodeSearchResult {
+  constructor(
+    public matchedFiles: string[],
+    public searchedFiles: Set<string>,
+    private config: CodeSearchConfig
+  ) {}
+
+  // Helper method to get formatted matched files as a string
+  get formattedMatchedFiles(): string | undefined {
+    return this.matchedFiles.length > 0
+      ? this.matchedFiles.map((file) => `'${file}'`).join(', ')
+      : undefined;
+  }
+
+  // Helper method to get formatted target files as a string
+  get formattedTargetFileNames(): string {
+    return this.config.targetFileNames.join(', ');
+  }
+
+  // Helper method to return target patterns as a string
+  get formattedTargetPatterns(): string {
+    return this.config.targetFilePatterns.join(', ');
+  }
+
+  // Helper method to get formatted searched files as a string
+  get formattedSearchedFiles(): string {
+    return [...this.searchedFiles].join(', ');
+  }
+}
+
 export function searchFilesForCode(
   config: CodeSearchConfig,
   directoryPath: string
-): string | undefined {
+): CodeSearchResult {
   const projectPath = Context.get().project.projectPath;
+  const searchedFiles: Set<string> = new Set();
+
   const matchingFiles = searchFilesRecursivelyForCode(
     config,
     projectPath,
-    directoryPath
+    directoryPath,
+    searchedFiles
   );
-  if (matchingFiles.length > 0) {
-    return matchingFiles.map((file) => `'${file}'`).join(', ');
-  } else {
-    return undefined;
-  }
+
+  return new CodeSearchResult(matchingFiles, searchedFiles, config);
 }
 
 function searchFilesRecursivelyForCode(
   config: CodeSearchConfig,
   projectPath: string,
-  directoryPath: string
+  directoryPath: string,
+  searchedFiles: Set<string>
 ): string[] {
   const matchingFiles: string[] = [];
   const files = readDirectory(directoryPath);
@@ -73,14 +104,13 @@ function searchFilesRecursivelyForCode(
     }
 
     if (linkStat.isDirectory) {
-      const matches = searchFilesRecursivelyForCode(
+      const subdirMatchingFiles = searchFilesRecursivelyForCode(
         config,
         projectPath,
-        filePath
+        filePath,
+        searchedFiles
       );
-      if (matches.length > 0) {
-        matchingFiles.push(...matches);
-      }
+      matchingFiles.push(...subdirMatchingFiles);
     } else if (linkStat.isFile) {
       const matchingPattern = filePatternsForCodeInspection.find((pattern) =>
         pattern.test(file)
@@ -88,6 +118,7 @@ function searchFilesRecursivelyForCode(
       if (matchingPattern) {
         const fileContent = readFileContent(filePath);
         const codePattern = config.codePatternByExtension[linkStat.extension];
+        searchedFiles.add(getReadablePath(projectPath, filePath)); // Add the file path to the set of searched files
         if (fileContent && codePattern.test(fileContent)) {
           matchingFiles.push(getReadablePath(projectPath, filePath));
         }

@@ -125,6 +125,10 @@ export function configureLogger(options: {
   }
 }
 
+export function isDebug(): boolean {
+  return logger.level === 'debug';
+}
+
 function createLogger(): winston.Logger {
   const transports: winston.transport[] = [
     new winston.transports.Console({
