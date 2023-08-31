@@ -11,6 +11,7 @@ import {
   ReactNativeProject,
   iOSNativeProject,
 } from './core';
+import { CheckGroup } from './types';
 import {
   getAbsolutePath,
   isDirectoryNonEmpty,
@@ -50,7 +51,20 @@ async function doctor(projectPathArg: string, options: DoctorCommandOptions) {
   Context.create(project);
 
   await project.loadFilesContent();
-  await project.runAllChecks();
+
+  // Run diagnostics first to avoid printing group title again
+  await project.runChecks(CheckGroup.Diagnostics);
+  // Run other checks in order
+  const checkGroups: CheckGroup[] = [
+    CheckGroup.Initialization,
+    CheckGroup.PushSetup,
+    CheckGroup.Dependencies,
+  ];
+  for (const group of checkGroups) {
+    logger.linebreak();
+    logger.bold(group.toString());
+    await project.runChecks(group as CheckGroup);
+  }
 
   logger.linebreak();
   if (options.report) {

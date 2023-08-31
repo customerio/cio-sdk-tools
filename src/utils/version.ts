@@ -1,4 +1,6 @@
-import { trimEqualOperator, uniqueValues } from '.';
+import https from 'node:https';
+import { logger, trimEqualOperator, uniqueValues } from '.';
+import { GITHUB_ORG_NAME_CUSTOMER_IO } from '../constants';
 
 function createPodRegex(podName: string): RegExp {
   return new RegExp(`- ${podName}\\s+\\(([^)]+)\\)`, 'g');
@@ -48,4 +50,48 @@ export function extractVersionFromPackageLock(
   } else {
     return undefined;
   }
+}
+
+export function extractVersionFromPackageJson(
+  packageFileContent: string,
+  packageName: string
+): string | undefined {
+  const packageJson = JSON.parse(packageFileContent);
+  const dependencies = packageJson.dependencies;
+  return dependencies[packageName];
+}
+
+export async function fetchLatestVersion(
+  packageName: string
+): Promise<string | undefined> {
+  try {
+    return await fetchLatestGitHubRelease(packageName);
+  } catch (err) {
+    logger.debug(
+      `Unable to fetch latest package version for ${packageName}.  Error: ${err}`
+    );
+    return undefined;
+  }
+}
+
+export function fetchLatestGitHubRelease(
+  repo: string,
+  owner: string = GITHUB_ORG_NAME_CUSTOMER_IO
+): Promise<string | undefined> {
+  return new Promise((resolve, reject) => {
+    const request = https.get(
+      `https://api.github.com/repos/${owner}/${repo}/releases/latest`,
+      { headers: { 'User-Agent': 'NodeJS' } },
+      (response) => {
+        let data = '';
+        response.on('data', (chunk) => (data += chunk));
+        response.on('end', () => resolve(JSON.parse(data).tag_name));
+      }
+    );
+    request.setTimeout(3000, () => {
+      request.destroy();
+      reject(new Error('Request timed out'));
+    });
+    request.on('error', (error) => reject(error));
+  });
 }

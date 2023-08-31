@@ -8,6 +8,7 @@ import {
   iOS_DEPLOYMENT_TARGET_MIN_REQUIRED,
 } from '../constants';
 import { Context, iOSProject } from '../core';
+import { CheckGroup } from '../types';
 import {
   extractVersionFromPodLock,
   getReadablePath,
@@ -18,24 +19,35 @@ import {
   trimQuotes,
 } from '../utils';
 
-export async function runAllChecks(): Promise<void> {
+export async function runChecks(group: CheckGroup): Promise<void> {
   const context = Context.get();
   const project = context.project as iOSProject;
 
-  await runCatching(validateSDKInitialization)(project);
-  await runCatching(analyzeNotificationServiceExtensionProperties)(project);
-  await runCatching(validateUserNotificationCenterDelegate)(project);
-  await runCatching(validatePushEntitlements)(project);
-  await runCatching(validateNoConflictingSDKs)(project);
-  await runCatching(collectSummary)(project);
+  switch (group) {
+    case CheckGroup.Diagnostics:
+      // Get deployment target version;
+      break;
+
+    case CheckGroup.Initialization:
+      await runCatching(validateSDKInitialization)(project);
+      break;
+
+    case CheckGroup.PushSetup:
+      await runCatching(validatePushEntitlements)(project);
+      await runCatching(analyzeNotificationServiceExtensionProperties)(project);
+      await runCatching(validateUserNotificationCenterDelegate)(project);
+      break;
+
+    case CheckGroup.Dependencies:
+      await runCatching(validateNoConflictingSDKs)(project);
+      await runCatching(validateDependencies)(project);
+      break;
+  }
 }
 
 async function analyzeNotificationServiceExtensionProperties(
   project: iOSProject
 ): Promise<void> {
-  logger.linebreak();
-  logger.bold(`Push Setup`);
-
   for (const { file: projectFile, xcodeProject } of project.projectFiles) {
     logger.debug(`Checking project at path: ${projectFile.readablePath}`);
     const targets = xcodeProject.pbxNativeTargetSection();
@@ -320,10 +332,28 @@ async function validateSDKInitialization(project: iOSProject): Promise<void> {
     project.iOSProjectPath
   );
 
-  if (sdkInitializationFiles !== undefined) {
-    logger.success(`iOS SDK Initialization found in ${sdkInitializationFiles}`);
+  if (sdkInitializationFiles.matchedFiles.length > 0) {
+    logger.success(
+      `iOS SDK Initialization found in ${sdkInitializationFiles.formattedMatchedFiles}`
+    );
   } else {
-    logger.warning('iOS SDK Initialization not found in suggested files');
+    logger.debug(`Search Criteria:`);
+    logger.debug(
+      `Searching files with names: ${sdkInitializationFiles.formattedTargetFileNames}`
+    );
+    logger.debug(
+      `Searching files with keywords: ${sdkInitializationFiles.formattedTargetPatterns}`
+    );
+    logger.debug(
+      `Looked into the following files: ${sdkInitializationFiles.formattedSearchedFiles}`
+    );
+    if (logger.isDebug()) {
+      logger.failure('iOS SDK Initialization not found');
+    } else {
+      logger.failure(
+        'iOS SDK Initialization not found. For more details, run the script with the -v flag'
+      );
+    }
   }
 }
 
@@ -380,10 +410,7 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
   }
 }
 
-async function collectSummary(project: iOSProject): Promise<void> {
-  logger.linebreak();
-  logger.bold(`Dependencies`);
-
+async function validateDependencies(project: iOSProject): Promise<void> {
   if (project.isUsingCocoaPods) {
     await runCatching(extractPodVersions)(project);
   } else {
@@ -420,10 +447,6 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
   if (pushMessagingAPNPod && pushMessagingFCMPod) {
     logger.error(
       `${POD_MESSAGING_PUSH_APN} and ${POD_MESSAGING_PUSH_FCM} modules found. Both cannot be used at a time, please use only one of them.`
-    );
-  } else if (!pushMessagingAPNPod && !pushMessagingFCMPod) {
-    logger.error(
-      `None of ${POD_MESSAGING_PUSH_APN} and ${POD_MESSAGING_PUSH_FCM} modules found.`
     );
   }
 }
