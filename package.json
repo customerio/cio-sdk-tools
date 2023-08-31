@@ -35,7 +35,6 @@
   "devDependencies": {
     "@tsconfig/node20": "^20.1.1",
     "@types/node": "^20.4.8",
-    "@types/npm-registry-fetch": "^8.0.4",
     "@types/xml2js": "^0.4.11",
     "@typescript-eslint/eslint-plugin": "^6.3.0",
     "@typescript-eslint/parser": "^6.3.0",
