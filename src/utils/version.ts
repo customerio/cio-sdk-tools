@@ -1,5 +1,6 @@
-import fetch from 'npm-registry-fetch';
+import https from 'node:https';
 import { logger, trimEqualOperator, uniqueValues } from '.';
+import { GITHUB_ORG_NAME_CUSTOMER_IO } from '../constants';
 
 function createPodRegex(podName: string): RegExp {
   return new RegExp(`- ${podName}\\s+\\(([^)]+)\\)`, 'g');
@@ -60,16 +61,37 @@ export function extractVersionFromPackageJson(
   return dependencies[packageName];
 }
 
-export async function fetchNPMVersion(
+export async function fetchLatestVersion(
   packageName: string
 ): Promise<string | undefined> {
   try {
-    const response = await fetch(`https://registry.npmjs.org/${packageName}`);
-    const packageInfo = await response.json();
-    const latestVersion = packageInfo['dist-tags'].latest;
-    return latestVersion;
+    return await fetchLatestGitHubRelease(packageName);
   } catch (err) {
-    logger.debug(`Unable to fetch latest package version for ${packageName}`);
+    logger.debug(
+      `Unable to fetch latest package version for ${packageName}.  Error: ${err}`
+    );
     return undefined;
   }
+}
+
+export function fetchLatestGitHubRelease(
+  repo: string,
+  owner: string = GITHUB_ORG_NAME_CUSTOMER_IO
+): Promise<string | undefined> {
+  return new Promise((resolve, reject) => {
+    const request = https.get(
+      `https://api.github.com/repos/${owner}/${repo}/releases/latest`,
+      { headers: { 'User-Agent': 'NodeJS' } },
+      (response) => {
+        let data = '';
+        response.on('data', (chunk) => (data += chunk));
+        response.on('end', () => resolve(JSON.parse(data).tag_name));
+      }
+    );
+    request.setTimeout(3000, () => {
+      request.destroy();
+      reject(new Error('Request timed out'));
+    });
+    request.on('error', (error) => reject(error));
+  });
 }
