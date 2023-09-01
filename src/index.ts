@@ -13,7 +13,7 @@ import {
 } from './core';
 import { CheckGroup } from './types';
 import {
-  fetchLatestVersion,
+  fetchCachedLatestVersion,
   getAbsolutePath,
   isDirectoryNonEmpty,
   logger,
@@ -140,7 +140,7 @@ program
     );
 
     try {
-      const latestVersion = await fetchLatestVersion(packageJson.name);
+      const latestVersion = await fetchCachedLatestVersion(packageJson.name);
       if (latestVersion && latestVersion !== packageJson.version) {
         logger.warning(
           `Newer version of ${packageJson.name} available ${latestVersion}, currently on ${packageJson.version}`

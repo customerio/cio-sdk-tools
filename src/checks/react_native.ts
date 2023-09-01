@@ -4,7 +4,7 @@ import { CheckGroup } from '../types';
 import {
   extractVersionFromPackageJson,
   extractVersionFromPackageLock,
-  fetchLatestVersion,
+  fetchCachedLatestVersion,
   logger,
   removeNonAlphanumericChars,
   runCatching,
@@ -114,7 +114,9 @@ async function validateSDKInitialization(
 }
 
 async function validateSDKVersion(project: ReactNativeProject): Promise<void> {
-  const latestSdkVersion = await fetchLatestVersion(PACKAGE_NAME_REACT_NATIVE);
+  const latestSdkVersion = await fetchCachedLatestVersion(
+    PACKAGE_NAME_REACT_NATIVE
+  );
 
   let packageFileSDKVersion: string | undefined;
   let parsedSDKVersion: string | undefined;
