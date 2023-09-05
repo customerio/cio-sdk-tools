@@ -24,7 +24,8 @@ export async function fetchCachedLatestVersion(
   const results = readFileWithStats([cachePath]);
   if (results) {
     const r = results[0];
-    if (r.lastUpdated && r.lastUpdated >= Date.now() - 60 * 60 * 1000) {
+    const cacheDurationMs = 60 * 60 * 1000;
+    if (r.lastUpdated && r.lastUpdated >= Date.now() - cacheDurationMs) {
       return r.content;
     }
   }

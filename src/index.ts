@@ -139,15 +139,11 @@ program
       `Running ${packageJson.name} on version ${packageJson.version}`
     );
 
-    try {
-      const latestVersion = await fetchCachedLatestVersion(packageJson.name);
-      if (latestVersion && latestVersion !== packageJson.version) {
-        logger.warning(
-          `Newer version of ${packageJson.name} available ${latestVersion}, currently on ${packageJson.version}`
-        );
-      }
-    } catch {
-      // catch block is empty because fetchLatestVersion will log the error
+    const latestVersion = await fetchCachedLatestVersion(packageJson.name);
+    if (latestVersion && latestVersion !== packageJson.version) {
+      logger.warning(
+        `Newer version of ${packageJson.name} available ${latestVersion}, currently on ${packageJson.version}`
+      );
     }
 
     doctor(path, options).catch((err) =>

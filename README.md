@@ -39,18 +39,18 @@ The tool assists in diagnosing and troubleshooting the Customer.io mobile SDK in
 To run the diagnostic tool:
 
 ```bash
-npx cio-sdk-tools doctor
+npx cio-sdk-tools@latest doctor
 ```
 
 **Example**:
 
 Export Logs to Your Preferred Location:
 ```bash
-npx cio-sdk-tools doctor /path/to/project -r diagnostics_report.txt
+npx cio-sdk-tools doctor@latest /path/to/project --report diagnostics_report.txt
 ```
 View Additional Options:
 ```bash
-npx cio-sdk-tools doctor /path/to/project -h
+npx cio-sdk-tools@latest doctor /path/to/project --help
 ```
 
 ## Reporting Issues
