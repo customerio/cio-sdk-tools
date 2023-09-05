@@ -13,6 +13,7 @@ import {
 } from './core';
 import { CheckGroup } from './types';
 import {
+  fetchCachedLatestVersion,
   getAbsolutePath,
   isDirectoryNonEmpty,
   logger,
@@ -128,11 +129,23 @@ program
       path.join(os.homedir(), 'Desktop', 'cio-sdk-tools-output.logs')
     )
   )
-  .action((path: string, options: DoctorCommandOptions) => {
+  .action(async (path: string, options: DoctorCommandOptions) => {
     configureLogger({
       verbose: options.verbose,
       logFilePath: options.report,
     });
+
+    logger.debug(
+      `Running ${packageJson.name} on version ${packageJson.version}`
+    );
+
+    const latestVersion = await fetchCachedLatestVersion(packageJson.name);
+    if (latestVersion && latestVersion !== packageJson.version) {
+      logger.warning(
+        `Newer version of ${packageJson.name} available ${latestVersion}, currently on ${packageJson.version}`
+      );
+    }
+
     doctor(path, options).catch((err) =>
       logger.error('Error running doctor:', err)
     );

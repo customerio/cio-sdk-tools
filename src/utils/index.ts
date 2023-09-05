@@ -6,3 +6,4 @@ export * as logger from './logger';
 export * from './patterns';
 export * from './string';
 export * from './version';
+export * from './cache';
