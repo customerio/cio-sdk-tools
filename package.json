@@ -1,6 +1,6 @@
 {
   "name": "cio-sdk-tools",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "A self service tool to run diagnostics on your mobile SDK installation",
   "main": "src/core/index",
   "scripts": {

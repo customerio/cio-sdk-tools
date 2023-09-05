@@ -1,3 +1,10 @@
+## [1.1.0](https://github.com/customerio/cio-sdk-tools/compare/1.0.2...1.1.0) (2023-09-05)
+
+
+### Features
+
+* log version of tool & inform if newer available ([#19](https://github.com/customerio/cio-sdk-tools/issues/19)) ([200ddf6](https://github.com/customerio/cio-sdk-tools/commit/200ddf601ccb96555ea82043189f492926e7c282))
+
 ### [1.0.2](https://github.com/customerio/cio-sdk-tools/compare/1.0.1...1.0.2) (2023-08-31)
 
 
