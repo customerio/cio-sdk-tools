@@ -1,3 +1,10 @@
+### [1.1.1](https://github.com/customerio/cio-sdk-tools/compare/1.1.0...1.1.1) (2023-09-07)
+
+
+### Bug Fixes
+
+* version check react native regex and format update ([#20](https://github.com/customerio/cio-sdk-tools/issues/20)) ([7bfb64a](https://github.com/customerio/cio-sdk-tools/commit/7bfb64a376c180183f9826b9154d4f27558aa277))
+
 ## [1.1.0](https://github.com/customerio/cio-sdk-tools/compare/1.0.2...1.1.0) (2023-09-05)
 
 
