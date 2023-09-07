@@ -46,7 +46,17 @@ export function extractVersionFromPackageLock(
     return lockVersionMatch ? lockVersionMatch[1] : undefined;
   } else if (packageLockType === 'npm') {
     const npmLockJson = JSON.parse(packageLockContent);
-    return npmLockJson.dependencies[packageName].version;
+    // Regex to match the package name
+    const packagePatternNpm: RegExp = new RegExp(`${packageName}`, 'i');
+
+    // Find a matching dependency
+    const matchingPackage = Object.keys(npmLockJson.packages).find((dep) =>
+      packagePatternNpm.test(dep)
+    );
+
+    return matchingPackage
+      ? npmLockJson.packages[matchingPackage].version
+      : undefined;
   } else {
     return undefined;
   }
