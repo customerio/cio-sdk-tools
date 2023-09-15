@@ -19,8 +19,6 @@ import {
 } from './utils';
 import { configureLogger } from './utils/logger';
 
-const program = new Command();
-
 type DoctorCommandOptions = {
   verbose: boolean;
   report: string;
