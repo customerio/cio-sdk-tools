@@ -90,7 +90,7 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
    npx cio-sdk-tools@latest send-push --api-key API_KEY --token DEVICE_TOKEN --platform DEVICE_PLATFORM --deep-link DEEP_LINK
    ```
 
-   > **Info**
+   > **Important**
    >
    > If you are using Firebase Cloud Messaging (FCM) on iOS as your push provider, you would need to use the `--provider` flag.
 
