@@ -1,3 +1,10 @@
+### [1.1.2](https://github.com/customerio/cio-sdk-tools/compare/1.1.1...1.1.2) (2023-10-03)
+
+
+### Bug Fixes
+
+* added splash as a file to search for initialization ([#22](https://github.com/customerio/cio-sdk-tools/issues/22)) ([cc9cc45](https://github.com/customerio/cio-sdk-tools/commit/cc9cc459c681a18ba864b90bf02f84e442d0b4c0))
+
 ### [1.1.1](https://github.com/customerio/cio-sdk-tools/compare/1.1.0...1.1.1) (2023-09-07)
 
 

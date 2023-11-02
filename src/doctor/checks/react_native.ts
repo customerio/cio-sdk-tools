@@ -83,6 +83,7 @@ async function validateSDKInitialization(
         'route',
         'navigation',
         'provider',
+        'splash',
       ],
     },
     project.projectPath
