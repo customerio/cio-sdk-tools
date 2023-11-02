@@ -15,10 +15,10 @@ export const sendPushCommand = new Command('send-push')
       .makeOptionMandatory()
   )
   .addOption(
-    new Option('--provider <provider>', 'Push provider').choices([
-      'apns',
-      'fcm',
-    ])
+    new Option(
+      '--provider <provider>',
+      'Push provider to use to deliver the notification'
+    ).choices(['apns', 'fcm'])
   )
   .option(
     '--deep-link <deepLink>',
