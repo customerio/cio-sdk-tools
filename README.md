@@ -7,19 +7,7 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
 
 ## Available Commands
 <details>
-      <summary>doctor: Diagnose common scenarios when integrating the Customer.io mobile SDK</summary>
-
-   > **Warning**
-   >
-   > The tool aims to diagnose common scenarios when integrating the Customer.io mobile SDK in your mobile app.
-   > Keep in mind that advanced or custom implementations might require manual troubleshooting.
-   >
-   > The tool caters to React Native, Flutter, and iOS Native applications. If you're using a different framework, you can still use the tool to diagnose your iOS Native integration.
-   >
-   > The tool currently recognizes:
-   > - **Cocoapods**
-   >
-   > (Note: Swift Package Manager (SPM) is not supported at this time.)
+   <summary>doctor: Diagnose common scenarios when integrating the Customer.io mobile SDK</summary>
 
    ## What It Does
    The tool assists in diagnosing and troubleshooting the Customer.io mobile SDK installations. It examines:
@@ -34,6 +22,17 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
    4. **Dependencies**:
       - Validation against any conflicting libraries in `package.json` and `Podfile` for now.
       - Consolidates and displays versions of key integrations like the Customer.io SDK in various configuration files.
+
+   > **Warning**
+   >
+   > Advanced or custom implementations might require manual troubleshooting.
+   >
+   > The tool caters to React Native, Flutter, and iOS Native applications. If you're using a different framework, you can still use the tool to diagnose your iOS Native integration.
+   >
+   > The tool currently recognizes:
+   > - **Cocoapods**
+   >
+   > (Note: Swift Package Manager (SPM) is not supported at this time.)
 
    ### Learn More
 
