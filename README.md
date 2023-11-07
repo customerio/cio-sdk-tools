@@ -93,7 +93,14 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
    >
    > If you are using Firebase Cloud Messaging (FCM) on iOS as your push provider, you would need to use the `--provider` flag.
 
+   Specifying provider when using FCM with iOS app:
+
+   ```bash
+   npx cio-sdk-tools@latest send-push --api-key API_KEY --token DEVICE_TOKEN --platform ios --provider fcm
+   ```
+
    View Additional Options:
+
    ```bash
    npx cio-sdk-tools@latest send-push --help
    ```

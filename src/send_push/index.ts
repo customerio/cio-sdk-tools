@@ -47,7 +47,7 @@ async function send(options: sendOptions) {
   const reqOpts: https.RequestOptions = {
     port: 443,
     hostname: 'api.customer.io',
-    path: '/experimental/verify/push',
+    path: '/v1/verify/push',
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
