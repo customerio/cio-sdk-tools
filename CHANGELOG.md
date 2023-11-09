@@ -1,3 +1,10 @@
+## [1.2.0](https://github.com/customerio/cio-sdk-tools/compare/1.1.2...1.2.0) (2023-11-09)
+
+
+### Features
+
+* add new send-push command ([#23](https://github.com/customerio/cio-sdk-tools/issues/23)) ([dd8d98a](https://github.com/customerio/cio-sdk-tools/commit/dd8d98a8eb83cbba15b5d99abf057a7baad0da7b))
+
 ### [1.1.2](https://github.com/customerio/cio-sdk-tools/compare/1.1.1...1.1.2) (2023-10-03)
 
 
