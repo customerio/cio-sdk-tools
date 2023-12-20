@@ -55,7 +55,7 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
 
    Export Logs to Your Preferred Location:
    ```bash
-   npx cio-sdk-tools doctor@latest /path/to/project --report diagnostics_report.txt
+   npx cio-sdk-tools@latest doctor /path/to/project --report diagnostics_report.txt
    ```
    View Additional Options:
    ```bash
