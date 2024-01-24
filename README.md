@@ -83,6 +83,8 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
    npx cio-sdk-tools@latest send-push --api-key API_KEY --token DEVICE_TOKEN --platform DEVICE_PLATFORM
    ```
 
+   > Note: For `--api-key API_KEY`, this required an *App* API key. You can visit https://fly.customer.io/settings/api_credentials?keyType=app to get your API key.
+
    Specifying a deep link to be sent with the push notification:
 
    ```bash
