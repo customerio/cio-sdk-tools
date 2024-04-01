@@ -109,7 +109,7 @@ export function fetchLatestGitHubRelease(
 /**
  * Extracts the first semantic version number from a string that may contain multiple versions separated by commas.
  *
- * @param versions input containing multiple versions
+ * @param versions String containing multiple versions
  * @returns First semantic version found in the string, or undefined if no version is found or input is undefined.
  */
 export function extractSemanticVersion(
@@ -126,8 +126,8 @@ export function extractSemanticVersion(
 /**
  * Compares two semantic version strings.
  *
- * @param version1 The first version string to compare.
- * @param version2 The second version string to compare.
+ * @param version1 First version string to compare.
+ * @param version2 Second version string to compare.
  * @returns -1 if version1 is less than version2, 1 if version1 is greater than version2, and 0 if they are equal.
  */
 export function compareSemanticVersions(
