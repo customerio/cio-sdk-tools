@@ -437,30 +437,10 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
   const podfileLock = project.podfileLock;
   const podfileLockContent = podfileLock.content;
 
-  const validatePod = (
-    podNameActual: string,
-    optional: boolean = false,
-    podNameAliases: string[] = []
-  ): boolean => {
-    let podName: string = podNameActual;
-
+  const validatePod = (podName: string, optional: boolean = false): boolean => {
     let podVersions: string | undefined;
     if (podfileLockContent) {
       podVersions = extractVersionFromPodLock(podfileLockContent, podName);
-
-      let index = 0;
-      while (!podVersions && index < podNameAliases.length) {
-        podVersions = extractVersionFromPodLock(
-          podfileLockContent,
-          podNameAliases[index]
-        );
-
-        if (podVersions) {
-          podName = podNameAliases[index];
-        }
-
-        index++;
-      }
     }
 
     if (podVersions) {
@@ -483,7 +463,11 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
     return podVersions !== undefined;
   };
 
-  validatePod(POD_TRACKING, false, [POD_DATA_PIPELINE]);
+  if (project.framework == 'iOS') {
+    validatePod(POD_DATA_PIPELINE);
+  } else {
+    validatePod(POD_TRACKING);
+  }
   validatePod(POD_MESSAGING_IN_APP);
 
   const pushMessagingAPNPod = validatePod(POD_MESSAGING_PUSH_APN, true);
