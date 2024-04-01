@@ -1,6 +1,7 @@
 import * as path from 'path';
 import {
   Conflicts,
+  POD_DATA_PIPELINE,
   POD_MESSAGING_IN_APP,
   POD_MESSAGING_PUSH_APN,
   POD_MESSAGING_PUSH_FCM,
@@ -436,10 +437,30 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
   const podfileLock = project.podfileLock;
   const podfileLockContent = podfileLock.content;
 
-  const validatePod = (podName: string, optional: boolean = false): boolean => {
+  const validatePod = (
+    podNameActual: string,
+    optional: boolean = false,
+    podNameAliases: string[] = []
+  ): boolean => {
+    let podName: string = podNameActual;
+
     let podVersions: string | undefined;
     if (podfileLockContent) {
       podVersions = extractVersionFromPodLock(podfileLockContent, podName);
+
+      let index = 0;
+      while (!podVersions && index < podNameAliases.length) {
+        podVersions = extractVersionFromPodLock(
+          podfileLockContent,
+          podNameAliases[index]
+        );
+
+        if (podVersions) {
+          podName = podNameAliases[index];
+        }
+
+        index++;
+      }
     }
 
     if (podVersions) {
@@ -462,7 +483,7 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
     return podVersions !== undefined;
   };
 
-  validatePod(POD_TRACKING);
+  validatePod(POD_TRACKING, false, [POD_DATA_PIPELINE]);
   validatePod(POD_MESSAGING_IN_APP);
 
   const pushMessagingAPNPod = validatePod(POD_MESSAGING_PUSH_APN, true);
