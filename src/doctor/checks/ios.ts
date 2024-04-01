@@ -6,10 +6,13 @@ import {
   POD_MESSAGING_PUSH_FCM,
   POD_TRACKING,
   iOS_DEPLOYMENT_TARGET_MIN_REQUIRED,
+  iOS_SDK_WITH_PUSH_SWIZZLING_SUPPORT,
 } from '../constants';
 import { Context, iOSProject } from '../core';
 import { CheckGroup } from '../types';
 import {
+  compareSemanticVersions,
+  extractSemanticVersion,
   extractVersionFromPodLock,
   getReadablePath,
   logger,
@@ -441,6 +444,18 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
 
     if (podVersions) {
       logger.success(`${podName}: ${podVersions}`);
+
+      // Check if the pod version is lower than recommended for improved push notification tracking
+      if (
+        compareSemanticVersions(
+          extractSemanticVersion(podVersions),
+          iOS_SDK_WITH_PUSH_SWIZZLING_SUPPORT
+        ) < 0
+      ) {
+        logger.alert(
+          `Please update ${podName} to latest version following the documentation for improved tracking of push notification metrics`
+        );
+      }
     } else if (!optional) {
       logger.failure(`${podName} module not found`);
     }
