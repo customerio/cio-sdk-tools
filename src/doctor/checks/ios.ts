@@ -35,7 +35,7 @@ export async function runChecks(group: CheckGroup): Promise<void> {
     case CheckGroup.PushSetup:
       await runCatching(validatePushEntitlements)(project);
       await runCatching(analyzeNotificationServiceExtensionProperties)(project);
-      await runCatching(validateUserNotificationCenterDelegate)(project);
+      await runCatching(validateMessagingPushInitialization)(project);
       break;
 
     case CheckGroup.Dependencies:
@@ -274,43 +274,52 @@ function getDeploymentTargetVersion(
   return null;
 }
 
-async function validateUserNotificationCenterDelegate(
+async function validateMessagingPushInitialization(
   project: iOSProject
 ): Promise<void> {
-  let allRequirementsMet = false;
-  const userNotificationCenterPatternSwift =
-    /func\s+userNotificationCenter\(\s*_[^:]*:\s*UNUserNotificationCenter,\s*didReceive[^:]*:\s*UNNotificationResponse,\s*withCompletionHandler[^:]*:\s*@?escaping\s*\(?\)?\s*->\s*Void\s*\)?/;
-  const userNotificationCenterPatternObjC =
-    /-\s*\(\s*void\s*\)\s*userNotificationCenter:\s*\(\s*UNUserNotificationCenter\s*\s*\*\s*\)\s*[^:]*\s*didReceiveNotificationResponse:\s*\(\s*UNNotificationResponse\s*\*\s*\)\s*[^:]*\s*withCompletionHandler:\s*\(\s*void\s*\(\s*\^\s*\)\(\s*void\s*\)\s*\)\s*[^;]*;?/;
+  logger.debug(`Checking for MessagingPush Initialization in iOS`);
 
-  for (const appDelegateFile of project.appDelegateFiles) {
-    logger.debug(
-      `Checking AppDelegate at path: ${appDelegateFile.readablePath}`
+  // Search for any of the following patterns in the project files:
+  // - MessagingPush.initialize
+  // - MessagingPushAPN.initialize
+  // - MessagingPushFCM.initialize
+  const moduleInitializationPattern = /MessagingPush\w*\.initialize/;
+  const moduleInitializationFiles = searchFilesForCode(
+    {
+      codePatternByExtension: {
+        '.swift': moduleInitializationPattern,
+        '.m': moduleInitializationPattern,
+        '.mm': moduleInitializationPattern,
+      },
+      ignoreDirectories: ['Images.xcassets'],
+      targetFileNames: ['AppDelegate'],
+      targetFilePatterns: ['cio', 'customerio', 'notification', 'push'],
+    },
+    project.iOSProjectPath
+  );
+
+  if (moduleInitializationFiles.matchedFiles.length > 0) {
+    logger.success(
+      `MessagingPush Initialization found in ${moduleInitializationFiles.formattedMatchedFiles}`
     );
-    const extension = appDelegateFile.args.get('extension');
-    let pattern: RegExp;
-    switch (extension) {
-      case 'swift':
-        pattern = userNotificationCenterPatternSwift;
-        break;
-      case 'Objective-C':
-      case 'Objective-C++':
-        pattern = userNotificationCenterPatternObjC;
-        break;
-      default:
-        continue;
-    }
-
-    allRequirementsMet =
-      allRequirementsMet || pattern.test(appDelegateFile.content!);
-  }
-
-  if (allRequirementsMet) {
-    logger.success(`“Opened” metric tracking enabled`);
   } else {
-    logger.failure(
-      `Missing method in AppDelegate for tracking push "opened" metrics`
+    logger.debug(`Search Criteria:`);
+    logger.debug(
+      `Searching files with names: ${moduleInitializationFiles.formattedTargetFileNames}`
     );
+    logger.debug(
+      `Searching files with keywords: ${moduleInitializationFiles.formattedTargetPatterns}`
+    );
+    logger.debug(
+      `Looked into the following files: ${moduleInitializationFiles.formattedSearchedFiles}`
+    );
+    if (logger.isDebug()) {
+      logger.failure('MessagingPush Module Initialization not found');
+    } else {
+      logger.failure(
+        'MessagingPush Module Initialization not found. For more details, run the script with the -v flag'
+      );
+    }
   }
 }
 
