@@ -481,7 +481,7 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
 
   // Alert message for updating Push Messaging pods
   const pushMessagingPodUpdateMessage = (podName: string) =>
-    `Please update ${podName} to latest version following the documentation for improved tracking of push notification metrics`;
+    `Please update ${podName} to latest version following our documentation for improved tracking of push notification metrics`;
   const pushMessagingAPNPod = validatePod(
     POD_MESSAGING_PUSH_APN,
     true,
