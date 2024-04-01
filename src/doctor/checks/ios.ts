@@ -437,7 +437,14 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
   const podfileLock = project.podfileLock;
   const podfileLockContent = podfileLock.content;
 
-  const validatePod = (podName: string, optional: boolean = false): boolean => {
+  const validatePod = (
+    podName: string,
+    optional: boolean = false,
+    // Minimum required version for new features
+    minRequiredVersion: string | undefined = undefined,
+    // Message to display when the pod needs to be updated for new features
+    updatePodMessage: string = `Please update ${podName} to latest version following our documentation`
+  ): boolean => {
     let podVersions: string | undefined;
     if (podfileLockContent) {
       podVersions = extractVersionFromPodLock(podfileLockContent, podName);
@@ -448,14 +455,13 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
 
       // Check if the pod version is lower than recommended for improved push notification tracking
       if (
+        minRequiredVersion &&
         compareSemanticVersions(
           extractSemanticVersion(podVersions),
-          iOS_SDK_WITH_PUSH_SWIZZLING_SUPPORT
+          minRequiredVersion
         ) < 0
       ) {
-        logger.alert(
-          `Please update ${podName} to latest version following the documentation for improved tracking of push notification metrics`
-        );
+        logger.alert(updatePodMessage);
       }
     } else if (!optional) {
       logger.failure(`${podName} module not found`);
@@ -464,14 +470,30 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
   };
 
   if (project.framework == 'iOS') {
+    // Since iOS SDK 3.0.0, we have removed Tracking module and apps should use Data Pipeline module now
+    // Validate Data Pipeline module for native iOS apps
     validatePod(POD_DATA_PIPELINE);
   } else {
+    // For other frameworks, validate Tracking module since Data Pipeline is not currently supported for them
     validatePod(POD_TRACKING);
   }
   validatePod(POD_MESSAGING_IN_APP);
 
-  const pushMessagingAPNPod = validatePod(POD_MESSAGING_PUSH_APN, true);
-  const pushMessagingFCMPod = validatePod(POD_MESSAGING_PUSH_FCM, true);
+  // Alert message for updating Push Messaging pods
+  const pushMessagingPodUpdateMessage = (podName: string) =>
+    `Please update ${podName} to latest version following the documentation for improved tracking of push notification metrics`;
+  const pushMessagingAPNPod = validatePod(
+    POD_MESSAGING_PUSH_APN,
+    true,
+    iOS_SDK_WITH_PUSH_SWIZZLING_SUPPORT,
+    pushMessagingPodUpdateMessage(POD_MESSAGING_PUSH_APN)
+  );
+  const pushMessagingFCMPod = validatePod(
+    POD_MESSAGING_PUSH_FCM,
+    true,
+    iOS_SDK_WITH_PUSH_SWIZZLING_SUPPORT,
+    pushMessagingPodUpdateMessage(POD_MESSAGING_PUSH_FCM)
+  );
 
   if (pushMessagingAPNPod && pushMessagingFCMPod) {
     logger.error(
