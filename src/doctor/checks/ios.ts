@@ -7,7 +7,7 @@ import {
   POD_MESSAGING_PUSH_FCM,
   POD_TRACKING,
   iOS_DEPLOYMENT_TARGET_MIN_REQUIRED,
-  iOS_SDK_WITH_PUSH_SWIZZLING_SUPPORT,
+  iOS_SDK_PUSH_SWIZZLE_VERSION,
 } from '../constants';
 import { Context, iOSProject } from '../core';
 import { CheckGroup } from '../types';
@@ -453,7 +453,8 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
     if (podVersions) {
       logger.success(`${podName}: ${podVersions}`);
 
-      // Check if the pod version is lower than recommended for improved push notification tracking
+      // Check if the pod version is below the minimum required version
+      // If so, alert the user to update the pod for new features
       if (
         minRequiredVersion &&
         compareSemanticVersions(
@@ -474,7 +475,7 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
     // Validate Data Pipeline module for native iOS apps
     validatePod(POD_DATA_PIPELINE);
   } else {
-    // For other frameworks, validate Tracking module since Data Pipeline is not currently supported for them
+    // For other frameworks, validate Tracking module since Data Pipeline is not currently supported by them
     validatePod(POD_TRACKING);
   }
   validatePod(POD_MESSAGING_IN_APP);
@@ -485,13 +486,13 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
   const pushMessagingAPNPod = validatePod(
     POD_MESSAGING_PUSH_APN,
     true,
-    iOS_SDK_WITH_PUSH_SWIZZLING_SUPPORT,
+    iOS_SDK_PUSH_SWIZZLE_VERSION,
     pushMessagingPodUpdateMessage(POD_MESSAGING_PUSH_APN)
   );
   const pushMessagingFCMPod = validatePod(
     POD_MESSAGING_PUSH_FCM,
     true,
-    iOS_SDK_WITH_PUSH_SWIZZLING_SUPPORT,
+    iOS_SDK_PUSH_SWIZZLE_VERSION,
     pushMessagingPodUpdateMessage(POD_MESSAGING_PUSH_FCM)
   );
 

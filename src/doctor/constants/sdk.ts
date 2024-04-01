@@ -8,6 +8,8 @@ export const POD_MESSAGING_IN_APP = 'CustomerIOMessagingInApp';
 export const POD_MESSAGING_PUSH = 'CustomerIOMessagingPush';
 export const POD_MESSAGING_PUSH_APN = 'CustomerIOMessagingPushAPN';
 export const POD_MESSAGING_PUSH_FCM = 'CustomerIOMessagingPushFCM';
-
-// Specific versions of SDKs for which we have special handling in doctor tool
-export const iOS_SDK_WITH_PUSH_SWIZZLING_SUPPORT = '2.11';
+/**
+ * Specific versions of SDKs for which we have special handling in doctor tool
+ */
+// iOS SDK version that introduced support for swizzling in push module
+export const iOS_SDK_PUSH_SWIZZLE_VERSION = '2.11';
