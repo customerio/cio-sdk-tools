@@ -6,10 +6,13 @@ import {
   POD_MESSAGING_PUSH_FCM,
   POD_TRACKING,
   iOS_DEPLOYMENT_TARGET_MIN_REQUIRED,
+  iOS_SDK_PUSH_SWIZZLE_VERSION,
 } from '../constants';
 import { Context, iOSProject } from '../core';
 import { CheckGroup } from '../types';
 import {
+  compareSemanticVersions,
+  extractSemanticVersion,
   extractVersionFromPodLock,
   getReadablePath,
   logger,
@@ -35,7 +38,7 @@ export async function runChecks(group: CheckGroup): Promise<void> {
     case CheckGroup.PushSetup:
       await runCatching(validatePushEntitlements)(project);
       await runCatching(analyzeNotificationServiceExtensionProperties)(project);
-      await runCatching(validateUserNotificationCenterDelegate)(project);
+      await runCatching(validateMessagingPushInitialization)(project);
       break;
 
     case CheckGroup.Dependencies:
@@ -274,43 +277,52 @@ function getDeploymentTargetVersion(
   return null;
 }
 
-async function validateUserNotificationCenterDelegate(
+async function validateMessagingPushInitialization(
   project: iOSProject
 ): Promise<void> {
-  let allRequirementsMet = false;
-  const userNotificationCenterPatternSwift =
-    /func\s+userNotificationCenter\(\s*_[^:]*:\s*UNUserNotificationCenter,\s*didReceive[^:]*:\s*UNNotificationResponse,\s*withCompletionHandler[^:]*:\s*@?escaping\s*\(?\)?\s*->\s*Void\s*\)?/;
-  const userNotificationCenterPatternObjC =
-    /-\s*\(\s*void\s*\)\s*userNotificationCenter:\s*\(\s*UNUserNotificationCenter\s*\s*\*\s*\)\s*[^:]*\s*didReceiveNotificationResponse:\s*\(\s*UNNotificationResponse\s*\*\s*\)\s*[^:]*\s*withCompletionHandler:\s*\(\s*void\s*\(\s*\^\s*\)\(\s*void\s*\)\s*\)\s*[^;]*;?/;
+  logger.debug(`Checking for MessagingPush Initialization in iOS`);
 
-  for (const appDelegateFile of project.appDelegateFiles) {
-    logger.debug(
-      `Checking AppDelegate at path: ${appDelegateFile.readablePath}`
+  // Search for any of the following patterns in the project files:
+  // - MessagingPush.initialize
+  // - MessagingPushAPN.initialize
+  // - MessagingPushFCM.initialize
+  const moduleInitializationPattern = /MessagingPush\w*\.initialize/;
+  const moduleInitializationFiles = searchFilesForCode(
+    {
+      codePatternByExtension: {
+        '.swift': moduleInitializationPattern,
+        '.m': moduleInitializationPattern,
+        '.mm': moduleInitializationPattern,
+      },
+      ignoreDirectories: ['Images.xcassets'],
+      targetFileNames: ['AppDelegate'],
+      targetFilePatterns: ['cio', 'customerio', 'notification', 'push'],
+    },
+    project.iOSProjectPath
+  );
+
+  if (moduleInitializationFiles.matchedFiles.length > 0) {
+    logger.success(
+      `MessagingPush Initialization found in ${moduleInitializationFiles.formattedMatchedFiles}`
     );
-    const extension = appDelegateFile.args.get('extension');
-    let pattern: RegExp;
-    switch (extension) {
-      case 'swift':
-        pattern = userNotificationCenterPatternSwift;
-        break;
-      case 'Objective-C':
-      case 'Objective-C++':
-        pattern = userNotificationCenterPatternObjC;
-        break;
-      default:
-        continue;
-    }
-
-    allRequirementsMet =
-      allRequirementsMet || pattern.test(appDelegateFile.content!);
-  }
-
-  if (allRequirementsMet) {
-    logger.success(`“Opened” metric tracking enabled`);
   } else {
-    logger.failure(
-      `Missing method in AppDelegate for tracking push "opened" metrics`
+    logger.debug(`Search Criteria:`);
+    logger.debug(
+      `Searching files with names: ${moduleInitializationFiles.formattedTargetFileNames}`
     );
+    logger.debug(
+      `Searching files with keywords: ${moduleInitializationFiles.formattedTargetPatterns}`
+    );
+    logger.debug(
+      `Looked into the following files: ${moduleInitializationFiles.formattedSearchedFiles}`
+    );
+    if (logger.isDebug()) {
+      logger.failure('MessagingPush Module Initialization not found');
+    } else {
+      logger.failure(
+        'MessagingPush Module Initialization not found. For more details, run the script with the -v flag'
+      );
+    }
   }
 }
 
@@ -424,7 +436,14 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
   const podfileLock = project.podfileLock;
   const podfileLockContent = podfileLock.content;
 
-  const validatePod = (podName: string, optional: boolean = false): boolean => {
+  const validatePod = (
+    podName: string,
+    optional: boolean = false,
+    // Minimum required version for new features
+    minRequiredVersion: string | undefined = undefined,
+    // Message to display when the pod needs to be updated for new features
+    updatePodMessage: string = `Please update ${podName} to latest version following our documentation`
+  ): boolean => {
     let podVersions: string | undefined;
     if (podfileLockContent) {
       podVersions = extractVersionFromPodLock(podfileLockContent, podName);
@@ -432,6 +451,18 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
 
     if (podVersions) {
       logger.success(`${podName}: ${podVersions}`);
+
+      // Check if the pod version is below the minimum required version
+      // If so, alert the user to update the pod for new features
+      if (
+        minRequiredVersion &&
+        compareSemanticVersions(
+          extractSemanticVersion(podVersions),
+          minRequiredVersion
+        ) < 0
+      ) {
+        logger.alert(updatePodMessage);
+      }
     } else if (!optional) {
       logger.failure(`${podName} module not found`);
     }
@@ -441,8 +472,21 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
   validatePod(POD_TRACKING);
   validatePod(POD_MESSAGING_IN_APP);
 
-  const pushMessagingAPNPod = validatePod(POD_MESSAGING_PUSH_APN, true);
-  const pushMessagingFCMPod = validatePod(POD_MESSAGING_PUSH_FCM, true);
+  // Alert message for updating Push Messaging pods
+  const pushMessagingPodUpdateMessage = (podName: string) =>
+    `Please update ${podName} to latest version following our documentation for improved tracking of push notification metrics`;
+  const pushMessagingAPNPod = validatePod(
+    POD_MESSAGING_PUSH_APN,
+    true,
+    iOS_SDK_PUSH_SWIZZLE_VERSION,
+    pushMessagingPodUpdateMessage(POD_MESSAGING_PUSH_APN)
+  );
+  const pushMessagingFCMPod = validatePod(
+    POD_MESSAGING_PUSH_FCM,
+    true,
+    iOS_SDK_PUSH_SWIZZLE_VERSION,
+    pushMessagingPodUpdateMessage(POD_MESSAGING_PUSH_FCM)
+  );
 
   if (pushMessagingAPNPod && pushMessagingFCMPod) {
     logger.error(

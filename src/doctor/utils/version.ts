@@ -105,3 +105,52 @@ export function fetchLatestGitHubRelease(
     request.on('error', (error) => reject(error));
   });
 }
+
+/**
+ * Extracts the first semantic version number from a string that may contain multiple versions separated by commas.
+ *
+ * @param versions String containing multiple versions
+ * @returns First semantic version found in the string, or undefined if no version is found or input is undefined.
+ */
+export function extractSemanticVersion(
+  versions: string | undefined
+): string | undefined {
+  if (versions === undefined) return undefined;
+
+  // Regex pattern to match a semantic version number
+  const versionPattern = /\b\d+\.\d+(\.\d+)?\b/;
+  const match = versions.match(versionPattern);
+  return match ? match[0] : undefined;
+}
+
+/**
+ * Compares two semantic version strings.
+ *
+ * @param version1 First version string to compare.
+ * @param version2 Second version string to compare.
+ * @returns -1 if version1 is less than version2, 1 if version1 is greater than version2, and 0 if they are equal.
+ */
+export function compareSemanticVersions(
+  version1: string | undefined,
+  version2: string | undefined
+): number {
+  // Handle undefined values
+  if (version1 === undefined && version2 === undefined) return 0;
+  if (version1 === undefined) return -1;
+  if (version2 === undefined) return 1;
+
+  const v1Parts = version1.split('.').map(Number);
+  const v2Parts = version2.split('.').map(Number);
+
+  // Compare each part of the version numbers
+  for (let i = 0; i < Math.max(v1Parts.length, v2Parts.length); i++) {
+    const part1 = v1Parts[i] ?? 0; // Use 0 for missing parts
+    const part2 = v2Parts[i] ?? 0; // Use 0 for missing parts
+
+    if (part1 > part2) return 1;
+    if (part1 < part2) return -1;
+  }
+
+  // If all parts are equal, return 0
+  return 0;
+}
