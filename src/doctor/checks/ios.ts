@@ -1,7 +1,6 @@
 import * as path from 'path';
 import {
   Conflicts,
-  POD_DATA_PIPELINE,
   POD_MESSAGING_IN_APP,
   POD_MESSAGING_PUSH_APN,
   POD_MESSAGING_PUSH_FCM,
@@ -470,14 +469,7 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
     return podVersions !== undefined;
   };
 
-  if (project.framework == 'iOS') {
-    // Since iOS SDK 3.0.0, we have removed Tracking module and apps should use Data Pipeline module now
-    // Validate Data Pipeline module for native iOS apps
-    validatePod(POD_DATA_PIPELINE);
-  } else {
-    // For other frameworks, validate Tracking module since Data Pipeline is not currently supported by them
-    validatePod(POD_TRACKING);
-  }
+  validatePod(POD_TRACKING);
   validatePod(POD_MESSAGING_IN_APP);
 
   // Alert message for updating Push Messaging pods
