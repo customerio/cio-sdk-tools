@@ -1,3 +1,10 @@
+## [1.4.0](https://github.com/customerio/cio-sdk-tools/compare/1.3.0...1.4.0) (2024-04-03)
+
+
+### Features
+
+* support for iOS v3 pods ([#30](https://github.com/customerio/cio-sdk-tools/issues/30)) ([dc87efc](https://github.com/customerio/cio-sdk-tools/commit/dc87efcb8e528c71353cd7d5f86ab6aef8ddcffd))
+
 ## [1.3.0](https://github.com/customerio/cio-sdk-tools/compare/1.2.0...1.3.0) (2024-04-03)
 
 
