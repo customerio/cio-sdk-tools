@@ -1,3 +1,10 @@
+## [1.3.0](https://github.com/customerio/cio-sdk-tools/compare/1.2.0...1.3.0) (2024-04-03)
+
+
+### Features
+
+* support for automatic push handling on iOS ([#29](https://github.com/customerio/cio-sdk-tools/issues/29)) ([395c330](https://github.com/customerio/cio-sdk-tools/commit/395c330409e7bcb1a2ec3e98e5d11c52448065e1))
+
 ## [1.2.0](https://github.com/customerio/cio-sdk-tools/compare/1.1.2...1.2.0) (2023-11-09)
 
 
