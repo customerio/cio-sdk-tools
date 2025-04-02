@@ -36,7 +36,7 @@ jobs:
       - run: npm run lint:report
 
       - name: Annotate Code Linting Results
-        uses: ataylorme/eslint-annotate-action@v2
+        uses: ataylorme/eslint-annotate-action@5f4dc2e3af8d3c21b727edb597e5503510b1dc9c # v2
         with:
           check-name: 'eslint results'
           only-pr-files: false 
