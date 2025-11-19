@@ -49,4 +49,4 @@ jobs:
           else
             npm version 0.0.0-test-oidc --no-git-tag-version
           fi
-          npm publish --dry-run --tag test-oidc
+          npm publish --tag test-oidc
