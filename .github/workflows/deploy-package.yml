@@ -45,8 +45,8 @@ jobs:
       - name: Publish to npm
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            npm version 0.0.0-test-oidc-manual
+            npm version 0.0.0-test-oidc-manual --no-git-tag-version
           else
-            npm version 0.0.0-test-oidc
+            npm version 0.0.0-test-oidc --no-git-tag-version
           fi
           npm publish --dry-run --tag test-oidc
