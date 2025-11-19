@@ -12,24 +12,32 @@ on:
 jobs:
   deploy-npm:
     name: Deploy package to npm 
+    environment: release
     runs-on: macos-12
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Checkout provided git tag  
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tagToDeploy }}
 
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
-          node-version: '16'
+          node-version: '20'
           cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install npm 11.5.1+ for OIDC support
+        run: npm install -g npm@latest
+
       - run: npm ci
 
       - name: Deploy to npm
         run: ./scripts/deploy-code.sh
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           IS_PRERELEASE: false
 
