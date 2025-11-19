@@ -1,9 +1,14 @@
 name: Deploy SDK
 
-# Testing configuration - triggers on pull requests
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      tagToDeploy:
+        description: 'Type name of existing git tag (example: 1.0.3) to push to npm'
+        required: false
+        type: string
 
 permissions:
   id-token: write
@@ -17,7 +22,10 @@ jobs:
     environment: release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.tagToDeploy || github.ref) || github.head_ref || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -36,5 +44,9 @@ jobs:
 
       - name: Publish to npm
         run: |
-          npm version 0.0.0-test-oidc
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            npm version 0.0.0-test-oidc-manual
+          else
+            npm version 0.0.0-test-oidc
+          fi
           npm publish --dry-run --tag test-oidc
