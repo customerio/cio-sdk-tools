@@ -56,7 +56,6 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Install npm 11.5.1+ for OIDC support
         run: npm install -g npm@latest
