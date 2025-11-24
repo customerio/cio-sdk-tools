@@ -2,11 +2,13 @@ name: Deploy SDK
 
 # Only run after a pull request has been merged. This is because
 # bot account runs write operations on the github repo to push a tag.
+
 on:
   push:
     branches: [main] # all branches where deployments currently occur. Make sure this list matches list of branches in  `.releaserc` file.
 
 permissions:
+  id-token: write
   contents: write # access to push the git tag
   issues: write # Bot creates an issue if there is an issue during deployment process
   pull-requests: write # allow bot to make comments on PRs after they get deployed
@@ -20,7 +22,7 @@ jobs:
       new_release_published: ${{ steps.semantic-release.outputs.new_release_published }}
       new_release_version: ${{ steps.semantic-release.outputs.new_release_version }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Deploy git tag via semantic release
         uses: cycjimmy/semantic-release-action@8e58d20d0f6c8773181f43eb74d6a05e3099571d # v3.4.2
@@ -42,19 +44,27 @@ jobs:
     name: Deploy to npm
     needs: [deploy-git-tag]
     if: needs.deploy-git-tag.outputs.new_release_published == 'true' # only run if a git tag was made.
+    environment: release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
           ref: ${{ needs.deploy-git-tag.outputs.new_release_git_head }}
 
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
-          node-version: '16'
+          node-version: '20'
           cache: 'npm'
 
-      - name: Deploy to npm
-        run: ./scripts/deploy-code.sh
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          IS_PRERELEASE: false # at this time, all deployments are made to `main` production branch
+      - name: Install npm 11.5.1+ for OIDC support
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Publish to npm
+        run: npm publish --tag latest
