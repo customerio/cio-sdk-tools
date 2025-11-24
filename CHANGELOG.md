@@ -1,3 +1,10 @@
+## [1.5.0](https://github.com/customerio/cio-sdk-tools/compare/1.4.0...1.5.0) (2025-11-24)
+
+
+### Features
+
+* **auth:** update to use preferred OIDC for npm publish in github actions ([#35](https://github.com/customerio/cio-sdk-tools/issues/35)) ([a7c3327](https://github.com/customerio/cio-sdk-tools/commit/a7c33279b19f9d75e6f806041f594ec645720300))
+
 ## [1.4.0](https://github.com/customerio/cio-sdk-tools/compare/1.3.0...1.4.0) (2024-04-03)
 
 
