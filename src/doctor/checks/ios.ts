@@ -191,15 +191,18 @@ async function validateNotificationServiceExtension(
         ];
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const hasEmbedPhase = target.buildPhases.find((phaseRef: any) => {
+        target.buildPhases.forEach((phaseRef: any) => {
           const comment = trimQuotes(phaseRef.comment || '');
           const phaseUuid = phaseRef.value;
 
           // Check for named embed phases by comment
-          if (comment === 'Embed App Extensions') return true;
+          if (comment === 'Embed App Extensions') {
+            isEmbedded = true;
+            return;
+          }
           if (comment === 'Embed Foundation Extensions') {
             isFoundationExtension = true;
-            return true;
+            return;
           }
 
           // Check if this phase is a Copy Files phase with dstSubfolderSpec = 13 (PlugIns folder)
@@ -208,16 +211,10 @@ async function validateNotificationServiceExtension(
             const phase = copyFilesPhases[phaseUuid];
             // dstSubfolderSpec 13 is the Xcode constant for PlugIns folder (where app extensions are embedded)
             if (Number(phase.dstSubfolderSpec) === 13) {
-              return true;
+              isEmbedded = true;
             }
           }
-
-          return false;
         });
-
-        if (hasEmbedPhase) {
-          isEmbedded = true;
-        }
       }
     }
   }
