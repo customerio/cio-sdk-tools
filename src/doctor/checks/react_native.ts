@@ -98,16 +98,26 @@ function checkExpoAutoInitialization(
 ): string | null {
   logger.debug(`Checking for Expo auto-initialization config`);
 
-  // Check for Expo config files in order of precedence
+  // Expo config files in order of precedence
+  // When a higher-precedence file exists, lower-precedence files are ignored by Expo
   const configFiles = ['app.config.ts', 'app.config.js', 'app.json'];
 
+  // Find which config file Expo will actually use
+  let activeConfigFile: string | null = null;
   for (const configFile of configFiles) {
     const configPath = path.join(project.projectPath, configFile);
     if (doesExists(configPath)) {
-      const content = readFileContent(configPath);
-      if (content && checkExpoPluginConfig(content, configFile)) {
-        return configFile;
-      }
+      activeConfigFile = configFile;
+      break; // Stop at first existing file (highest precedence)
+    }
+  }
+
+  // Check only the active config file (the one Expo actually reads)
+  if (activeConfigFile) {
+    const configPath = path.join(project.projectPath, activeConfigFile);
+    const content = readFileContent(configPath);
+    if (content && checkExpoPluginConfig(content, activeConfigFile)) {
+      return activeConfigFile;
     }
   }
 

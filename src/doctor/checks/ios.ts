@@ -464,12 +464,9 @@ async function validateSDKInitialization(project: iOSProject): Promise<void> {
     );
   }
 
-  // Push initialization check
-  if (foundPushInit) {
-    logger.success(
-      `MessagingPush initialization found in ${pushInitFiles.formattedMatchedFiles}`
-    );
-  }
+  // Note: MessagingPush initialization is checked and logged in validateMessagingPushInitialization
+  // during the PushSetup group. The foundPushInit variable here is used only for the
+  // CioAppDelegateWrapper recommendation logic above.
 }
 
 async function validatePushEntitlements(project: iOSProject): Promise<void> {
