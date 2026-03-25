@@ -180,24 +180,44 @@ async function validateNotificationServiceExtension(
       logger.debug(
         `Checking if the NSE is embedded into target app: ${target.name}`
       );
-      // Check if the target is listed in the Embed App Extensions build phase.
-      if (
-        target.buildPhases &&
-        target.buildPhases.find(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (phase: any) => trimQuotes(phase.comment) === 'Embed App Extensions'
-        )
-      ) {
-        isEmbedded = true;
-      } else if (
-        target.buildPhases &&
-        target.buildPhases.find(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (phase: any) =>
-            trimQuotes(phase.comment) === 'Embed Foundation Extensions'
-        )
-      ) {
-        isFoundationExtension = true;
+      // Check if the target has an embedding build phase for extensions
+      if (target.buildPhases) {
+        // buildPhases is an array of objects with 'value' being the phase UUID and 'comment' being the phase name
+        // We need to look up the actual phase object from xcodeProject.pbxCopyFilesBuildPhaseSection
+        // Access all copy files build phases
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const copyFilesPhases = (xcodeProject as any).hash.project.objects[
+          'PBXCopyFilesBuildPhase'
+        ];
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const hasEmbedPhase = target.buildPhases.find((phaseRef: any) => {
+          const comment = trimQuotes(phaseRef.comment || '');
+          const phaseUuid = phaseRef.value;
+
+          // Check for named embed phases by comment
+          if (comment === 'Embed App Extensions') return true;
+          if (comment === 'Embed Foundation Extensions') {
+            isFoundationExtension = true;
+            return true;
+          }
+
+          // Check if this phase is a Copy Files phase with dstSubfolderSpec = 13 (PlugIns folder)
+          // This is how Expo and some other tools embed extensions
+          if (copyFilesPhases && copyFilesPhases[phaseUuid]) {
+            const phase = copyFilesPhases[phaseUuid];
+            // dstSubfolderSpec 13 is the Xcode constant for PlugIns folder (where app extensions are embedded)
+            if (Number(phase.dstSubfolderSpec) === 13) {
+              return true;
+            }
+          }
+
+          return false;
+        });
+
+        if (hasEmbedPhase) {
+          isEmbedded = true;
+        }
       }
     }
   }
