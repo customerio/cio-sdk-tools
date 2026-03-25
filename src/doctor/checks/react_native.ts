@@ -82,9 +82,8 @@ function checkExpoPluginConfig(content: string, filename: string): boolean {
   } else {
     // For app.config.js/ts, look for the plugin array entry with config
     // Pattern: ['customerio-expo-plugin', { ... config: { ... }]
-    // We need to check they appear together, not just anywhere in the file
-    const pluginPattern =
-      /['"]customerio-expo-plugin['"],\s*\{[^}]*config\s*:/s;
+    // Use non-greedy match (.*?) to handle nested objects (android: {}, ios: {}) before config
+    const pluginPattern = /['"]customerio-expo-plugin['"],\s*\{.*?config\s*:/s;
     if (pluginPattern.test(content)) {
       logger.debug(`Found Expo auto-initialization config in ${filename}`);
       return true;
