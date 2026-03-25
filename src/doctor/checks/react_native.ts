@@ -98,26 +98,19 @@ function checkExpoAutoInitialization(
 ): string | null {
   logger.debug(`Checking for Expo auto-initialization config`);
 
-  // Expo config files in order of precedence
-  // When a higher-precedence file exists, lower-precedence files are ignored by Expo
+  // For a doctor tool, check all config files for the plugin config
+  // This handles cases where app.config.ts imports from app.json
+  // Better for diagnostic checks, as we can't assume the structure of
+  // app.config.ts and whether it imports from app.json or not
   const configFiles = ['app.config.ts', 'app.config.js', 'app.json'];
 
-  // Find which config file Expo will actually use
-  let activeConfigFile: string | null = null;
   for (const configFile of configFiles) {
     const configPath = path.join(project.projectPath, configFile);
     if (doesExists(configPath)) {
-      activeConfigFile = configFile;
-      break; // Stop at first existing file (highest precedence)
-    }
-  }
-
-  // Check only the active config file (the one Expo actually reads)
-  if (activeConfigFile) {
-    const configPath = path.join(project.projectPath, activeConfigFile);
-    const content = readFileContent(configPath);
-    if (content && checkExpoPluginConfig(content, activeConfigFile)) {
-      return activeConfigFile;
+      const content = readFileContent(configPath);
+      if (content && checkExpoPluginConfig(content, configFile)) {
+        return configFile;
+      }
     }
   }
 
