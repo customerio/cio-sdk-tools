@@ -80,12 +80,12 @@ function checkExpoPluginConfig(content: string, filename: string): boolean {
       logger.debug(`Failed to parse ${filename}: ${err}`);
     }
   } else {
-    // For app.config.js/ts, check for customerio-expo-plugin with config pattern
-    // Simple string-based check since we can't execute JS
-    if (
-      content.includes('customerio-expo-plugin') &&
-      /config\s*:\s*\{/.test(content)
-    ) {
+    // For app.config.js/ts, look for the plugin array entry with config
+    // Pattern: ['customerio-expo-plugin', { ... config: { ... }]
+    // We need to check they appear together, not just anywhere in the file
+    const pluginPattern =
+      /['"]customerio-expo-plugin['"],\s*\{[^}]*config\s*:/s;
+    if (pluginPattern.test(content)) {
       logger.debug(`Found Expo auto-initialization config in ${filename}`);
       return true;
     }
@@ -94,7 +94,9 @@ function checkExpoPluginConfig(content: string, filename: string): boolean {
   return false;
 }
 
-function checkExpoAutoInitialization(project: ReactNativeProject): boolean {
+function checkExpoAutoInitialization(
+  project: ReactNativeProject
+): string | null {
   logger.debug(`Checking for Expo auto-initialization config`);
 
   // Check for Expo config files in order of precedence
@@ -105,12 +107,12 @@ function checkExpoAutoInitialization(project: ReactNativeProject): boolean {
     if (doesExists(configPath)) {
       const content = readFileContent(configPath);
       if (content && checkExpoPluginConfig(content, configFile)) {
-        return true;
+        return configFile;
       }
     }
   }
 
-  return false;
+  return null;
 }
 
 async function validateSDKInitialization(
@@ -119,10 +121,10 @@ async function validateSDKInitialization(
   logger.debug(`Checking for SDK Initialization in React Native`);
 
   // Check for Expo auto-initialization first
-  const hasExpoAutoInit = checkExpoAutoInitialization(project);
-  if (hasExpoAutoInit) {
+  const expoConfigFile = checkExpoAutoInitialization(project);
+  if (expoConfigFile) {
     logger.success(
-      'SDK auto-initialization configured in app.json (Expo plugin)'
+      `SDK auto-initialization configured in ${expoConfigFile} (Expo plugin)`
     );
     return;
   }
