@@ -73,16 +73,18 @@ export function shouldIgnoreDirectory(
     'styles',
     'icons',
     'fonts',
+    'test',
+    'tests',
+    '__tests__',
+    'temp',
+    'cache',
   ];
-  // Directory names that contain these substrings should be ignored
-  const excludedSubstrings = ['temp', 'cache', 'test'];
 
   const excludedNames = ignoreDirs.concat(commonlyExcludedNames);
   return (
     excludedPrefixes.some((dir: string) => directoryName.startsWith(dir)) ||
-    excludedNames.some((dir: string) => directoryName === dir) ||
-    excludedSubstrings.some((substring: string) =>
-      directoryName.toLowerCase().includes(substring.toLowerCase())
+    excludedNames.some(
+      (dir: string) => directoryName.toLowerCase() === dir.toLowerCase()
     )
   );
 }
@@ -109,10 +111,10 @@ export async function searchFileInDirectory(
     const filename = path.join(directoryPath, file);
     const stat = fs.lstatSync(filename);
 
-    // Skip the specified directories and their subdirectories
-    if (shouldIgnoreDirectory(file, ignoreDirs)) return;
-
     if (stat.isDirectory()) {
+      // Skip the specified directories and their subdirectories
+      if (shouldIgnoreDirectory(file, ignoreDirs)) return;
+
       const subDirResults = await searchFileInDirectory(
         filename,
         filters,

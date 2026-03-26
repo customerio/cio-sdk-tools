@@ -10,6 +10,8 @@ import {
   runCatching,
   searchFilesForCode,
 } from '../utils';
+import { doesExists, readFileContent } from '../utils/file';
+import * as path from 'path';
 
 export async function runChecks(group: CheckGroup): Promise<void> {
   const context = Context.get();
@@ -56,11 +58,80 @@ async function validateNoConflictingSDKs(
   }
 }
 
+function checkExpoPluginConfig(content: string, filename: string): boolean {
+  // For app.json, parse as JSON
+  if (filename.endsWith('.json')) {
+    try {
+      const appJson = JSON.parse(content);
+      const plugins = appJson?.expo?.plugins || [];
+
+      for (const plugin of plugins) {
+        if (Array.isArray(plugin) && plugin[0] === 'customerio-expo-plugin') {
+          const pluginConfig = plugin[1];
+          if (pluginConfig && pluginConfig.config) {
+            logger.debug(
+              `Found Expo auto-initialization config in ${filename}`
+            );
+            return true;
+          }
+        }
+      }
+    } catch (err) {
+      logger.debug(`Failed to parse ${filename}: ${err}`);
+    }
+  } else {
+    // For app.config.js/ts, look for the plugin array entry with config
+    // Pattern: ['customerio-expo-plugin', { ... config: { ... }]
+    // Use non-greedy match (.*?) to handle nested objects (android: {}, ios: {}) before config
+    const pluginPattern = /['"]customerio-expo-plugin['"],\s*\{.*?config\s*:/s;
+    if (pluginPattern.test(content)) {
+      logger.debug(`Found Expo auto-initialization config in ${filename}`);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function checkExpoAutoInitialization(
+  project: ReactNativeProject
+): string | null {
+  logger.debug(`Checking for Expo auto-initialization config`);
+
+  // For a doctor tool, check all config files for the plugin config
+  // This handles cases where app.config.ts imports from app.json
+  // Better for diagnostic checks, as we can't assume the structure of
+  // app.config.ts and whether it imports from app.json or not
+  const configFiles = ['app.config.ts', 'app.config.js', 'app.json'];
+
+  for (const configFile of configFiles) {
+    const configPath = path.join(project.projectPath, configFile);
+    if (doesExists(configPath)) {
+      const content = readFileContent(configPath);
+      if (content && checkExpoPluginConfig(content, configFile)) {
+        return configFile;
+      }
+    }
+  }
+
+  return null;
+}
+
 async function validateSDKInitialization(
   project: ReactNativeProject
 ): Promise<void> {
   logger.debug(`Checking for SDK Initialization in React Native`);
 
+  // Check for Expo auto-initialization first
+  const expoConfigFile = checkExpoAutoInitialization(project);
+  if (expoConfigFile) {
+    logger.success(
+      `SDK auto-initialization configured in ${expoConfigFile} (Expo plugin)`
+    );
+    return;
+  }
+
+  // Check for manual CustomerIO.initialize() call
   const sdkInitializationPattern = /CustomerIO\.initialize/;
   const sdkInitializationFiles = searchFilesForCode(
     {

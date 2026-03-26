@@ -5,7 +5,6 @@ import {
   POD_MESSAGING_IN_APP,
   POD_MESSAGING_PUSH_APN,
   POD_MESSAGING_PUSH_FCM,
-  POD_TRACKING,
   iOS_DEPLOYMENT_TARGET_MIN_REQUIRED,
   iOS_SDK_PUSH_SWIZZLE_VERSION,
 } from '../constants';
@@ -22,6 +21,23 @@ import {
   searchFilesForCode,
   trimQuotes,
 } from '../utils';
+import { doesExists } from '../utils/file';
+
+// Common search configurations for AppDelegate files
+const APP_DELEGATE_BASE_CONFIG = {
+  ignoreDirectories: ['Images.xcassets'],
+  targetFileNames: ['AppDelegate'],
+};
+
+const SDK_INIT_SEARCH_CONFIG = {
+  ...APP_DELEGATE_BASE_CONFIG,
+  targetFilePatterns: ['cio', 'customerio'],
+};
+
+const PUSH_INIT_SEARCH_CONFIG = {
+  ...APP_DELEGATE_BASE_CONFIG,
+  targetFilePatterns: ['cio', 'customerio', 'notification', 'push'],
+};
 
 export async function runChecks(group: CheckGroup): Promise<void> {
   const context = Context.get();
@@ -94,19 +110,43 @@ async function validateNotificationServiceExtension(
 
       const inferredDirectoryName =
         target.name || target.productReference_comment.replace('.appex', '');
-      const possibleInfoPlistPath =
-        `./${inferredDirectoryName}/Info.plist`.replace(/"/g, '');
-
-      const infoPlistPath = path.join(
+      const directoryPath = path.join(
         project.iOSProjectPath,
-        possibleInfoPlistPath
+        inferredDirectoryName.replace(/"/g, '')
       );
+
+      // Try common Info.plist naming patterns
+      const possibleInfoPlistNames = [
+        'Info.plist',
+        `${inferredDirectoryName.replace(/"/g, '')}-Info.plist`,
+      ];
+
+      let infoPlistPath: string | undefined;
+      let infoPlistContent;
+
+      for (const plistName of possibleInfoPlistNames) {
+        const candidatePath = path.join(directoryPath, plistName);
+        if (doesExists(candidatePath)) {
+          infoPlistPath = candidatePath;
+          infoPlistContent = await readAndParseXML(infoPlistPath);
+          if (infoPlistContent) {
+            break;
+          }
+        }
+      }
+
+      if (!infoPlistPath || !infoPlistContent || !infoPlistContent.plist) {
+        logger.debug(
+          `Could not find or parse Info.plist for extension: ${inferredDirectoryName}`
+        );
+        continue;
+      }
+
       const infoPlistReadablePath = getReadablePath(
         project.projectPath,
         infoPlistPath
       );
       logger.success(`NSE info.plist file found at ${infoPlistReadablePath}`);
-      const infoPlistContent = await readAndParseXML(infoPlistPath);
 
       // If the Info.plist content represents an NSE, process further
       if (isNotificationServiceExtension(infoPlistContent.plist.dict)) {
@@ -140,24 +180,41 @@ async function validateNotificationServiceExtension(
       logger.debug(
         `Checking if the NSE is embedded into target app: ${target.name}`
       );
-      // Check if the target is listed in the Embed App Extensions build phase.
-      if (
-        target.buildPhases &&
-        target.buildPhases.find(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (phase: any) => trimQuotes(phase.comment) === 'Embed App Extensions'
-        )
-      ) {
-        isEmbedded = true;
-      } else if (
-        target.buildPhases &&
-        target.buildPhases.find(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (phase: any) =>
-            trimQuotes(phase.comment) === 'Embed Foundation Extensions'
-        )
-      ) {
-        isFoundationExtension = true;
+      // Check if the target has an embedding build phase for extensions
+      if (target.buildPhases) {
+        // buildPhases is an array of objects with 'value' being the phase UUID and 'comment' being the phase name
+        // We need to look up the actual phase object from xcodeProject.pbxCopyFilesBuildPhaseSection
+        // Access all copy files build phases
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const copyFilesPhases = (xcodeProject as any).hash.project.objects[
+          'PBXCopyFilesBuildPhase'
+        ];
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        target.buildPhases.forEach((phaseRef: any) => {
+          const comment = trimQuotes(phaseRef.comment || '');
+          const phaseUuid = phaseRef.value;
+
+          // Check for named embed phases by comment
+          if (comment === 'Embed App Extensions') {
+            isEmbedded = true;
+            return;
+          }
+          if (comment === 'Embed Foundation Extensions') {
+            isFoundationExtension = true;
+            return;
+          }
+
+          // Check if this phase is a Copy Files phase with dstSubfolderSpec = 13 (PlugIns folder)
+          // This is how Expo and some other tools embed extensions
+          if (copyFilesPhases && copyFilesPhases[phaseUuid]) {
+            const phase = copyFilesPhases[phaseUuid];
+            // dstSubfolderSpec 13 is the Xcode constant for PlugIns folder (where app extensions are embedded)
+            if (Number(phase.dstSubfolderSpec) === 13) {
+              isEmbedded = true;
+            }
+          }
+        });
       }
     }
   }
@@ -295,9 +352,7 @@ async function validateMessagingPushInitialization(
         '.m': moduleInitializationPattern,
         '.mm': moduleInitializationPattern,
       },
-      ignoreDirectories: ['Images.xcassets'],
-      targetFileNames: ['AppDelegate'],
-      targetFilePatterns: ['cio', 'customerio', 'notification', 'push'],
+      ...PUSH_INIT_SEARCH_CONFIG,
     },
     project.iOSProjectPath
   );
@@ -330,44 +385,88 @@ async function validateMessagingPushInitialization(
 async function validateSDKInitialization(project: iOSProject): Promise<void> {
   logger.debug(`Checking for SDK Initialization in iOS`);
 
-  const sdkInitializationPattern = /CustomerIO\.initialize/;
-  const sdkInitializationFiles = searchFilesForCode(
+  const isNativeIOS = project.framework === 'iOS';
+  const nativeInitPattern = /CustomerIO\.initialize/;
+  const appDelegateWrapperPattern = /CioAppDelegateWrapper/;
+  const pushInitPattern = /MessagingPush\w*\.initialize/;
+
+  // Check for CustomerIO.initialize (native initialization)
+  const nativeInitFiles = searchFilesForCode(
     {
       codePatternByExtension: {
-        '.swift': sdkInitializationPattern,
-        '.m': sdkInitializationPattern,
-        '.mm': sdkInitializationPattern,
+        '.swift': nativeInitPattern,
+        '.m': nativeInitPattern,
+        '.mm': nativeInitPattern,
       },
-      ignoreDirectories: ['Images.xcassets'],
-      targetFileNames: ['AppDelegate'],
-      targetFilePatterns: ['cio', 'customerio', 'notification', 'push'],
+      ...SDK_INIT_SEARCH_CONFIG,
     },
     project.iOSProjectPath
   );
 
-  if (sdkInitializationFiles.matchedFiles.length > 0) {
+  // Check for CioAppDelegateWrapper (recommended pattern for all iOS apps)
+  const appDelegateWrapperFiles = searchFilesForCode(
+    {
+      codePatternByExtension: {
+        '.swift': appDelegateWrapperPattern,
+      },
+      ...SDK_INIT_SEARCH_CONFIG,
+    },
+    project.iOSProjectPath
+  );
+
+  // Check for MessagingPush initialization (legacy push pattern)
+  const pushInitFiles = searchFilesForCode(
+    {
+      codePatternByExtension: {
+        '.swift': pushInitPattern,
+        '.m': pushInitPattern,
+        '.mm': pushInitPattern,
+      },
+      ...PUSH_INIT_SEARCH_CONFIG,
+    },
+    project.iOSProjectPath
+  );
+
+  const foundNativeInit = nativeInitFiles.matchedFiles.length > 0;
+  const foundAppDelegateWrapper =
+    appDelegateWrapperFiles.matchedFiles.length > 0;
+  const foundPushInit = pushInitFiles.matchedFiles.length > 0;
+
+  // CustomerIO.initialize check
+  if (foundNativeInit) {
     logger.success(
-      `iOS SDK Initialization found in ${sdkInitializationFiles.formattedMatchedFiles}`
+      `CustomerIO.initialize found in ${nativeInitFiles.formattedMatchedFiles}`
+    );
+  } else if (isNativeIOS) {
+    // Required for native iOS
+    logger.failure('CustomerIO.initialize not found');
+    logger.error(
+      'Native iOS apps must call CustomerIO.initialize in AppDelegate'
+    );
+  }
+  // Optional for wrapper frameworks (they initialize in JS/Dart/Flutter) - no warning needed
+
+  // CioAppDelegateWrapper check (recommended for all iOS apps)
+  if (foundAppDelegateWrapper) {
+    logger.success(
+      `CioAppDelegateWrapper found in ${appDelegateWrapperFiles.formattedMatchedFiles}`
+    );
+  } else if (foundPushInit) {
+    // Using legacy push initialization pattern
+    logger.warning('CioAppDelegateWrapper not found');
+    logger.alert(
+      'Consider migrating to CioAppDelegateWrapper for simplified push notification setup. See the documentation for migration guides.'
     );
   } else {
-    logger.debug(`Search Criteria:`);
+    // No push setup detected
     logger.debug(
-      `Searching files with names: ${sdkInitializationFiles.formattedTargetFileNames}`
+      'Neither CioAppDelegateWrapper nor MessagingPush initialization found'
     );
-    logger.debug(
-      `Searching files with keywords: ${sdkInitializationFiles.formattedTargetPatterns}`
-    );
-    logger.debug(
-      `Looked into the following files: ${sdkInitializationFiles.formattedSearchedFiles}`
-    );
-    if (logger.isDebug()) {
-      logger.failure('iOS SDK Initialization not found');
-    } else {
-      logger.failure(
-        'iOS SDK Initialization not found. For more details, run the script with the -v flag'
-      );
-    }
   }
+
+  // Note: MessagingPush initialization is checked and logged in validateMessagingPushInitialization
+  // during the PushSetup group. The foundPushInit variable here is used only for the
+  // CioAppDelegateWrapper recommendation logic above.
 }
 
 async function validatePushEntitlements(project: iOSProject): Promise<void> {
@@ -470,14 +569,9 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
     return podVersions !== undefined;
   };
 
-  if (project.framework == 'iOS') {
-    // Since iOS SDK 3.0.0, we have removed Tracking module and apps should use Data Pipeline module now
-    // Validate Data Pipeline module for native iOS apps
-    validatePod(POD_DATA_PIPELINE);
-  } else {
-    // For other frameworks, validate Tracking module since Data Pipeline is not currently supported by them
-    validatePod(POD_TRACKING);
-  }
+  // Since iOS SDK 3.0.0, we have removed Tracking module and apps should use Data Pipeline module now
+  // Validate Data Pipeline module for all frameworks
+  validatePod(POD_DATA_PIPELINE);
   validatePod(POD_MESSAGING_IN_APP);
 
   // Alert message for updating Push Messaging pods
