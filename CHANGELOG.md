@@ -1,3 +1,10 @@
+## [1.6.0](https://github.com/customerio/cio-sdk-tools/compare/1.5.0...1.6.0) (2026-03-26)
+
+
+### Features
+
+* update deprecated module checks and fix file discovery issues ([#36](https://github.com/customerio/cio-sdk-tools/issues/36)) ([bdb3bc1](https://github.com/customerio/cio-sdk-tools/commit/bdb3bc1b9b07da8074849b73f71c7da9f7d3ab8e))
+
 ## [1.5.0](https://github.com/customerio/cio-sdk-tools/compare/1.4.0...1.5.0) (2025-11-24)
 
 
