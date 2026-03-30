@@ -507,25 +507,22 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
       `Checking for conflicting libraries in: ${packageResolved.readablePath}`
     );
     const packageResolvedContent = packageResolved.content;
-    if (!packageResolvedContent) {
-      logger.error(
-        `No Package.resolved found at ${packageResolved.readablePath}`
+    if (packageResolvedContent) {
+      const conflictingPackages = Conflicts.iosSPMPackages.filter((lib) =>
+        packageResolvedContent.includes(lib)
       );
-      return;
-    }
-
-    const conflictingPackages = Conflicts.iosSPMPackages.filter((lib) =>
-      packageResolvedContent.includes(lib)
-    );
-    if (conflictingPackages.length === 0) {
-      logger.success('No conflicting SPM packages found');
-    } else {
-      logger.warning('Potential conflicting libraries found in SPM packages.');
-      logger.alert(
-        `It seems that your app is using multiple push messaging libraries (${conflictingPackages}).` +
-          ` We're continuing to improve support for multiple libraries, but there are some limitations.` +
-          ` Learn more at: ${project.documentation.multiplePushProviders}`
-      );
+      if (conflictingPackages.length === 0) {
+        logger.success('No conflicting SPM packages found');
+      } else {
+        logger.warning(
+          'Potential conflicting libraries found in SPM packages.'
+        );
+        logger.alert(
+          `It seems that your app is using multiple push messaging libraries (${conflictingPackages}).` +
+            ` We're continuing to improve support for multiple libraries, but there are some limitations.` +
+            ` Learn more at: ${project.documentation.multiplePushProviders}`
+        );
+      }
     }
   }
 
@@ -535,23 +532,20 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
       `Checking for conflicting libraries in: ${podfileLock.readablePath}`
     );
     const podfileLockContent = podfileLock.content;
-    if (!podfileLockContent) {
-      logger.error(`No Podfile.lock found at ${podfileLock.readablePath}`);
-      return;
-    }
-
-    const conflictingPods = Conflicts.iosPods.filter((lib) =>
-      podfileLockContent.includes(lib)
-    );
-    if (conflictingPods.length === 0) {
-      logger.success('No conflicting CocoaPods found');
-    } else {
-      logger.warning('Potential conflicting libraries found in CocoaPods.');
-      logger.alert(
-        `It seems that your app is using multiple push messaging libraries (${conflictingPods}).` +
-          ` We're continuing to improve support for multiple libraries, but there are some limitations.` +
-          ` Learn more at: ${project.documentation.multiplePushProviders}`
+    if (podfileLockContent) {
+      const conflictingPods = Conflicts.iosPods.filter((lib) =>
+        podfileLockContent.includes(lib)
       );
+      if (conflictingPods.length === 0) {
+        logger.success('No conflicting CocoaPods found');
+      } else {
+        logger.warning('Potential conflicting libraries found in CocoaPods.');
+        logger.alert(
+          `It seems that your app is using multiple push messaging libraries (${conflictingPods}).` +
+            ` We're continuing to improve support for multiple libraries, but there are some limitations.` +
+            ` Learn more at: ${project.documentation.multiplePushProviders}`
+        );
+      }
     }
   }
 }
