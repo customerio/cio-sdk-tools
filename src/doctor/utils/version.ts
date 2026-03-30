@@ -103,9 +103,14 @@ export function extractVersionFromPackageResolved(
 }
 
 /**
- * Checks if a specific module is present in Package.resolved by examining the package's products
- * or dependencies. For Customer.io iOS SDK, modules like DataPipelines, MessagingInApp, etc.
- * are products within the main package.
+ * Extracts version for an SPM module/product from Package.resolved.
+ *
+ * Note: Package.resolved only lists packages, not individual products/modules.
+ * For Customer.io iOS SDK, all modules (DataPipelines, MessagingInApp, etc.) are
+ * products of the main package and share the same version. We cannot determine
+ * which specific products are actually imported without parsing Swift source files.
+ *
+ * The moduleName parameter exists for API consistency with CocoaPods but is not used.
  */
 export function extractModuleVersionFromPackageResolved(
   packageResolvedContent: string,
@@ -113,8 +118,7 @@ export function extractModuleVersionFromPackageResolved(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   moduleName: string
 ): string | undefined {
-  // For SPM, all modules share the same version as the main package
-  // since they are products of the same package
+  // All SPM products share the package version
   return extractVersionFromPackageResolved(
     packageResolvedContent,
     packageIdentity

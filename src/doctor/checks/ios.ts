@@ -695,22 +695,20 @@ async function extractSPMVersions(project: iOSProject): Promise<void> {
   // Alert message for updating Push Messaging modules
   const pushMessagingModuleUpdateMessage = (moduleName: string) =>
     `Please update ${moduleName} to latest version following our documentation for improved tracking of push notification metrics`;
-  const pushMessagingAPNModule = validateSPMModule(
+  validateSPMModule(
     SPM_MESSAGING_PUSH_APN,
     true,
     iOS_SDK_PUSH_SWIZZLE_VERSION,
     pushMessagingModuleUpdateMessage(SPM_MESSAGING_PUSH_APN)
   );
-  const pushMessagingFCMModule = validateSPMModule(
+  validateSPMModule(
     SPM_MESSAGING_PUSH_FCM,
     true,
     iOS_SDK_PUSH_SWIZZLE_VERSION,
     pushMessagingModuleUpdateMessage(SPM_MESSAGING_PUSH_FCM)
   );
 
-  if (pushMessagingAPNModule && pushMessagingFCMModule) {
-    logger.error(
-      `${SPM_MESSAGING_PUSH_APN} and ${SPM_MESSAGING_PUSH_FCM} modules found. Both cannot be used at a time, please use only one of them.`
-    );
-  }
+  // Note: Cannot detect conflicts between MessagingPushAPN and MessagingPushFCM for SPM
+  // because Package.resolved only lists the package, not individual products/modules.
+  // Both modules will appear present if the Customer.io package is installed.
 }

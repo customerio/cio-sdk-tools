@@ -117,8 +117,10 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
       );
       this.isUsingCocoaPods = doesExists(this.podfile.absolutePath);
 
-      const packageResolvedPath = this.findPackageResolved() ?? '';
-      this.packageResolved = new File(this.projectPath, packageResolvedPath);
+      this.packageResolved = new File(
+        this.projectPath,
+        this.findPackageResolved()
+      );
       this.isUsingSPM = doesExists(this.packageResolved.absolutePath);
     }
 
@@ -185,8 +187,8 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
       );
     }
 
-    /** Finds Package.resolved in common SPM locations */
-    findPackageResolved(): string | undefined {
+    /** Finds Package.resolved in common SPM locations, returns default if not found */
+    findPackageResolved(): string {
       // SPM Package.resolved can be in several locations:
       // 1. <project>.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
       // 2. <project>.xcworkspace/xcshareddata/swiftpm/Package.resolved
@@ -246,10 +248,11 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
           return rootPath;
         }
       } catch (error) {
-        // If we can't read the directory, return undefined
+        // If we can't read the directory, fall through to default
       }
 
-      return undefined;
+      // Return default path - will be used to check if SPM is present
+      return path.join(this.iOSProjectPath, 'Package.resolved');
     }
 
     async runChecks(group: CheckGroup): Promise<void> {
