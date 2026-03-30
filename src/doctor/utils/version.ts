@@ -72,13 +72,13 @@ export function extractVersionFromPackageJson(
 }
 
 /**
- * Extracts version from Package.resolved (SPM) for a given package identity
+ * Extracts version, branch, or revision from Package.resolved (SPM) for a given package identity
  * Package.resolved format (v2/v3):
  * {
  *   "pins": [
  *     {
  *       "identity": "customerio-ios",
- *       "state": { "version": "4.3.1" }
+ *       "state": { "version": "4.3.1" }  // or "branch": "main" or "revision": "abc123..."
  *     }
  *   ]
  * }
@@ -95,7 +95,12 @@ export function extractVersionFromPackageResolved(
       (pin: { identity: string }) => pin.identity === packageIdentity
     );
 
-    return matchedPin?.state?.version;
+    // Return version, branch, or revision (similar to CocoaPods handling)
+    return (
+      matchedPin?.state?.version ||
+      matchedPin?.state?.branch ||
+      matchedPin?.state?.revision
+    );
   } catch (error) {
     logger.debug(`Error parsing Package.resolved: ${error}`);
     return undefined;
