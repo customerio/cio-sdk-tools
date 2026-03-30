@@ -498,6 +498,9 @@ async function validatePushEntitlements(project: iOSProject): Promise<void> {
 }
 
 async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
+  // Check conflicts in both package managers if present
+  // Projects can use both SPM and CocoaPods for different dependencies
+
   if (project.isUsingSPM) {
     const packageResolved = project.packageResolved;
     logger.debug(
@@ -515,17 +518,18 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
       packageResolvedContent.includes(lib)
     );
     if (conflictingPackages.length === 0) {
-      logger.success('No conflicting packages found');
+      logger.success('No conflicting SPM packages found');
     } else {
-      logger.warning('Potential conflicting libraries found.');
+      logger.warning('Potential conflicting libraries found in SPM packages.');
       logger.alert(
         `It seems that your app is using multiple push messaging libraries (${conflictingPackages}).` +
           ` We're continuing to improve support for multiple libraries, but there are some limitations.` +
           ` Learn more at: ${project.documentation.multiplePushProviders}`
       );
     }
-    return;
-  } else if (project.isUsingCocoaPods) {
+  }
+
+  if (project.isUsingCocoaPods) {
     const podfileLock = project.podfileLock;
     logger.debug(
       `Checking for conflicting libraries in: ${podfileLock.readablePath}`
@@ -540,9 +544,9 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
       podfileLockContent.includes(lib)
     );
     if (conflictingPods.length === 0) {
-      logger.success('No conflicting pods found');
+      logger.success('No conflicting CocoaPods found');
     } else {
-      logger.warning('Potential conflicting libraries found.');
+      logger.warning('Potential conflicting libraries found in CocoaPods.');
       logger.alert(
         `It seems that your app is using multiple push messaging libraries (${conflictingPods}).` +
           ` We're continuing to improve support for multiple libraries, but there are some limitations.` +
@@ -553,11 +557,17 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
 }
 
 async function validateDependencies(project: iOSProject): Promise<void> {
+  // Check both package managers if present
   if (project.isUsingSPM) {
     await runCatching(extractSPMVersions)(project);
-  } else if (project.isUsingCocoaPods) {
+  }
+
+  if (project.isUsingCocoaPods) {
     await runCatching(extractPodVersions)(project);
-  } else {
+  }
+
+  // Warn if no package manager found
+  if (!project.isUsingCocoaPods && !project.isUsingSPM) {
     logger.warning(
       `No Podfile found at ${project.podfile.readablePath} and no Package.resolved found. Unable to detect dependencies.`
     );
