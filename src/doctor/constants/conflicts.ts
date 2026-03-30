@@ -4,3 +4,4 @@ export const reactNativePackages = [
 ];
 
 export const iosPods = ['OneSignal', 'Firebase/Messaging'];
+export const iosSPMPackages = ['onesignal-ios-sdk', 'firebase-ios-sdk'];

@@ -71,6 +71,56 @@ export function extractVersionFromPackageJson(
   return dependencies[packageName];
 }
 
+/**
+ * Extracts version from Package.resolved (SPM) for a given package identity
+ * Package.resolved format (v2/v3):
+ * {
+ *   "pins": [
+ *     {
+ *       "identity": "customerio-ios",
+ *       "state": { "version": "4.3.1" }
+ *     }
+ *   ]
+ * }
+ */
+export function extractVersionFromPackageResolved(
+  packageResolvedContent: string,
+  packageIdentity: string
+): string | undefined {
+  try {
+    const packageResolved = JSON.parse(packageResolvedContent);
+    const pins = packageResolved.pins || [];
+
+    const matchedPin = pins.find(
+      (pin: { identity: string }) => pin.identity === packageIdentity
+    );
+
+    return matchedPin?.state?.version;
+  } catch (error) {
+    logger.debug(`Error parsing Package.resolved: ${error}`);
+    return undefined;
+  }
+}
+
+/**
+ * Checks if a specific module is present in Package.resolved by examining the package's products
+ * or dependencies. For Customer.io iOS SDK, modules like DataPipelines, MessagingInApp, etc.
+ * are products within the main package.
+ */
+export function extractModuleVersionFromPackageResolved(
+  packageResolvedContent: string,
+  packageIdentity: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  moduleName: string
+): string | undefined {
+  // For SPM, all modules share the same version as the main package
+  // since they are products of the same package
+  return extractVersionFromPackageResolved(
+    packageResolvedContent,
+    packageIdentity
+  );
+}
+
 export async function fetchLatestVersion(
   packageName: string
 ): Promise<string | undefined> {

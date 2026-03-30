@@ -5,6 +5,11 @@ import {
   POD_MESSAGING_IN_APP,
   POD_MESSAGING_PUSH_APN,
   POD_MESSAGING_PUSH_FCM,
+  SPM_PACKAGE_IDENTITY,
+  SPM_DATA_PIPELINE,
+  SPM_MESSAGING_IN_APP,
+  SPM_MESSAGING_PUSH_APN,
+  SPM_MESSAGING_PUSH_FCM,
   iOS_DEPLOYMENT_TARGET_MIN_REQUIRED,
   iOS_SDK_PUSH_SWIZZLE_VERSION,
 } from '../constants';
@@ -14,6 +19,7 @@ import {
   compareSemanticVersions,
   extractSemanticVersion,
   extractVersionFromPodLock,
+  extractModuleVersionFromPackageResolved,
   getReadablePath,
   logger,
   readAndParseXML,
@@ -492,42 +498,68 @@ async function validatePushEntitlements(project: iOSProject): Promise<void> {
 }
 
 async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
-  if (!project.isUsingCocoaPods) {
-    // Since we do not support SPM at the moment
-    return;
-  }
-
-  const podfileLock = project.podfileLock;
-  logger.debug(
-    `Checking for conflicting libraries in: ${podfileLock.readablePath}`
-  );
-  const podfileLockContent = podfileLock.content;
-  if (!podfileLockContent) {
-    logger.error(`No Podfile.lock found at ${podfileLock.readablePath}`);
-    return;
-  }
-
-  const conflictingPods = Conflicts.iosPods.filter((lib) =>
-    podfileLockContent.includes(lib)
-  );
-  if (conflictingPods.length === 0) {
-    logger.success('No conflicting pods found');
-  } else {
-    logger.warning('Potential conflicting libraries found.');
-    logger.alert(
-      `It seems that your app is using multiple push messaging libraries (${conflictingPods}).` +
-        ` We're continuing to improve support for multiple libraries, but there are some limitations.` +
-        ` Learn more at: ${project.documentation.multiplePushProviders}`
+  if (project.isUsingSPM) {
+    const packageResolved = project.packageResolved;
+    logger.debug(
+      `Checking for conflicting libraries in: ${packageResolved.readablePath}`
     );
+    const packageResolvedContent = packageResolved.content;
+    if (!packageResolvedContent) {
+      logger.error(
+        `No Package.resolved found at ${packageResolved.readablePath}`
+      );
+      return;
+    }
+
+    const conflictingPackages = Conflicts.iosSPMPackages.filter((lib) =>
+      packageResolvedContent.includes(lib)
+    );
+    if (conflictingPackages.length === 0) {
+      logger.success('No conflicting packages found');
+    } else {
+      logger.warning('Potential conflicting libraries found.');
+      logger.alert(
+        `It seems that your app is using multiple push messaging libraries (${conflictingPackages}).` +
+          ` We're continuing to improve support for multiple libraries, but there are some limitations.` +
+          ` Learn more at: ${project.documentation.multiplePushProviders}`
+      );
+    }
+    return;
+  } else if (project.isUsingCocoaPods) {
+    const podfileLock = project.podfileLock;
+    logger.debug(
+      `Checking for conflicting libraries in: ${podfileLock.readablePath}`
+    );
+    const podfileLockContent = podfileLock.content;
+    if (!podfileLockContent) {
+      logger.error(`No Podfile.lock found at ${podfileLock.readablePath}`);
+      return;
+    }
+
+    const conflictingPods = Conflicts.iosPods.filter((lib) =>
+      podfileLockContent.includes(lib)
+    );
+    if (conflictingPods.length === 0) {
+      logger.success('No conflicting pods found');
+    } else {
+      logger.warning('Potential conflicting libraries found.');
+      logger.alert(
+        `It seems that your app is using multiple push messaging libraries (${conflictingPods}).` +
+          ` We're continuing to improve support for multiple libraries, but there are some limitations.` +
+          ` Learn more at: ${project.documentation.multiplePushProviders}`
+      );
+    }
   }
 }
 
 async function validateDependencies(project: iOSProject): Promise<void> {
-  if (project.isUsingCocoaPods) {
+  if (project.isUsingSPM) {
+    await runCatching(extractSPMVersions)(project);
+  } else if (project.isUsingCocoaPods) {
     await runCatching(extractPodVersions)(project);
   } else {
     logger.warning(
-      `No Podfile found at ${project.podfile.readablePath}. The project appears to be using Swift Package Manager (SPM).`
+      `No Podfile found at ${project.podfile.readablePath} and no Package.resolved found. Unable to detect dependencies.`
     );
   }
 }
@@ -593,6 +625,92 @@ async function extractPodVersions(project: iOSProject): Promise<void> {
   if (pushMessagingAPNPod && pushMessagingFCMPod) {
     logger.error(
       `${POD_MESSAGING_PUSH_APN} and ${POD_MESSAGING_PUSH_FCM} modules found. Both cannot be used at a time, please use only one of them.`
+    );
+  }
+}
+
+async function extractSPMVersions(project: iOSProject): Promise<void> {
+  const packageResolved = project.packageResolved;
+  const packageResolvedContent = packageResolved.content;
+
+  if (!packageResolvedContent) {
+    logger.error(
+      `No Package.resolved found at ${packageResolved.readablePath}`
+    );
+    return;
+  }
+
+  // Check if the Customer.io package exists in Package.resolved
+  const packageVersion = extractModuleVersionFromPackageResolved(
+    packageResolvedContent,
+    SPM_PACKAGE_IDENTITY,
+    ''
+  );
+
+  if (!packageVersion) {
+    logger.failure(`Customer.io SDK not found in Package.resolved.`);
+    logger.error(
+      'The Customer.io SDK does not appear to be installed via Swift Package Manager. ' +
+        'Please verify that you have added the Customer.io package to your project. ' +
+        'Refer to the Customer.io documentation for installation instructions.'
+    );
+    return;
+  }
+
+  const validateSPMModule = (
+    moduleName: string,
+    optional: boolean = false,
+    minRequiredVersion: string | undefined = undefined,
+    updateModuleMessage: string = `Please update ${moduleName} to latest version following our documentation`
+  ): boolean => {
+    const moduleVersion = extractModuleVersionFromPackageResolved(
+      packageResolvedContent,
+      SPM_PACKAGE_IDENTITY,
+      moduleName
+    );
+
+    if (moduleVersion) {
+      logger.success(`${moduleName}: ${moduleVersion}`);
+
+      // Check if the module version is below the minimum required version
+      if (
+        minRequiredVersion &&
+        compareSemanticVersions(
+          extractSemanticVersion(moduleVersion),
+          minRequiredVersion
+        ) < 0
+      ) {
+        logger.alert(updateModuleMessage);
+      }
+    } else if (!optional) {
+      logger.failure(`${moduleName} module not found`);
+    }
+    return moduleVersion !== undefined;
+  };
+
+  // Validate Data Pipeline module for all frameworks
+  validateSPMModule(SPM_DATA_PIPELINE);
+  validateSPMModule(SPM_MESSAGING_IN_APP);
+
+  // Alert message for updating Push Messaging modules
+  const pushMessagingModuleUpdateMessage = (moduleName: string) =>
+    `Please update ${moduleName} to latest version following our documentation for improved tracking of push notification metrics`;
+  const pushMessagingAPNModule = validateSPMModule(
+    SPM_MESSAGING_PUSH_APN,
+    true,
+    iOS_SDK_PUSH_SWIZZLE_VERSION,
+    pushMessagingModuleUpdateMessage(SPM_MESSAGING_PUSH_APN)
+  );
+  const pushMessagingFCMModule = validateSPMModule(
+    SPM_MESSAGING_PUSH_FCM,
+    true,
+    iOS_SDK_PUSH_SWIZZLE_VERSION,
+    pushMessagingModuleUpdateMessage(SPM_MESSAGING_PUSH_FCM)
+  );
+
+  if (pushMessagingAPNModule && pushMessagingFCMModule) {
+    logger.error(
+      `${SPM_MESSAGING_PUSH_APN} and ${SPM_MESSAGING_PUSH_FCM} modules found. Both cannot be used at a time, please use only one of them.`
     );
   }
 }
