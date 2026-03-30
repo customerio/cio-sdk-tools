@@ -151,8 +151,8 @@ run_doctor() {
     echo "  Command: npx cio-sdk-tools@latest doctor"
     npx cio-sdk-tools@latest doctor "$app_path" > "$output_file" 2>&1 || true
   else
-    echo "  Command: npm start --silent doctor (local)"
-    npm start --silent doctor "$app_path" > "$output_file" 2>&1 || true
+    echo "  Command: npm start --silent -- doctor (local)"
+    npm start --silent -- doctor "$app_path" > "$output_file" 2>&1 || true
   fi
 
   echo -e "  ${GREEN}✓${NC} Output saved to: ${output_file}"
@@ -171,8 +171,8 @@ if [ "$COMPARE_MODE" = true ]; then
   echo -e "${YELLOW}Mode: Compare local vs global${NC}"
   echo ""
 
-  # Create summary diff file
-  DIFF_SUMMARY="${RESULTS_DIR}/comparison-summary${TIMESTAMP}.txt"
+  # Create summary diff file (prefixed with _ to sort first)
+  DIFF_SUMMARY="${RESULTS_DIR}/_comparison-summary${TIMESTAMP}.txt"
 
   # Run both local and global for each app
   while IFS= read -r app; do

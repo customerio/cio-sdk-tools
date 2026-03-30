@@ -82,9 +82,9 @@ results/doctor/
 When using `npm run test:doctor:compare`, automatically generates diffs:
 ```
 results/doctor/
-  comparison-summary-20260327-142505.txt    # All apps summary
+  _comparison-summary-20260327-142505.txt    # All apps summary (sorts first)
   iOS-SPM-local-20260327-142505.txt
   iOS-SPM-global-20260327-142505.txt
-  iOS-SPM-diff-20260327-142505.txt          # Pre-computed diff
+  iOS-SPM-diff-20260327-142505.txt           # Pre-computed diff
   ...
 ```
