@@ -518,7 +518,8 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
           'Potential conflicting libraries found in SPM packages.'
         );
         logger.alert(
-          `It seems that your app is using multiple push messaging libraries (${conflictingPackages}).` +
+          `It seems that your app may be using multiple push messaging libraries (${conflictingPackages}).` +
+            ` Note: Some packages like Firebase include multiple products, not all of which may conflict.` +
             ` We're continuing to improve support for multiple libraries, but there are some limitations.` +
             ` Learn more at: ${project.documentation.multiplePushProviders}`
         );
