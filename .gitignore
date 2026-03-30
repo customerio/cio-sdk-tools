@@ -135,3 +135,7 @@ dist
 
 # jetbrains ide directory
 .idea/
+
+# Local testing
+.testapps.*.json
+results/
