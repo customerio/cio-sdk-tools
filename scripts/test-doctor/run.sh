@@ -151,8 +151,8 @@ run_doctor() {
     echo "  Command: npx cio-sdk-tools@latest doctor"
     npx cio-sdk-tools@latest doctor "$app_path" > "$output_file" 2>&1 || true
   else
-    echo "  Command: npm start doctor (local)"
-    npm start doctor "$app_path" > "$output_file" 2>&1 || true
+    echo "  Command: npm start --silent doctor (local)"
+    npm start --silent doctor "$app_path" > "$output_file" 2>&1 || true
   fi
 
   echo -e "  ${GREEN}✓${NC} Output saved to: ${output_file}"
