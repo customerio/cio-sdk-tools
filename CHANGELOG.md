@@ -1,3 +1,10 @@
+## [1.7.0](https://github.com/customerio/cio-sdk-tools/compare/1.6.0...1.7.0) (2026-03-31)
+
+
+### Features
+
+* add SPM support for iOS doctor checks ([#37](https://github.com/customerio/cio-sdk-tools/issues/37)) ([c0fbb9e](https://github.com/customerio/cio-sdk-tools/commit/c0fbb9e640100ac81b0b9739877f19ae4695d888))
+
 ## [1.6.0](https://github.com/customerio/cio-sdk-tools/compare/1.5.0...1.6.0) (2026-03-26)
 
 
