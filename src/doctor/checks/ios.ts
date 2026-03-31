@@ -547,6 +547,10 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
             ` Learn more at: ${project.documentation.multiplePushProviders}`
         );
       }
+    } else {
+      logger.error(
+        `No Podfile.lock found at ${podfileLock.readablePath}. Please run 'pod install' first.`
+      );
     }
   }
 }
@@ -678,12 +682,12 @@ async function extractSPMVersions(project: iOSProject): Promise<void> {
       logger.success(`${moduleName}: ${moduleVersion}`);
 
       // Check if the module version is below the minimum required version
+      // Skip comparison for branch/revision pins where semver cannot be extracted
+      const semver = extractSemanticVersion(moduleVersion);
       if (
         minRequiredVersion &&
-        compareSemanticVersions(
-          extractSemanticVersion(moduleVersion),
-          minRequiredVersion
-        ) < 0
+        semver &&
+        compareSemanticVersions(semver, minRequiredVersion) < 0
       ) {
         logger.alert(updateModuleMessage);
       }
