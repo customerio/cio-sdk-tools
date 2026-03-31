@@ -538,9 +538,9 @@ async function validateNoConflictingSDKs(project: iOSProject): Promise<void> {
         podfileLockContent.includes(lib)
       );
       if (conflictingPods.length === 0) {
-        logger.success('No conflicting CocoaPods found');
+        logger.success('No conflicting pods found');
       } else {
-        logger.warning('Potential conflicting libraries found in CocoaPods.');
+        logger.warning('Potential conflicting libraries found in pods.');
         logger.alert(
           `It seems that your app is using multiple push messaging libraries (${conflictingPods}).` +
             ` We're continuing to improve support for multiple libraries, but there are some limitations.` +
