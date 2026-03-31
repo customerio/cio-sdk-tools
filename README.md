@@ -20,7 +20,7 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
       - Examination of `AppDelegate` to ensure correct metrics tracking for push notifications.
       - Checking entitlements for push notification capabilities and potential conflicts.
    4. **Dependencies**:
-      - Validation against any conflicting libraries in `package.json` and `Podfile` for now.
+      - Validation against any conflicting libraries in `package.json`, `Podfile.lock`, and `Package.resolved`.
       - Consolidates and displays versions of key integrations like the Customer.io SDK in various configuration files.
 
    > **Warning**
@@ -30,9 +30,8 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
    > The tool caters to React Native, Flutter, and iOS Native applications. If you're using a different framework, you can still use the tool to diagnose your iOS Native integration.
    >
    > The tool currently recognizes:
-   > - **Cocoapods**
-   >
-   > (Note: Swift Package Manager (SPM) is not supported at this time.)
+   > - **CocoaPods**
+   > - **Swift Package Manager (SPM)**
 
    ### Learn More
 

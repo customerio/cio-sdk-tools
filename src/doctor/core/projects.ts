@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import { runChecksForIOS, runChecksForReactNative } from '../checks';
 import { Links } from '../constants';
@@ -66,6 +67,9 @@ export interface iOSProject extends MobileProject {
   podfileLock: File;
   isUsingCocoaPods: boolean;
 
+  packageResolved: File;
+  isUsingSPM: boolean;
+
   projectFiles: {
     file: File;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -83,6 +87,8 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
     public podfile!: File;
     public podfileLock!: File;
     public isUsingCocoaPods!: boolean;
+    public packageResolved!: File;
+    public isUsingSPM!: boolean;
 
     projectFiles: {
       file: File;
@@ -110,6 +116,12 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
         path.join(this.iOSProjectPath, 'Podfile.lock')
       );
       this.isUsingCocoaPods = doesExists(this.podfile.absolutePath);
+
+      this.packageResolved = new File(
+        this.projectPath,
+        this.findPackageResolved()
+      );
+      this.isUsingSPM = doesExists(this.packageResolved.absolutePath);
     }
 
     async locateFiles(): Promise<void> {
@@ -175,6 +187,74 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
       );
     }
 
+    /** Finds Package.resolved in common SPM locations, returns default if not found */
+    findPackageResolved(): string {
+      // SPM Package.resolved can be in several locations:
+      // 1. <project>.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+      // 2. <project>.xcworkspace/xcshareddata/swiftpm/Package.resolved
+      // 3. .swiftpm/xcode/Package.resolved (for package projects)
+      // 4. Package.resolved (root level)
+
+      try {
+        const entries = fs.readdirSync(this.iOSProjectPath);
+
+        // Look for .xcodeproj first
+        for (const entry of entries) {
+          if (entry.endsWith('.xcodeproj')) {
+            const packageResolvedPath = path.join(
+              this.iOSProjectPath,
+              entry,
+              'project.xcworkspace',
+              'xcshareddata',
+              'swiftpm',
+              'Package.resolved'
+            );
+            if (doesExists(packageResolvedPath)) {
+              return packageResolvedPath;
+            }
+          }
+        }
+
+        // Look for .xcworkspace
+        for (const entry of entries) {
+          if (entry.endsWith('.xcworkspace')) {
+            const packageResolvedPath = path.join(
+              this.iOSProjectPath,
+              entry,
+              'xcshareddata',
+              'swiftpm',
+              'Package.resolved'
+            );
+            if (doesExists(packageResolvedPath)) {
+              return packageResolvedPath;
+            }
+          }
+        }
+
+        // Check .swiftpm/xcode location
+        const swiftpmPath = path.join(
+          this.iOSProjectPath,
+          '.swiftpm',
+          'xcode',
+          'Package.resolved'
+        );
+        if (doesExists(swiftpmPath)) {
+          return swiftpmPath;
+        }
+
+        // Check root level
+        const rootPath = path.join(this.iOSProjectPath, 'Package.resolved');
+        if (doesExists(rootPath)) {
+          return rootPath;
+        }
+      } catch (error) {
+        // If we can't read the directory, fall through to default
+      }
+
+      // Return default path - will be used to check if SPM is present
+      return path.join(this.iOSProjectPath, 'Package.resolved');
+    }
+
     async runChecks(group: CheckGroup): Promise<void> {
       await runChecksForIOS(group);
     }
@@ -199,6 +279,7 @@ export class iOSNativeProject
 
     this.podfile.loadContent();
     this.podfileLock.loadContent();
+    this.packageResolved.loadContent();
     this.projectFile?.loadContent();
   }
 }
@@ -230,6 +311,7 @@ export class ReactNativeProject
     this.packageJsonFile.loadContent();
     this.podfile.loadContent();
     this.podfileLock.loadContent();
+    this.packageResolved.loadContent();
   }
 
   findPreferredLockFile() {
@@ -295,6 +377,7 @@ export class FlutterProject
     this.pubspecLockFile.loadContent();
     this.podfile.loadContent();
     this.podfileLock.loadContent();
+    this.packageResolved.loadContent();
   }
 
   async runChecks(group: CheckGroup): Promise<void> {

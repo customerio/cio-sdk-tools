@@ -71,6 +71,65 @@ export function extractVersionFromPackageJson(
   return dependencies[packageName];
 }
 
+/**
+ * Extracts version, branch, or revision from Package.resolved (SPM) for a given package identity
+ * Package.resolved format (v2/v3):
+ * {
+ *   "pins": [
+ *     {
+ *       "identity": "customerio-ios",
+ *       "state": { "version": "4.3.1" }  // or "branch": "main" or "revision": "abc123..."
+ *     }
+ *   ]
+ * }
+ */
+export function extractVersionFromPackageResolved(
+  packageResolvedContent: string,
+  packageIdentity: string
+): string | undefined {
+  try {
+    const packageResolved = JSON.parse(packageResolvedContent);
+    const pins = packageResolved.pins || [];
+
+    const matchedPin = pins.find(
+      (pin: { identity: string }) => pin.identity === packageIdentity
+    );
+
+    // Return version, branch, or revision (similar to CocoaPods handling)
+    return (
+      matchedPin?.state?.version ||
+      matchedPin?.state?.branch ||
+      matchedPin?.state?.revision
+    );
+  } catch (error) {
+    logger.debug(`Error parsing Package.resolved: ${error}`);
+    return undefined;
+  }
+}
+
+/**
+ * Extracts version for an SPM module/product from Package.resolved.
+ *
+ * Note: Package.resolved only lists packages, not individual products/modules.
+ * For Customer.io iOS SDK, all modules (DataPipelines, MessagingInApp, etc.) are
+ * products of the main package and share the same version. We cannot determine
+ * which specific products are actually imported without parsing Swift source files.
+ *
+ * The moduleName parameter exists for API consistency with CocoaPods but is not used.
+ */
+export function extractModuleVersionFromPackageResolved(
+  packageResolvedContent: string,
+  packageIdentity: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  moduleName: string
+): string | undefined {
+  // All SPM products share the package version
+  return extractVersionFromPackageResolved(
+    packageResolvedContent,
+    packageIdentity
+  );
+}
+
 export async function fetchLatestVersion(
   packageName: string
 ): Promise<string | undefined> {
