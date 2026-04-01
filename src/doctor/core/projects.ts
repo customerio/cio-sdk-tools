@@ -1,6 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { runChecksForIOS, runChecksForReactNative } from '../checks';
+import {
+  runChecksForAndroid,
+  runChecksForIOS,
+  runChecksForReactNative,
+} from '../checks';
 import { Links } from '../constants';
 import { CheckGroup } from '../types';
 import { createFilePattern } from '../utils';
@@ -367,8 +371,7 @@ const AndroidProjectBase = <TBase extends Constructor>(Base: TBase) =>
     }
 
     async runAndroidChecks(group: CheckGroup): Promise<void> {
-      const { runChecks } = await import('../checks/android.js');
-      await runChecks(group);
+      await runChecksForAndroid(group);
     }
   };
 
