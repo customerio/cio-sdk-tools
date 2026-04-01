@@ -252,8 +252,13 @@ async function validateNoConflictingSDKs(
   }
 
   if (conflictsFound.length > 0) {
-    logger.failure('Found conflicting Android push notification libraries:');
+    logger.warning(
+      'Potential conflicting Android push notification libraries:'
+    );
     conflictsFound.forEach((dep) => logger.alert(`  - ${dep}`));
+    logger.alert(
+      `Learn more at: ${project.documentation.multiplePushProviders}`
+    );
   } else {
     // Only show success for native Android projects
     // For wrappers, this is redundant since iOS checks already covered it
@@ -321,11 +326,12 @@ async function validateDependencies(project: AndroidProject): Promise<void> {
   }
 
   if (!foundAny) {
-    // For native Android, this is a warning
-    // For React Native/Flutter, this is expected (dependencies come from wrapper SDK)
-    logger.debug(
-      'No explicit io.customer.android:* dependencies in build.gradle'
-    );
-    logger.debug('This is expected for React Native/Flutter projects');
+    if (project.isWrapperFramework) {
+      logger.debug(
+        'No explicit io.customer.android:* dependencies in build.gradle'
+      );
+    } else {
+      logger.warning('No Customer.io SDK dependencies found in build.gradle');
+    }
   }
 }
