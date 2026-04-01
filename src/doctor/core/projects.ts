@@ -79,6 +79,15 @@ export interface iOSProject extends MobileProject {
   appDelegateFiles: File[];
 }
 
+export interface AndroidProject extends MobileProject {
+  readonly androidProjectPath: string;
+  appBuildGradle: File;
+  rootBuildGradle: File;
+  googleServicesJson: File;
+  androidManifest: File;
+  isWrapperFramework: boolean;
+}
+
 // Use mixins to reuse code between classes
 const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
   class extends Base {
@@ -260,6 +269,134 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
     }
   };
 
+// Android mixin for code reuse between Android projects
+const AndroidProjectBase = <TBase extends Constructor>(Base: TBase) =>
+  class extends Base {
+    public projectPath!: string;
+    public androidProjectPath!: string;
+    public appBuildGradle!: File;
+    public rootBuildGradle!: File;
+    public googleServicesJson!: File;
+    public androidManifest!: File;
+    public isWrapperFramework: boolean = false;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    constructor(...args: any[]) {
+      super(...args);
+    }
+
+    // Must be called from constructor only
+    initAndroidProject() {
+      // Determine app build.gradle path
+      // Two possible structures:
+      // 1. Multi-module: android/app/build.gradle (wrapper frameworks) or app/build.gradle (native)
+      // 2. Single-module: build.gradle at root (sample apps)
+
+      const appBuildPaths = [
+        path.join(this.androidProjectPath, 'app', 'build.gradle'),
+        path.join(this.androidProjectPath, 'app', 'build.gradle.kts'),
+      ];
+
+      const rootBuildPaths = [
+        path.join(this.androidProjectPath, 'build.gradle'),
+        path.join(this.androidProjectPath, 'build.gradle.kts'),
+      ];
+
+      // Find app build.gradle (Groovy or Kotlin DSL)
+      let appBuildPath = appBuildPaths[0]; // default
+      let isSingleModule = false;
+
+      for (const buildPath of appBuildPaths) {
+        if (doesExists(buildPath)) {
+          appBuildPath = buildPath;
+          break;
+        }
+      }
+
+      // If app/build.gradle doesn't exist, check if root build.gradle is the app module
+      if (!doesExists(appBuildPath)) {
+        for (const buildPath of rootBuildPaths) {
+          if (doesExists(buildPath)) {
+            const content = fs.readFileSync(buildPath, 'utf8');
+            if (content.includes('com.android.application')) {
+              appBuildPath = buildPath;
+              isSingleModule = true;
+              break;
+            }
+          }
+        }
+      }
+
+      // Find root build.gradle (Groovy or Kotlin DSL)
+      let rootBuildPath = rootBuildPaths[0]; // default
+      for (const buildPath of rootBuildPaths) {
+        if (doesExists(buildPath)) {
+          rootBuildPath = buildPath;
+          break;
+        }
+      }
+
+      this.appBuildGradle = new File(this.projectPath, appBuildPath);
+      this.rootBuildGradle = new File(this.projectPath, rootBuildPath);
+
+      // For single-module projects, files are at root level
+      // For multi-module projects, files are in app/ subdirectory
+      const appSubdir = isSingleModule ? '' : 'app';
+
+      this.googleServicesJson = new File(
+        this.projectPath,
+        path.join(this.androidProjectPath, appSubdir, 'google-services.json')
+      );
+      this.androidManifest = new File(
+        this.projectPath,
+        path.join(
+          this.androidProjectPath,
+          appSubdir,
+          'src',
+          'main',
+          'AndroidManifest.xml'
+        )
+      );
+    }
+
+    async loadAndroidFilesContent(): Promise<void> {
+      this.appBuildGradle.loadContent();
+      this.rootBuildGradle.loadContent();
+      this.googleServicesJson.loadContent();
+      this.androidManifest.loadContent();
+    }
+
+    async runAndroidChecks(group: CheckGroup): Promise<void> {
+      const { runChecks } = await import('../checks/android.js');
+      await runChecks(group);
+    }
+  };
+
+export class AndroidNativeProject
+  extends AndroidProjectBase(Object)
+  implements MobileProject, AndroidProject
+{
+  public readonly framework: string = 'Android';
+  public readonly documentation: Links.Documentation =
+    Links.AndroidDocumentation;
+
+  constructor(projectPath: string) {
+    super();
+    this.projectPath = projectPath;
+    this.androidProjectPath = projectPath;
+    this.isWrapperFramework = false;
+    this.initAndroidProject();
+  }
+
+  async loadFilesContent(): Promise<void> {
+    await this.loadAndroidFilesContent();
+  }
+
+  async runChecks(group: CheckGroup): Promise<void> {
+    await this.runAndroidChecks(group);
+  }
+}
+
 export class iOSNativeProject
   extends iOSProjectBase(Object)
   implements MobileProject, iOSProject
@@ -285,8 +422,8 @@ export class iOSNativeProject
 }
 
 export class ReactNativeProject
-  extends iOSProjectBase(Object)
-  implements MobileProject, iOSProject
+  extends iOSProjectBase(AndroidProjectBase(Object))
+  implements MobileProject, iOSProject, AndroidProject
 {
   public readonly framework: string = 'React Native';
   public readonly documentation: Links.Documentation =
@@ -294,6 +431,7 @@ export class ReactNativeProject
 
   public readonly packageJsonFile: File;
   public packageLockFile?: File;
+  public isWrapperFramework: boolean = true;
 
   constructor(projectPath: string) {
     super();
@@ -301,6 +439,14 @@ export class ReactNativeProject
     this.iOSProjectPath = path.join(projectPath, 'ios');
 
     this.initIOSProject();
+
+    // Check if android directory exists
+    const androidPath = path.join(projectPath, 'android');
+    if (doesExists(androidPath)) {
+      this.androidProjectPath = androidPath;
+      this.initAndroidProject();
+    }
+
     this.packageJsonFile = new File(projectPath, 'package.json');
   }
 
@@ -312,6 +458,11 @@ export class ReactNativeProject
     this.podfile.loadContent();
     this.podfileLock.loadContent();
     this.packageResolved.loadContent();
+
+    // Load Android files if android directory exists
+    if (this.androidProjectPath) {
+      await this.loadAndroidFilesContent();
+    }
   }
 
   findPreferredLockFile() {
@@ -346,12 +497,17 @@ export class ReactNativeProject
     // Run React Native checks first because wrapper frameworks must be validated before native checks
     await runChecksForReactNative(group);
     await super.runChecks(group);
+
+    // Run Android checks if android directory exists
+    if (this.androidProjectPath) {
+      await this.runAndroidChecks(group);
+    }
   }
 }
 
 export class FlutterProject
-  extends iOSProjectBase(Object)
-  implements MobileProject, iOSProject
+  extends iOSProjectBase(AndroidProjectBase(Object))
+  implements MobileProject, iOSProject, AndroidProject
 {
   public readonly framework: string = 'Flutter';
   public readonly documentation: Links.Documentation =
@@ -359,6 +515,7 @@ export class FlutterProject
 
   public readonly pubspecYamlFile: File;
   public readonly pubspecLockFile: File;
+  public isWrapperFramework: boolean = true;
 
   constructor(projectPath: string) {
     super();
@@ -366,6 +523,14 @@ export class FlutterProject
     this.iOSProjectPath = path.join(projectPath, 'ios');
 
     this.initIOSProject();
+
+    // Check if android directory exists
+    const androidPath = path.join(projectPath, 'android');
+    if (doesExists(androidPath)) {
+      this.androidProjectPath = androidPath;
+      this.initAndroidProject();
+    }
+
     this.pubspecYamlFile = new File(projectPath, 'pubspec.yaml');
     this.pubspecLockFile = new File(projectPath, 'pubspec.lock');
   }
@@ -378,10 +543,20 @@ export class FlutterProject
     this.podfile.loadContent();
     this.podfileLock.loadContent();
     this.packageResolved.loadContent();
+
+    // Load Android files if android directory exists
+    if (this.androidProjectPath) {
+      await this.loadAndroidFilesContent();
+    }
   }
 
   async runChecks(group: CheckGroup): Promise<void> {
     // When added, run Flutter checks first because wrapper frameworks must be validated before native checks
     await super.runChecks(group);
+
+    // Run Android checks if android directory exists
+    if (this.androidProjectPath) {
+      await this.runAndroidChecks(group);
+    }
   }
 }

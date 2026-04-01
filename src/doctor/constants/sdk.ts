@@ -22,3 +22,11 @@ export const SPM_MESSAGING_PUSH_FCM = 'MessagingPushFCM';
  */
 // iOS SDK version that introduced support for swizzling in push module
 export const iOS_SDK_PUSH_SWIZZLE_VERSION = '2.11';
+
+// Android SDK constants
+export const ANDROID_MIN_SDK_VERSION = 21;
+export const ANDROID_SDK_MIN_VERSION = '3.0.0';
+export const ANDROID_PACKAGE_GROUP = 'io.customer.android';
+export const ANDROID_MODULE_DATA_PIPELINES = 'datapipelines';
+export const ANDROID_MODULE_MESSAGING_IN_APP = 'messaging-in-app';
+export const ANDROID_MODULE_MESSAGING_PUSH_FCM = 'messaging-push-fcm';

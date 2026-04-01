@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
+  AndroidNativeProject,
   Context,
   FlutterProject,
   MobileProject,
@@ -87,6 +88,46 @@ function identifyProject(projectDirectory: string): MobileProject | undefined {
   // Check for Flutter (looking for a pubspec.yaml file)
   if (fs.existsSync(path.join(projectDirectory, 'pubspec.yaml'))) {
     return new FlutterProject(projectDirectory);
+  }
+
+  // Check for Android Native
+  // Two possible structures:
+  // 1. Standard multi-module: app/build.gradle
+  // 2. Single-module (samples): build.gradle at root with com.android.application plugin
+  const androidAppBuildGradle = path.join(
+    projectDirectory,
+    'app',
+    'build.gradle'
+  );
+  const androidAppBuildGradleKts = path.join(
+    projectDirectory,
+    'app',
+    'build.gradle.kts'
+  );
+
+  if (
+    fs.existsSync(androidAppBuildGradle) ||
+    fs.existsSync(androidAppBuildGradleKts)
+  ) {
+    return new AndroidNativeProject(projectDirectory);
+  }
+
+  // Check for single-module Android project (build.gradle at root)
+  const rootBuildGradle = path.join(projectDirectory, 'build.gradle');
+  const rootBuildGradleKts = path.join(projectDirectory, 'build.gradle.kts');
+
+  if (fs.existsSync(rootBuildGradle)) {
+    const content = fs.readFileSync(rootBuildGradle, 'utf8');
+    if (content.includes('com.android.application')) {
+      return new AndroidNativeProject(projectDirectory);
+    }
+  }
+
+  if (fs.existsSync(rootBuildGradleKts)) {
+    const content = fs.readFileSync(rootBuildGradleKts, 'utf8');
+    if (content.includes('com.android.application')) {
+      return new AndroidNativeProject(projectDirectory);
+    }
   }
 
   // Check for iOS Native (looking for a .xcodeproj directory)
