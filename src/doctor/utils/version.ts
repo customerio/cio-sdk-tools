@@ -91,8 +91,9 @@ export function extractVersionFromBuildGradle(
 ): string | undefined {
   // Pattern matches: packageGroup:moduleName:version
   // Handles both single and double quotes, with or without parentheses
+  const escapedGroup = packageGroup.replace(/\./g, '\\.');
   const pattern = new RegExp(
-    `['"]${packageGroup}:${moduleName}:([\\d.]+)['"]`,
+    `['"]${escapedGroup}:${moduleName}:([\\d.]+)['"]`,
     'g'
   );
   const match = pattern.exec(content);

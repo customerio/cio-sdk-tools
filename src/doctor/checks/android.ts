@@ -11,6 +11,7 @@ import { AndroidProject, Context } from '../core';
 import { CheckGroup } from '../types';
 import {
   compareSemanticVersions,
+  extractSemanticVersion,
   extractVersionFromBuildGradle,
   fetchCachedLatestVersion,
   logger,
@@ -276,7 +277,9 @@ async function validateDependencies(project: AndroidProject): Promise<void> {
     return;
   }
 
-  const latestSdkVersion = await fetchCachedLatestVersion('customerio-android');
+  const latestSdkVersion = extractSemanticVersion(
+    await fetchCachedLatestVersion('customerio-android')
+  );
 
   const modules = [
     { name: ANDROID_MODULE_DATA_PIPELINES, displayName: 'Data Pipelines' },
