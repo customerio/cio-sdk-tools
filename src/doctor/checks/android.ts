@@ -1,3 +1,4 @@
+import * as path from 'path';
 import {
   ANDROID_MIN_SDK_VERSION,
   ANDROID_MODULE_DATA_PIPELINES,
@@ -18,7 +19,7 @@ import {
   runCatching,
   searchFilesForCode,
 } from '../utils';
-import { doesExists } from '../utils/file';
+import { doesExists, readDirectory, readFileContent } from '../utils/file';
 
 // Common search configurations for Android files
 const ANDROID_SOURCE_BASE_CONFIG = {
@@ -100,16 +101,16 @@ async function validateAndroidSdkVersions(
     const minSdk = parseInt(minSdkMatch[1], 10);
     if (minSdk < ANDROID_MIN_SDK_VERSION) {
       logger.failure(
-        `minSdkVersion ${minSdk} is below required minimum ${ANDROID_MIN_SDK_VERSION}`
+        `Min SDK Version ${minSdk} is below required minimum ${ANDROID_MIN_SDK_VERSION}`
       );
     } else {
-      logger.success(`minSdkVersion: ${minSdk}`);
+      logger.success(`Min SDK Version: ${minSdk}`);
     }
   }
 
   if (targetSdkMatch) {
     const targetSdk = parseInt(targetSdkMatch[1], 10);
-    logger.success(`targetSdkVersion: ${targetSdk}`);
+    logger.success(`Target SDK Version: ${targetSdk}`);
   }
 }
 
@@ -295,11 +296,30 @@ async function validateDependencies(project: AndroidProject): Promise<void> {
     },
   ];
 
+  // Collect all gradle file contents to search through
+  // Dependencies may be defined in separate .gradle files (e.g. via apply from:)
+  const gradleContents = [project.appBuildGradle.content];
+  const appDir = path.dirname(project.appBuildGradle.absolutePath);
+  const appFiles = readDirectory(appDir);
+  if (appFiles) {
+    for (const file of appFiles) {
+      if (
+        (file.endsWith('.gradle') || file.endsWith('.gradle.kts')) &&
+        file !== path.basename(project.appBuildGradle.absolutePath)
+      ) {
+        const content = readFileContent(path.join(appDir, file));
+        if (content) gradleContents.push(content);
+      }
+    }
+  }
+
+  const allGradleContent = gradleContents.join('\n');
+
   let foundAny = false;
 
   for (const module of modules) {
     const version = extractVersionFromBuildGradle(
-      project.appBuildGradle.content,
+      allGradleContent,
       ANDROID_PACKAGE_GROUP,
       module.name
     );
