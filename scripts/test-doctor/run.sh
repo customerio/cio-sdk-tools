@@ -2,11 +2,10 @@
 
 # Script to test the doctor command on multiple apps
 # Usage:
-#   ./scripts/test-doctor.sh                # Run local version (overwrites results)
+#   ./scripts/test-doctor.sh                # Run local version
 #   ./scripts/test-doctor.sh --global       # Run global version (npx cio-sdk-tools@latest)
-#   ./scripts/test-doctor.sh --compare      # Run both and save to separate files
-#   ./scripts/test-doctor.sh --timestamped  # Append timestamp to filenames
-#   ./scripts/test-doctor.sh --clean        # Remove all results
+#   ./scripts/test-doctor.sh --compare      # Run both and generate diffs
+#   ./scripts/test-doctor.sh --clean        # Remove all results before running
 
 set -e
 
@@ -20,7 +19,6 @@ NC='\033[0m' # No Color
 # Default settings
 USE_GLOBAL=false
 COMPARE_MODE=false
-USE_TIMESTAMP=false
 CLEAN_MODE=false
 CONFIG_FILE=".testapps.doctor.json"
 RESULTS_DIR="results/doctor"
@@ -34,11 +32,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --compare)
       COMPARE_MODE=true
-      USE_TIMESTAMP=true  # Compare mode always uses timestamps
-      shift
-      ;;
-    --timestamped)
-      USE_TIMESTAMP=true
       shift
       ;;
     --clean)
@@ -51,7 +44,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo -e "${RED}Unknown option: $1${NC}"
-      echo "Usage: $0 [--global] [--compare] [--timestamped] [--clean] [--config <path>]"
+      echo "Usage: $0 [--global] [--compare] [--clean] [--config <path>]"
       exit 1
       ;;
   esac
@@ -77,42 +70,42 @@ if [ ! -f "$CONFIG_FILE" ]; then
 {
   "apps": [
     {
-      "name": "iOS-SPM",
+      "name": "ios_spm",
       "path": "../customerio-ios/Apps/APN-UIKit",
       "framework": "iOS"
     },
     {
-      "name": "iOS-CocoaPods",
+      "name": "ios_cocoapods",
       "path": "../customerio-ios/Apps/CocoaPods-FCM",
       "framework": "iOS"
     },
     {
-      "name": "iOS-VisionOS",
+      "name": "ios_visionos",
       "path": "../customerio-ios/Apps/VisionOS",
       "framework": "iOS"
     },
     {
-      "name": "Flutter",
+      "name": "flutter",
       "path": "../customerio-flutter/apps/amiapp_flutter",
       "framework": "Flutter"
     },
     {
-      "name": "React-Native",
+      "name": "react_native",
       "path": "../customerio-reactnative/example",
       "framework": "React Native"
     },
     {
-      "name": "Expo",
+      "name": "expo",
       "path": "../customerio-expo-plugin/test-app",
       "framework": "React Native"
     },
     {
-      "name": "Android-Kotlin",
+      "name": "android_kotlin",
       "path": "../customerio-android/samples/kotlin_compose",
       "framework": "Android"
     },
     {
-      "name": "Android-Java",
+      "name": "android_java",
       "path": "../customerio-android/samples/java_layout",
       "framework": "Android"
     }
@@ -128,33 +121,38 @@ fi
 # Create results directory
 mkdir -p "$RESULTS_DIR"
 
-# Generate timestamp if needed
-TIMESTAMP=""
-if [ "$USE_TIMESTAMP" = true ]; then
-  TIMESTAMP="-$(date +"%Y%m%d-%H%M%S")"
-fi
+# Generate timestamp for section headings
+TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
 
-# Function to run doctor on a single app
+# Function to run doctor on a single app and append to its file
 run_doctor() {
   local app_name=$1
   local app_path=$2
   local framework=$3
   local use_global=$4
-  local output_suffix=$5
 
-  local output_file="${RESULTS_DIR}/${app_name}${output_suffix}.txt"
+  local output_file="${RESULTS_DIR}/${app_name}.md"
 
   echo -e "${BLUE}Running: ${app_name} (${framework})${NC}"
   echo "  Path: ${app_path}"
 
+  # Add timestamp section heading
+  echo "## ${TIMESTAMP}" >> "$output_file"
+  echo "" >> "$output_file"
+
   if [ "$use_global" = true ]; then
     echo "  Command: npx cio-sdk-tools@latest doctor"
-    npx cio-sdk-tools@latest doctor "$app_path" > "$output_file" 2>&1 || true
+    echo '```' >> "$output_file"
+    npx cio-sdk-tools@latest doctor "$app_path" >> "$output_file" 2>&1 || true
+    echo '```' >> "$output_file"
   else
     echo "  Command: npm start --silent -- doctor (local)"
-    npm start --silent -- doctor "$app_path" > "$output_file" 2>&1 || true
+    echo '```' >> "$output_file"
+    npm start --silent -- doctor "$app_path" >> "$output_file" 2>&1 || true
+    echo '```' >> "$output_file"
   fi
 
+  echo "" >> "$output_file"
   echo -e "  ${GREEN}✓${NC} Output saved to: ${output_file}"
   echo ""
 }
@@ -171,10 +169,14 @@ if [ "$COMPARE_MODE" = true ]; then
   echo -e "${YELLOW}Mode: Compare local vs global${NC}"
   echo ""
 
-  # Create summary diff file (prefixed with _ to sort first)
-  DIFF_SUMMARY="${RESULTS_DIR}/_comparison-summary${TIMESTAMP}.txt"
+  # Summary file (prefixed with _ to sort first)
+  COMPARISON_SUMMARY="${RESULTS_DIR}/_summary.md"
 
-  # Run both local and global for each app
+  # Add timestamp section heading to summary
+  echo "## ${TIMESTAMP}" >> "$COMPARISON_SUMMARY"
+  echo "" >> "$COMPARISON_SUMMARY"
+
+  # Run both local and global for each app, saving all output in a single file per app
   while IFS= read -r app; do
     name=$(echo "$app" | jq -r '.name')
     path=$(echo "$app" | jq -r '.path')
@@ -183,27 +185,66 @@ if [ "$COMPARE_MODE" = true ]; then
     echo -e "${BLUE}▶ ${name}${NC}"
     echo "-----------------------------------"
 
-    # Run local version
+    APP_FILE="${RESULTS_DIR}/${name}.md"
+
+    # Run local version (capture to temp file for diff)
     echo -e "${YELLOW}LOCAL version:${NC}"
-    run_doctor "$name" "$path" "$framework" false "-local${TIMESTAMP}"
+    LOCAL_TMP=$(mktemp)
+    echo "  Path: ${path}"
+    echo "  Command: npm start --silent -- doctor (local)"
+    npm start --silent -- doctor "$path" > "$LOCAL_TMP" 2>&1 || true
+    echo -e "  ${GREEN}✓${NC} Done"
+    echo ""
 
-    # Run global version
+    # Run global version (capture to temp file for diff)
     echo -e "${YELLOW}GLOBAL version:${NC}"
-    run_doctor "$name" "$path" "$framework" true "-global${TIMESTAMP}"
+    GLOBAL_TMP=$(mktemp)
+    echo "  Path: ${path}"
+    echo "  Command: npx cio-sdk-tools@latest doctor"
+    npx cio-sdk-tools@latest doctor "$path" > "$GLOBAL_TMP" 2>&1 || true
+    echo -e "  ${GREEN}✓${NC} Done"
+    echo ""
 
-    # Generate diff for this app
-    LOCAL_FILE="${RESULTS_DIR}/${name}-local${TIMESTAMP}.txt"
-    GLOBAL_FILE="${RESULTS_DIR}/${name}-global${TIMESTAMP}.txt"
-    DIFF_FILE="${RESULTS_DIR}/${name}-diff${TIMESTAMP}.txt"
+    # Append timestamped section to app file
+    echo "## ${TIMESTAMP}" >> "$APP_FILE"
+    echo "Path: ${path}" >> "$APP_FILE"
+    echo "" >> "$APP_FILE"
 
-    echo "━━━ ${name} ━━━" >> "$DIFF_SUMMARY"
-    if diff "$LOCAL_FILE" "$GLOBAL_FILE" > "$DIFF_FILE" 2>&1; then
-      echo "✓ No differences" >> "$DIFF_SUMMARY"
-      echo "✓ No differences" > "$DIFF_FILE"
-    else
-      cat "$DIFF_FILE" >> "$DIFF_SUMMARY"
+    echo "### LOCAL" >> "$APP_FILE"
+    echo '```' >> "$APP_FILE"
+    cat "$LOCAL_TMP" >> "$APP_FILE"
+    echo '```' >> "$APP_FILE"
+    echo "" >> "$APP_FILE"
+
+    echo "### GLOBAL" >> "$APP_FILE"
+    echo '```' >> "$APP_FILE"
+    cat "$GLOBAL_TMP" >> "$APP_FILE"
+    echo '```' >> "$APP_FILE"
+    echo "" >> "$APP_FILE"
+
+    echo "### DIFF" >> "$APP_FILE"
+    echo '```diff' >> "$APP_FILE"
+    if diff -u --label local --label global "$LOCAL_TMP" "$GLOBAL_TMP" >> "$APP_FILE" 2>&1; then
+      echo "✓ No differences" >> "$APP_FILE"
     fi
-    echo "" >> "$DIFF_SUMMARY"
+    echo '```' >> "$APP_FILE"
+    echo "" >> "$APP_FILE"
+
+    # Append to comparison summary
+    echo "### ${name}" >> "$COMPARISON_SUMMARY"
+    echo '```diff' >> "$COMPARISON_SUMMARY"
+    if diff "$LOCAL_TMP" "$GLOBAL_TMP" > /dev/null 2>&1; then
+      echo "✓ No differences" >> "$COMPARISON_SUMMARY"
+    else
+      diff -u --label local --label global "$LOCAL_TMP" "$GLOBAL_TMP" >> "$COMPARISON_SUMMARY" 2>&1 || true
+    fi
+    echo '```' >> "$COMPARISON_SUMMARY"
+    echo "" >> "$COMPARISON_SUMMARY"
+
+    # Cleanup temp files
+    rm -f "$LOCAL_TMP" "$GLOBAL_TMP"
+
+    echo -e "  ${GREEN}✓${NC} Output saved to: ${APP_FILE}"
     echo ""
 
   done <<< "$APPS"
@@ -213,7 +254,7 @@ if [ "$COMPARE_MODE" = true ]; then
   echo -e "${GREEN}==================================================${NC}"
   echo ""
   echo "View differences:"
-  echo -e "  ${BLUE}cat ${DIFF_SUMMARY}${NC}"
+  echo -e "  ${BLUE}cat ${COMPARISON_SUMMARY}${NC}"
 
 elif [ "$USE_GLOBAL" = true ]; then
   echo -e "${YELLOW}Mode: Global version (npx cio-sdk-tools@latest)${NC}"
@@ -224,11 +265,11 @@ elif [ "$USE_GLOBAL" = true ]; then
     path=$(echo "$app" | jq -r '.path')
     framework=$(echo "$app" | jq -r '.framework')
 
-    run_doctor "$name" "$path" "$framework" true "${TIMESTAMP}"
+    run_doctor "$name" "$path" "$framework" true
   done <<< "$APPS"
 
 else
-  echo -e "${YELLOW}Mode: Local version (overwrites previous results)${NC}"
+  echo -e "${YELLOW}Mode: Local version${NC}"
   echo ""
 
   while IFS= read -r app; do
@@ -236,7 +277,7 @@ else
     path=$(echo "$app" | jq -r '.path')
     framework=$(echo "$app" | jq -r '.framework')
 
-    run_doctor "$name" "$path" "$framework" false "${TIMESTAMP}"
+    run_doctor "$name" "$path" "$framework" false
   done <<< "$APPS"
 fi
 
@@ -247,5 +288,5 @@ echo ""
 echo "Results saved in: ${RESULTS_DIR}/"
 echo ""
 echo "View results:"
-echo -e "  ${BLUE}cat ${RESULTS_DIR}/<app-name>.txt${NC}"
+echo -e "  ${BLUE}cat ${RESULTS_DIR}/<app_name>.md${NC}"
 echo -e "  ${BLUE}ls -la ${RESULTS_DIR}/${NC}"

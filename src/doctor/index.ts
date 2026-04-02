@@ -17,6 +17,7 @@ import {
   isDirectoryNonEmpty,
   logger,
   readFileContent,
+  compareSemanticVersions,
 } from './utils';
 import { configureLogger } from './utils/logger';
 
@@ -171,7 +172,10 @@ export const doctorCommand = new Command('doctor')
     );
 
     const latestVersion = await fetchCachedLatestVersion(packageJson.name);
-    if (latestVersion && latestVersion !== packageJson.version) {
+    if (
+      latestVersion &&
+      compareSemanticVersions(latestVersion, packageJson.version) > 0
+    ) {
       logger.warning(
         `Newer version of ${packageJson.name} available ${latestVersion}, currently on ${packageJson.version}`
       );
