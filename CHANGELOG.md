@@ -1,3 +1,10 @@
+## [1.8.0](https://github.com/customerio/cio-sdk-tools/compare/1.7.0...1.8.0) (2026-04-02)
+
+
+### Features
+
+* add doctor support for android ([#39](https://github.com/customerio/cio-sdk-tools/issues/39)) ([adec0cf](https://github.com/customerio/cio-sdk-tools/commit/adec0cfc071aafbd68f1978d7e0308f9ce8db3a9))
+
 ## [1.7.0](https://github.com/customerio/cio-sdk-tools/compare/1.6.0...1.7.0) (2026-03-31)
 
 
