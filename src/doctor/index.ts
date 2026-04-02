@@ -106,9 +106,15 @@ function identifyProject(projectDirectory: string): MobileProject | undefined {
     'build.gradle.kts'
   );
 
+  const hasAndroidAppPlugin = (filePath: string): boolean => {
+    if (!fs.existsSync(filePath)) return false;
+    const content = fs.readFileSync(filePath, 'utf8');
+    return content.includes('com.android.application');
+  };
+
   if (
-    fs.existsSync(androidAppBuildGradle) ||
-    fs.existsSync(androidAppBuildGradleKts)
+    hasAndroidAppPlugin(androidAppBuildGradle) ||
+    hasAndroidAppPlugin(androidAppBuildGradleKts)
   ) {
     return new AndroidNativeProject(projectDirectory);
   }
@@ -117,18 +123,11 @@ function identifyProject(projectDirectory: string): MobileProject | undefined {
   const rootBuildGradle = path.join(projectDirectory, 'build.gradle');
   const rootBuildGradleKts = path.join(projectDirectory, 'build.gradle.kts');
 
-  if (fs.existsSync(rootBuildGradle)) {
-    const content = fs.readFileSync(rootBuildGradle, 'utf8');
-    if (content.includes('com.android.application')) {
-      return new AndroidNativeProject(projectDirectory);
-    }
-  }
-
-  if (fs.existsSync(rootBuildGradleKts)) {
-    const content = fs.readFileSync(rootBuildGradleKts, 'utf8');
-    if (content.includes('com.android.application')) {
-      return new AndroidNativeProject(projectDirectory);
-    }
+  if (
+    hasAndroidAppPlugin(rootBuildGradle) ||
+    hasAndroidAppPlugin(rootBuildGradleKts)
+  ) {
+    return new AndroidNativeProject(projectDirectory);
   }
 
   // Check for iOS Native (looking for a .xcodeproj directory)
