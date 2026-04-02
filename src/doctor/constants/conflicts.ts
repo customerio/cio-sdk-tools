@@ -8,3 +8,8 @@ export const iosPods = ['OneSignal', 'Firebase/Messaging'];
 // packages, not individual products, so we cannot detect which specific products
 // are in use (e.g., firebase-ios-sdk includes Analytics, Auth, Messaging, etc).
 export const iosSPMPackages = ['onesignal-ios-sdk', 'firebase-ios-sdk'];
+
+export const androidGradleDependencies = [
+  'com.onesignal:OneSignal',
+  'com.google.firebase:firebase-messaging',
+];

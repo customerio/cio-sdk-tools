@@ -72,6 +72,35 @@ export function extractVersionFromPackageJson(
 }
 
 /**
+ * Extracts version from build.gradle for a specific Android dependency.
+ * Handles both Groovy DSL and Kotlin DSL syntax.
+ *
+ * @example
+ * // Groovy DSL: implementation 'io.customer.android:datapipelines:3.1.0'
+ * // Kotlin DSL: implementation("io.customer.android:datapipelines:3.1.0")
+ *
+ * @param content Content of the build.gradle or build.gradle.kts file
+ * @param packageGroup Maven group ID (e.g., 'io.customer.android')
+ * @param moduleName Module name (e.g., 'datapipelines')
+ * @returns Version string if found, undefined otherwise
+ */
+export function extractVersionFromBuildGradle(
+  content: string,
+  packageGroup: string,
+  moduleName: string
+): string | undefined {
+  // Pattern matches: packageGroup:moduleName:version
+  // Handles both single and double quotes, with or without parentheses
+  const escapedGroup = packageGroup.replace(/\./g, '\\.');
+  const pattern = new RegExp(
+    `['"]${escapedGroup}:${moduleName}:([\\d.]+(?:-[\\w.]+)?)['"]`,
+    'g'
+  );
+  const match = pattern.exec(content);
+  return match ? match[1] : undefined;
+}
+
+/**
  * Extracts version, branch, or revision from Package.resolved (SPM) for a given package identity
  * Package.resolved format (v2/v3):
  * {
@@ -198,8 +227,8 @@ export function compareSemanticVersions(
   if (version1 === undefined) return -1;
   if (version2 === undefined) return 1;
 
-  const v1Parts = version1.split('.').map(Number);
-  const v2Parts = version2.split('.').map(Number);
+  const v1Parts = version1.split('-')[0].split('.').map(Number);
+  const v2Parts = version2.split('-')[0].split('.').map(Number);
 
   // Compare each part of the version numbers
   for (let i = 0; i < Math.max(v1Parts.length, v2Parts.length); i++) {

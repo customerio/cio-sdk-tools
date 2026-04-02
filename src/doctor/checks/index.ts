@@ -1,2 +1,3 @@
-export { runChecks as runChecksForIOS } from './ios';
-export { runChecks as runChecksForReactNative } from './react_native';
+export { runChecks as runChecksForAndroid } from './android.js';
+export { runChecks as runChecksForIOS } from './ios.js';
+export { runChecks as runChecksForReactNative } from './react_native.js';
