@@ -227,8 +227,8 @@ export function compareSemanticVersions(
   if (version1 === undefined) return -1;
   if (version2 === undefined) return 1;
 
-  const v1Parts = version1.split('.').map(Number);
-  const v2Parts = version2.split('.').map(Number);
+  const v1Parts = version1.split('-')[0].split('.').map(Number);
+  const v2Parts = version2.split('-')[0].split('.').map(Number);
 
   // Compare each part of the version numbers
   for (let i = 0; i < Math.max(v1Parts.length, v2Parts.length); i++) {
