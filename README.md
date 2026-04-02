@@ -1,5 +1,8 @@
 # cio-sdk-tools
 
+[![npm version](https://img.shields.io/npm/v/cio-sdk-tools)](https://www.npmjs.com/package/cio-sdk-tools)
+[![npm downloads](https://img.shields.io/npm/dm/cio-sdk-tools)](https://www.npmjs.com/package/cio-sdk-tools)
+
 A collection of tools to assist in the integration of the Customer.io mobile SDKs.
 
 ## 🚧 This tool is a work in progress. 

@@ -17,7 +17,7 @@ The script auto-creates `.testapps.doctor.json` with example configuration on fi
 ## Usage
 
 ### Test Local Version (Default)
-Run doctor with current code changes. Results overwrite previous runs (no timestamp).
+Run doctor with current code changes. Each run appends to the same file with a timestamp heading.
 
 ```bash
 npm run test:doctor
@@ -31,7 +31,7 @@ npm run test:doctor:global
 ```
 
 ### Compare Local vs Global
-Run both versions and save results with timestamps for comparison.
+Run both versions and generate diffs.
 
 ```bash
 npm run test:doctor:compare
@@ -56,35 +56,24 @@ On first run, the script auto-creates `.testapps.doctor.json` with sample app pa
 
 ## Output
 
-### Default Behavior (No Timestamps)
-Results saved to `results/doctor/` directory:
+Results saved to `results/doctor/` directory with one `.md` file per app:
 ```
 results/doctor/
-  iOS-SPM.txt
-  iOS-CocoaPods.txt
-  Flutter.txt
-  React-Native.txt
-  Expo.txt
+  ios_spm.md
+  ios_cocoapods.md
+  flutter.md
+  react_native.md
+  expo.md
 ```
 
-Files are **overwritten** on each run - great for iterative testing.
-
-### With Timestamps
-When using `--timestamped` flag or compare mode, files include timestamps:
-```
-results/doctor/
-  iOS-SPM-20260327-142505.txt
-  iOS-CocoaPods-20260327-142505.txt
-  ...
-```
+Each run **appends** to the file with a timestamp section heading, building a history of runs.
 
 ### Compare Mode
-When using `npm run test:doctor:compare`, automatically generates diffs:
+Compare mode adds `_summary.md` with all diffs, plus each app file includes local, global, and diff sections:
 ```
 results/doctor/
-  _comparison-summary-20260327-142505.txt    # All apps summary (sorts first)
-  iOS-SPM-local-20260327-142505.txt
-  iOS-SPM-global-20260327-142505.txt
-  iOS-SPM-diff-20260327-142505.txt           # Pre-computed diff
+  _summary.md    # All apps diff summary (sorts first)
+  ios_spm.md                # Local + Global + Diff
+  ios_cocoapods.md
   ...
 ```
