@@ -37,6 +37,30 @@ const PUSH_SETUP_SEARCH_CONFIG = {
   targetFilePatterns: ['messaging', 'firebase', 'fcm', 'push'],
 };
 
+/**
+ * Collects content from all gradle files in the app directory.
+ * Handles dependencies defined in separate .gradle files (e.g. via apply from:).
+ */
+function collectAllGradleContent(project: AndroidProject): string {
+  if (!project.appBuildGradle?.content) return '';
+
+  const gradleContents = [project.appBuildGradle.content];
+  const appDir = path.dirname(project.appBuildGradle.absolutePath);
+  const appFiles = readDirectory(appDir);
+  if (appFiles) {
+    for (const file of appFiles) {
+      if (
+        (file.endsWith('.gradle') || file.endsWith('.gradle.kts')) &&
+        file !== path.basename(project.appBuildGradle.absolutePath)
+      ) {
+        const content = readFileContent(path.join(appDir, file));
+        if (content) gradleContents.push(content);
+      }
+    }
+  }
+  return gradleContents.join('\n');
+}
+
 export async function runChecks(group: CheckGroup): Promise<void> {
   const context = Context.get();
   const project = context.project as AndroidProject;
@@ -244,10 +268,11 @@ async function validateNoConflictingSDKs(
 ): Promise<void> {
   if (!project.appBuildGradle?.content) return;
 
+  const allGradleContent = collectAllGradleContent(project);
   const conflictsFound: string[] = [];
 
   for (const conflictingDep of androidGradleDependencies) {
-    if (project.appBuildGradle.content.includes(conflictingDep)) {
+    if (allGradleContent.includes(conflictingDep)) {
       conflictsFound.push(conflictingDep);
     }
   }
@@ -296,24 +321,7 @@ async function validateDependencies(project: AndroidProject): Promise<void> {
     },
   ];
 
-  // Collect all gradle file contents to search through
-  // Dependencies may be defined in separate .gradle files (e.g. via apply from:)
-  const gradleContents = [project.appBuildGradle.content];
-  const appDir = path.dirname(project.appBuildGradle.absolutePath);
-  const appFiles = readDirectory(appDir);
-  if (appFiles) {
-    for (const file of appFiles) {
-      if (
-        (file.endsWith('.gradle') || file.endsWith('.gradle.kts')) &&
-        file !== path.basename(project.appBuildGradle.absolutePath)
-      ) {
-        const content = readFileContent(path.join(appDir, file));
-        if (content) gradleContents.push(content);
-      }
-    }
-  }
-
-  const allGradleContent = gradleContents.join('\n');
+  const allGradleContent = collectAllGradleContent(project);
 
   let foundAny = false;
 
