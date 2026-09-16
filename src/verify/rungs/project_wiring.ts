@@ -42,6 +42,8 @@ export interface WiringResult {
   /** Carried forward: rung 2 compares it against the workspace credential. */
   apsEnvironment?: string;
   bundleId?: string;
+  /** Process names the runtime log can be filtered to. */
+  processNames?: string[];
 }
 
 /**
@@ -124,6 +126,9 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
     signals,
     apsEnvironment: push.apsEnvironment,
     bundleId: app.settings.PRODUCT_BUNDLE_IDENTIFIER,
+    processNames: [app, nse]
+      .filter((target): target is Target => Boolean(target))
+      .map((target) => target.settings.PRODUCT_NAME || target.name),
   };
 }
 

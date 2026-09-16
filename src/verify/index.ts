@@ -195,6 +195,7 @@ async function climb(
       environmentId: workspace.resolution?.workspace?.id,
       token: device.sdk?.pushDeviceToken,
       sandbox: wiring.apsEnvironment !== 'production',
+      processNames: wiring.processNames,
     });
     return wiring.model.projectName;
   } finally {
@@ -229,6 +230,7 @@ async function matrix(
     environmentId?: string;
     token?: string;
     sandbox: boolean;
+    processNames?: string[];
   }
 ): Promise<void> {
   if (!options.send) {
@@ -270,6 +272,7 @@ async function matrix(
       environmentId: inputs.environmentId,
       token: inputs.token,
       sandbox: inputs.sandbox,
+      processNames: inputs.processNames,
       states,
       dryRun: options.dryRun,
       evidenceDirectory,

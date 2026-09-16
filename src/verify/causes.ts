@@ -259,6 +259,14 @@ export const CAUSES: Record<string, CauseDefinition> = {
     remedy:
       'The SDK tried and the report did not land — usually the cdpApiKey the extension initializes with, or no network in the extension process. The pending-delivery queue holds it for the app to retry.',
   },
+  'runtime.no_evidence': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      'The log was attached and the app said nothing at all, so this cell proves nothing.',
+    remedy:
+      'Suspect the capture, not the push: check the log tool is streaming (a filter that matches no process name returns silence), and that the app is the build you think it is.',
+  },
   'runtime.delivery_id_mismatch': {
     stage: 'delivered_matrix',
     severity: 'warning',

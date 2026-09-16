@@ -1,3 +1,6 @@
+import { promises as fs } from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { run } from '../exec';
 import { Target } from '../ios/device';
 
@@ -20,11 +23,13 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function setAppState(
   target: Target,
   bundleId: string,
-  state: AppState
+  state: AppState,
+  /** The app's executable name, which is how a phone's process list identifies it. */
+  executableName?: string
 ): Promise<StateResult> {
   return target.kind === 'simulator'
     ? simulatorState(target, bundleId, state)
-    : deviceState(target, bundleId, state);
+    : deviceState(target, bundleId, state, executableName);
 }
 
 async function simulatorState(
@@ -76,10 +81,11 @@ async function simulatorState(
 async function deviceState(
   target: Target,
   bundleId: string,
-  state: AppState
+  state: AppState,
+  executableName?: string
 ): Promise<StateResult> {
   if (state === 'killed') {
-    const pid = await devicePid(target, bundleId);
+    const pid = await devicePid(target, executableName);
     if (!pid) return { ok: true, how: 'process was not running' };
     const { code, stderr } = await run(
       'xcrun',
@@ -125,7 +131,7 @@ async function deviceState(
   await sleep(4_000);
 
   if (state === 'background') {
-    const pid = await devicePid(target, bundleId);
+    const pid = await devicePid(target, executableName);
     if (!pid) {
       return {
         ok: false,
@@ -159,20 +165,56 @@ async function deviceState(
   return { ok: true, how: 'devicectl process launch' };
 }
 
+/**
+ * A phone's process list never mentions the bundle id — each entry is a percent-encoded
+ * file URL to the executable. Matching the bundle id there silently finds nothing, which
+ * reads as "the app was not running" about an app that was.
+ */
 async function devicePid(
   target: Target,
-  bundleId: string
+  executableName?: string
 ): Promise<string | undefined> {
-  const { stdout, code } = await run(
+  if (!executableName) return undefined;
+
+  const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'cio-verify-'));
+  const output = path.join(scratch, 'processes.json');
+  const { code } = await run(
     'xcrun',
-    ['devicectl', 'device', 'info', 'processes', '--device', target.udid],
+    [
+      'devicectl',
+      'device',
+      'info',
+      'processes',
+      '--device',
+      target.udid,
+      '--json-output',
+      output,
+    ],
     180_000
   );
-  if (code !== 0) return undefined;
-  const line = stdout
-    .split('\n')
-    .find(
-      (entry) => entry.includes(`${bundleId}`) || entry.includes(`/${bundleId}`)
+
+  const text =
+    code === 0 ? await fs.readFile(output, 'utf8').catch(() => '') : '';
+  await fs.rm(scratch, { recursive: true, force: true });
+  if (!text) return undefined;
+
+  try {
+    const parsed = JSON.parse(text) as {
+      result?: {
+        runningProcesses?: {
+          executable?: string;
+          processIdentifier?: number;
+        }[];
+      };
+    };
+    const wanted = `/${executableName}.app/${executableName}`;
+    const match = (parsed.result?.runningProcesses ?? []).find((entry) =>
+      decodeURIComponent(entry.executable ?? '').endsWith(wanted)
     );
-  return line?.trim().split(/\s+/)[0];
+    return match?.processIdentifier
+      ? String(match.processIdentifier)
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }

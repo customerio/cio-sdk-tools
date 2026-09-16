@@ -13,25 +13,25 @@ const line = (process, message) => ({ at: '00:00:00.000', process, message });
 
 test('arrived but never processed is a different failure from never arrived', () => {
   assert.deepStrictEqual(
-    judge({ available: true, arrived: true, extensionRan: false, accepted: false, loggedIds: [] }),
+    judge({ available: true, arrived: true, extensionRan: false, accepted: false, sawLines: true, loggedIds: [], freshIds: [] }),
     { verdict: 'fail', cause: 'runtime.nse_did_not_run' }
   );
   assert.deepStrictEqual(
-    judge({ available: true, arrived: false, extensionRan: false, accepted: false, loggedIds: [] }),
+    judge({ available: true, arrived: false, extensionRan: false, accepted: false, sawLines: true, loggedIds: [], freshIds: [] }),
     { verdict: 'fail', cause: 'runtime.push_never_arrived' }
   );
 });
 
 test('the extension running without the metric landing is its own cause', () => {
   assert.deepStrictEqual(
-    judge({ available: true, arrived: true, extensionRan: true, accepted: false, loggedIds: [] }),
+    judge({ available: true, arrived: true, extensionRan: true, accepted: false, sawLines: true, loggedIds: [], freshIds: [] }),
     { verdict: 'fail', cause: 'runtime.metric_not_accepted' }
   );
 });
 
 test('a cell proves nothing without a log, and says so rather than passing', () => {
   assert.deepStrictEqual(
-    judge({ available: false, arrived: undefined, extensionRan: false, accepted: false, loggedIds: [] }),
+    judge({ available: false, arrived: undefined, extensionRan: false, accepted: false, sawLines: false, loggedIds: [], freshIds: [] }),
     { verdict: 'skip' }
   );
 });
@@ -43,8 +43,10 @@ test('counting somebody else’s delivery is a warning, not a pass', () => {
       arrived: true,
       extensionRan: true,
       accepted: true,
+      sawLines: true,
       sentId: 'dgS_aaa',
       loggedIds: ['dgS_bbb'],
+      freshIds: ['dgS_bbb'],
     }),
     { verdict: 'warn', cause: 'runtime.delivery_id_mismatch' }
   );
@@ -54,8 +56,10 @@ test('counting somebody else’s delivery is a warning, not a pass', () => {
       arrived: true,
       extensionRan: true,
       accepted: true,
+      sawLines: true,
       sentId: 'dgS_aaa',
       loggedIds: ['dgS_aaa'],
+      freshIds: ['dgS_aaa'],
     }),
     { verdict: 'pass' }
   );
@@ -64,7 +68,7 @@ test('counting somebody else’s delivery is a warning, not a pass', () => {
 test('a send whose id the log never mentions still passes on the metric', () => {
   // The id is absent from plenty of real captures; requiring it would fail correct runs.
   assert.deepStrictEqual(
-    judge({ available: true, arrived: true, extensionRan: true, accepted: true, sentId: 'dgS_aaa', loggedIds: [] }),
+    judge({ available: true, arrived: true, extensionRan: true, accepted: true, sawLines: true, sentId: 'dgS_aaa', loggedIds: [], freshIds: [] }),
     { verdict: 'pass' }
   );
 });
@@ -137,4 +141,50 @@ test('all cells passing with a clean climb is the only way to exit zero', () => 
   });
   assert.strictEqual(ladder.verdict, 'pass');
   assert.strictEqual(ladder.exitCode, 0);
+});
+
+test('with no id from the send, a cell must count an id no earlier cell saw', () => {
+  // The route that keeps the workspace credential untouched returns no delivery id, so
+  // freshness is the correlation: a leftover delivery would otherwise pass three times.
+  assert.deepStrictEqual(
+    judge({
+      available: true,
+      arrived: true,
+      extensionRan: true,
+      accepted: true,
+      sawLines: true,
+      loggedIds: ['dgS_first'],
+      freshIds: [],
+    }),
+    { verdict: 'warn', cause: 'runtime.delivery_id_mismatch' }
+  );
+  assert.deepStrictEqual(
+    judge({
+      available: true,
+      arrived: true,
+      extensionRan: true,
+      accepted: true,
+      sawLines: true,
+      loggedIds: ['dgS_first', 'dgS_second'],
+      freshIds: ['dgS_second'],
+    }),
+    { verdict: 'pass' }
+  );
+});
+
+test('a stream that attached and saw nothing blames the capture, not the extension', () => {
+  // idevicesyslog rejects `-p` together with `-K`: it prints usage, exits, and every cell
+  // then looked like the invisible failure. Silence is not evidence.
+  assert.deepStrictEqual(
+    judge({
+      available: true,
+      arrived: undefined,
+      extensionRan: false,
+      accepted: false,
+      sawLines: false,
+      loggedIds: [],
+      freshIds: [],
+    }),
+    { verdict: 'skip', cause: 'runtime.no_evidence' }
+  );
 });

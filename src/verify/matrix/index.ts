@@ -23,6 +23,8 @@ export interface MatrixOptions {
   token: string;
   sandbox: boolean;
   states?: AppState[];
+  /** App and extension process names, so a device log can be filtered to them. */
+  processNames?: string[];
   evidenceDirectory?: string;
   /** How long one cell waits for the extension to finish. */
   cellTimeoutMs?: number;
@@ -44,7 +46,11 @@ export async function runDeliveredMatrix(
   options: MatrixOptions
 ): Promise<MatrixSection> {
   const states = options.states ?? ALL_STATES;
-  const capture = await startCapture(options.target, options.evidenceDirectory);
+  const capture = await startCapture(
+    options.target,
+    options.evidenceDirectory,
+    options.processNames
+  );
 
   const section: MatrixSection = {
     metric: 'delivered',
@@ -60,8 +66,9 @@ export async function runDeliveredMatrix(
     // Give the stream a moment to attach, or the first cell's lines are simply missing.
     if (capture.available) await sleep(2_500);
 
+    const seenIds = new Set<string>();
     for (const state of states) {
-      section.cells.push(await runCell(state, options, capture));
+      section.cells.push(await runCell(state, options, capture, seenIds));
       // Sustained sends to one token appear to throttle; a pause between cells costs
       // nothing and removes a whole class of confusing near-misses.
       await sleep(3_000);
@@ -76,11 +83,17 @@ export async function runDeliveredMatrix(
 async function runCell(
   state: AppState,
   options: MatrixOptions,
-  capture: LogCapture
+  capture: LogCapture,
+  seenIds: Set<string>
 ): Promise<MatrixCell> {
   const evidence: string[] = [];
 
-  const staged = await setAppState(options.target, options.bundleId, state);
+  const staged = await setAppState(
+    options.target,
+    options.bundleId,
+    state,
+    options.processNames?.[0]
+  );
   evidence.push(`state via ${staged.how}`);
   if (staged.error) evidence.push(`state warning: ${staged.error}`);
 
@@ -122,7 +135,11 @@ async function runCell(
       ],
     };
   }
-  evidence.push(`sent, delivery ${sent.deliveryId ?? '(id not returned)'}`);
+  evidence.push(
+    sent.deliveryId
+      ? `sent, delivery ${sent.deliveryId}`
+      : 'sent (this route returns no delivery id, so the log supplies it)'
+  );
 
   const since = () => capture.lines.slice(mark);
   const timeout = options.cellTimeoutMs ?? 60_000;
@@ -151,6 +168,11 @@ async function runCell(
     NSE_MARKERS.richFinished.test(line.message)
   );
   const ids = deliveryIdsIn(lines);
+  // The route that lets us keep the workspace credential alone returns no delivery id, so
+  // freshness stands in for correlation: a cell that counted an id an earlier cell already
+  // saw is reading a leftover delivery, and proves less than it appears to.
+  const freshIds = ids.filter((id) => !seenIds.has(id));
+  for (const id of ids) seenIds.add(id);
 
   if (capture.available) {
     evidence.push(
@@ -171,8 +193,10 @@ async function runCell(
       arrived,
       extensionRan,
       accepted,
+      sawLines: lines.length > 0,
       sentId: sent.deliveryId,
       loggedIds: ids,
+      freshIds,
     }),
     evidence,
   };
@@ -190,26 +214,38 @@ export function judge(observed: {
   arrived: boolean | undefined;
   extensionRan: boolean;
   accepted: boolean;
+  sawLines: boolean;
   sentId?: string;
   loggedIds: string[];
+  freshIds: string[];
 }): { verdict: Verdict; cause?: string } {
   if (!observed.available) {
     return { verdict: 'skip' };
   }
-  if (!observed.extensionRan) {
-    return observed.arrived === false
-      ? { verdict: 'fail', cause: 'runtime.push_never_arrived' }
-      : { verdict: 'fail', cause: 'runtime.nse_did_not_run' };
+  // The app itself says nothing at all: that points at the capture, not at the push.
+  // Accusing the extension here is how a broken log filter got reported three times as
+  // the invisible failure.
+  if (!observed.sawLines) {
+    return { verdict: 'skip', cause: 'runtime.no_evidence' };
   }
+  // The metric landing is the assertion; which process reported it is evidence. Judging
+  // on the process first is how a log-parser bug turned three successful deliveries into
+  // three accusations of the invisible failure.
   if (!observed.accepted) {
+    if (!observed.extensionRan) {
+      return observed.arrived === false
+        ? { verdict: 'fail', cause: 'runtime.push_never_arrived' }
+        : { verdict: 'fail', cause: 'runtime.nse_did_not_run' };
+    }
     return { verdict: 'fail', cause: 'runtime.metric_not_accepted' };
   }
-  if (
-    observed.sentId &&
-    observed.loggedIds.length > 0 &&
-    !observed.loggedIds.some((id) => id === observed.sentId)
-  ) {
-    return { verdict: 'warn', cause: 'runtime.delivery_id_mismatch' };
+  if (observed.loggedIds.length > 0) {
+    const wrongId = observed.sentId
+      ? !observed.loggedIds.includes(observed.sentId)
+      : observed.freshIds.length === 0;
+    if (wrongId) {
+      return { verdict: 'warn', cause: 'runtime.delivery_id_mismatch' };
+    }
   }
   return { verdict: 'pass' };
 }

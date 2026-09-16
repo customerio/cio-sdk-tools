@@ -45,7 +45,8 @@ const NOT_CAPTURING: LogCapture = {
  */
 export async function startCapture(
   target: Target,
-  evidenceDirectory?: string
+  evidenceDirectory?: string,
+  processNames: string[] = []
 ): Promise<LogCapture> {
   const evidencePath = evidenceDirectory
     ? path.join(evidenceDirectory, `${target.kind}-${target.udid}.log`)
@@ -64,7 +65,7 @@ export async function startCapture(
           `${conflict}); a second one returns nothing at all, so no evidence would be real`,
       };
     }
-    return streamProcess(
+    return await streamProcess(
       'xcrun',
       [
         'simctl',
@@ -98,11 +99,23 @@ export async function startCapture(
     };
   }
 
-  return streamProcess(
+  // Unfiltered, a phone's syslog is tens of megabytes a minute and buries the twelve lines
+  // that matter — the first attempt at this collected 17MB and never finished a cell. The
+  // app and extension process names come from the project, and the kernel is dropped
+  // outright: its `unhandled kAMPDUStat_` spam has already produced a false match once.
+  // `-p` and `-K` are mutually exclusive, and passing both makes idevicesyslog print
+  // usage and exit — which read as "the app logged nothing" and accused a working
+  // extension three times over. A process filter excludes the kernel anyway.
+  const filter = processNames.filter(Boolean).join('|');
+  const args = filter
+    ? ['-u', target.udid, '-p', filter]
+    : ['-u', target.udid, '-K'];
+
+  return await streamProcess(
     'idevicesyslog',
-    ['-u', target.udid],
+    args,
     parseSyslog,
-    'idevicesyslog',
+    filter ? `idevicesyslog -p "${filter}"` : 'idevicesyslog (unfiltered)',
     evidencePath
   );
 }
@@ -120,18 +133,30 @@ async function existingSimulatorStream(
   return pid && pid !== String(process.pid) ? pid : undefined;
 }
 
-function streamProcess(
+/** Bounded so an unfiltered device log cannot exhaust memory mid-run. */
+const MAX_RETAINED_LINES = 40_000;
+
+async function streamProcess(
   command: string,
   args: string[],
   parse: (chunk: string) => LogLine[],
   how: string,
   evidencePath?: string
-): LogCapture {
+): Promise<LogCapture> {
   const child: ChildProcess = spawn(command, args);
   const lines: LogLine[] = [];
   let buffer = '';
+  let stderr = '';
+  let exited: number | null | undefined;
   let sink: WriteStream | undefined;
   if (evidencePath) sink = createWriteStream(evidencePath, { flags: 'a' });
+
+  child.stderr?.on('data', (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
+  child.on('exit', (code) => {
+    exited = code;
+  });
 
   child.stdout?.on('data', (chunk: Buffer) => {
     buffer += chunk.toString();
@@ -140,12 +165,29 @@ function streamProcess(
     for (const part of parts) {
       for (const line of parse(part)) {
         lines.push(line);
+        // Disk holds everything; memory holds the recent window a cell reads back.
+        if (lines.length > MAX_RETAINED_LINES) lines.splice(0, 10_000);
         // Written as it arrives: buffered evidence is lost on interrupt, and losing a
         // confirmed result to a Ctrl-C has already happened once.
         sink?.write(`${line.at} ${line.process}: ${line.message}\n`);
       }
     }
   });
+
+  // A log tool that fails has to be told apart from an SDK that did nothing, so the stream
+  // is given a moment to fall over before anything is claimed about it.
+  await new Promise((resolve) => setTimeout(resolve, 1_500));
+  if (exited !== undefined) {
+    sink?.end();
+    return {
+      available: false,
+      lines: [],
+      unavailableReason: `${command} exited immediately (${exited}): ${
+        stderr.trim().split('\n')[0] || 'no output'
+      }`,
+      stop: async () => undefined,
+    };
+  }
 
   return {
     available: true,
@@ -159,7 +201,7 @@ function streamProcess(
   };
 }
 
-function parseNdjson(raw: string): LogLine[] {
+export function parseNdjson(raw: string): LogLine[] {
   const line = raw.trim().replace(/,$/, '');
   if (!line.startsWith('{')) return [];
   try {
@@ -177,15 +219,23 @@ function parseNdjson(raw: string): LogLine[] {
   }
 }
 
-/** idevicesyslog prints `<date> <device> <process>[pid] <level>: <message>`. */
-function parseSyslog(raw: string): LogLine[] {
+/**
+ * idevicesyslog prints `Sep 17 02:52:47.433512 Process(Image)[pid] <Level>: message`.
+ *
+ * Two details cost a whole device run. The seconds carry a fractional part, so a `[\d:]+`
+ * clock never matches and every line falls through as an unattributed blob — which made a
+ * working extension look absent. And the process name carries the logging image in
+ * parentheses, so it has to be stripped or `NotificationServiceExtension(CFNetwork)` is a
+ * different process from `NotificationServiceExtension(Foundation)`.
+ */
+export function parseSyslog(raw: string): LogLine[] {
   const line = raw.trimEnd();
   if (!line) return [];
   const match = line.match(
-    /^(\w{3}\s+\d+\s[\d:]+)\s+\S+\s+([^[\]]+)\[\d+\][^:]*:\s?(.*)$/
+    /^(\w{3}\s+\d+\s[\d:.]+)\s+([^[(]+?)(?:\([^)]*\))?\[(\d+)\]\s*(?:<[^>]*>)?:\s?(.*)$/
   );
   if (!match) return [{ at: '', process: '', message: line }];
-  return [{ at: match[1], process: match[2].trim(), message: match[3] }];
+  return [{ at: match[1], process: match[2].trim(), message: match[4] }];
 }
 
 /**
