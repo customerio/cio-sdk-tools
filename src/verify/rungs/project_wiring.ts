@@ -68,6 +68,16 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
   const apps = appTargets(model);
   const app = pickAppTarget(apps, input.appTargetName);
   if (!app) {
+    if (apps.length === 0 && model.format === 'json') {
+      // The JSON format is new enough that "no targets" here usually means the toolchain
+      // could not read the project, not that the project has none.
+      rung.skipped =
+        `${path.basename(
+          model.projectPath
+        )} uses the JSON .xcproj format and xcodebuild ` +
+        'returned no targets for it — Xcode 27.2 or later is needed to read one';
+      return { rung, model, signals };
+    }
     rung.skipped =
       apps.length === 0
         ? `no application target in ${path.basename(model.projectPath)}`
@@ -87,6 +97,17 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
         : 'build settings read from project.pbxproj',
     ])
   );
+
+  if (model.format === 'json') {
+    rung.checks.push(
+      warn(
+        'project_format',
+        'Project graph is readable',
+        'wiring.project_format_json',
+        [`${path.basename(model.projectPath)} carries a JSON .xcproj`]
+      )
+    );
+  }
 
   rung.checks.push(await sdkPresenceCheck(input.scanRoot, signals));
   rung.checks.push(...initializationChecks(signals));
@@ -289,6 +310,23 @@ async function nseChecksFor(
                   .join(', ')}`
               : 'no app extension targets in the project',
           ]
+        ),
+      ],
+    };
+  }
+
+  if (model.format === 'json') {
+    // Build phases are the one thing `xcodebuild -showBuildSettings` will not tell us, so
+    // embedding is simply unknown here. Reporting "not embedded" would be an invention.
+    const nse = serviceExtensions[0];
+    return {
+      nse,
+      checks: [
+        pass('nse_present', `Notification Service Extension: ${nse.name}`),
+        skipped(
+          'nse_embedded',
+          'App embeds the extension',
+          'the JSON project format exposes no build phases to read'
         ),
       ],
     };

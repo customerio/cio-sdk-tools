@@ -5,7 +5,13 @@ import * as path from 'path';
 import { cioContext } from './cio/cli';
 import { Ladder } from './ladder';
 import { runDeliveredMatrix } from './matrix';
+import { runAndroidDeliveredMatrix } from './matrix/android';
 import { ALL_STATES, AppState } from './matrix/states';
+import {
+  androidDeviceReady,
+  gatherAndroidDevice,
+} from './rungs/android_device';
+import { androidWiring } from './rungs/android_wiring';
 import { deviceReady, gatherDevice } from './rungs/device_ready';
 import { profileLinked } from './rungs/profile_linked';
 import { projectWiring } from './rungs/project_wiring';
@@ -22,6 +28,8 @@ type VerifyPushOptions = {
   configuration: string;
   target?: string;
   workspace?: string;
+  platform?: string;
+  appModule?: string;
   send: boolean;
   dryRun: boolean;
   states?: string;
@@ -61,7 +69,15 @@ const pushCommand = new Command('push')
     'build configuration to read settings from',
     'Debug'
   )
-  .option('--target <name|udid>', 'simulator or device to verify against')
+  .option(
+    '--target <name|udid|serial>',
+    'simulator, device or emulator to verify against'
+  )
+  .option('--platform <ios|android>', 'skip platform detection')
+  .option(
+    '--app-module <name>',
+    'Gradle app module to verify, when the project builds several'
+  )
   .option(
     '--workspace <id>',
     'workspace (environment) id, skipping auto-selection'
@@ -91,17 +107,10 @@ async function verifyPush(
   pathArg: string,
   options: VerifyPushOptions
 ): Promise<number> {
-  if (process.platform !== 'darwin') {
-    return toolError(
-      options,
-      'iOS verification needs macOS: it reads the project with Xcode tooling and the device with simctl.'
-    );
-  }
-
-  const projectPath = await locateProject(path.resolve(process.cwd(), pathArg));
-  if (!projectPath) {
-    return toolError(options, `No .xcodeproj found at or under ${pathArg}`);
-  }
+  const root = path.resolve(process.cwd(), pathArg);
+  const detected = await detectPlatform(root, options.platform);
+  if ('error' in detected)
+    return toolError(options, detected.error, EXIT.badInput);
 
   let states: AppState[] | undefined;
   try {
@@ -112,7 +121,10 @@ async function verifyPush(
 
   const startedAt = new Date().toISOString();
   const ladder = new Ladder();
-  const projectName = await climb(ladder, projectPath, options, states);
+  const projectName =
+    detected.platform === 'android'
+      ? await climbAndroid(ladder, detected.path, options, states)
+      : await climb(ladder, detected.path, options, states);
 
   const built = ladder.toReport({
     schema: 1,
@@ -120,7 +132,11 @@ async function verifyPush(
     command: 'verify push',
     startedAt,
     finishedAt: new Date().toISOString(),
-    project: { path: projectPath, framework: 'iOS', name: projectName },
+    project: {
+      path: detected.path,
+      framework: detected.platform === 'android' ? 'Android' : 'iOS',
+      name: projectName,
+    },
   });
 
   await emit(built, ladder, options);
@@ -162,6 +178,7 @@ async function climb(
     const cio = await cioContext();
     const workspace = await gatherWorkspace({
       cio,
+      provider: 'apns',
       explicit: options.workspace,
       siteId: device.sdk?.siteId,
       cacheKey: projectPath,
@@ -330,6 +347,220 @@ function toolError(
     process.stderr.write(`${message}\n`);
   }
   return code;
+}
+
+/**
+ * The Android climb.
+ *
+ * The same four rungs and the same cause-code vocabulary, because the plugin reading this
+ * should not need to learn a second contract. What differs is the evidence: no extension to
+ * prove ran, a stopped state that blocks delivery outright, and a permission that gates
+ * display without touching delivery at all.
+ */
+async function climbAndroid(
+  ladder: Ladder,
+  projectPath: string,
+  options: VerifyPushOptions,
+  states?: AppState[]
+): Promise<string | undefined> {
+  const wiring = await androidWiring({
+    projectPath,
+    appModuleName: options.appModule,
+  });
+  ladder.adopt(wiring.rung);
+  if (ladder.halted || !wiring.model) {
+    skipRest(ladder, ['workspace_ready', 'device_ready', 'profile_linked']);
+    return wiring.model?.appModuleName;
+  }
+
+  const device = await gatherAndroidDevice({
+    packageName: wiring.applicationId,
+    selector: options.target,
+  });
+
+  const cio = await cioContext();
+  const workspace = await gatherWorkspace({
+    cio,
+    provider: 'fcm',
+    explicit: options.workspace,
+    siteId: device.sdk?.siteId,
+    cacheKey: projectPath,
+  });
+  ladder.adopt(workspaceReady(workspace));
+  if (ladder.halted) {
+    skipRest(ladder, ['device_ready', 'profile_linked']);
+    return wiring.model.appModuleName;
+  }
+
+  ladder.adopt(androidDeviceReady(device, wiring.applicationId));
+  if (ladder.halted) {
+    skipRest(ladder, ['profile_linked']);
+    return wiring.model.appModuleName;
+  }
+
+  ladder.adopt(
+    await profileLinked({
+      cio,
+      environmentId: workspace.resolution?.workspace?.id,
+      userId: device.sdk?.userId,
+      anonymousId: device.sdk?.anonymousId,
+      token: device.sdk?.deviceToken,
+      bundleId: wiring.applicationId,
+    })
+  );
+
+  await androidMatrix(ladder, options, states, {
+    serial: device.target?.serial,
+    packageName: wiring.applicationId,
+    environmentId: workspace.resolution?.workspace?.id,
+    token: device.sdk?.deviceToken,
+  });
+
+  return wiring.model.appModuleName;
+}
+
+async function androidMatrix(
+  ladder: Ladder,
+  options: VerifyPushOptions,
+  states: AppState[] | undefined,
+  inputs: {
+    serial?: string;
+    packageName?: string;
+    environmentId?: string;
+    token?: string;
+  }
+): Promise<void> {
+  if (!options.send) {
+    ladder.setMatrix({
+      metric: 'delivered',
+      cells: [],
+      skipped:
+        'no push was sent — pass --send to send one per app state and follow it to the metric',
+    });
+    return;
+  }
+  if (
+    !inputs.serial ||
+    !inputs.packageName ||
+    !inputs.environmentId ||
+    !inputs.token
+  ) {
+    ladder.setMatrix({
+      metric: 'delivered',
+      cells: [],
+      skipped:
+        'an emulator, a workspace and a registered token are all needed to send',
+    });
+    return;
+  }
+
+  ladder.setMatrix(
+    await runAndroidDeliveredMatrix({
+      serial: inputs.serial,
+      packageName: inputs.packageName,
+      environmentId: inputs.environmentId,
+      token: inputs.token,
+      states,
+      dryRun: options.dryRun,
+      evidenceDirectory: evidenceDirectoryFor(options),
+    })
+  );
+}
+
+function evidenceDirectoryFor(options: VerifyPushOptions): string {
+  return (
+    options.evidence ??
+    path.join(
+      os.tmpdir(),
+      `cio-verify-${new Date().toISOString().slice(0, 19)}`
+    )
+  );
+}
+
+/**
+ * Which platform is this?
+ *
+ * A wrapper project has both an `.xcodeproj` and a Gradle build, and guessing between them
+ * would verify the half the developer did not mean. So both being present is a question,
+ * not a coin toss.
+ */
+async function detectPlatform(
+  root: string,
+  explicit?: string
+): Promise<{ platform: 'ios' | 'android'; path: string } | { error: string }> {
+  if (explicit && !['ios', 'android'].includes(explicit)) {
+    return { error: `unknown platform: ${explicit}` };
+  }
+
+  const iosProject = await locateProject(root);
+  const androidProject = await locateAndroidProject(root);
+
+  if (explicit === 'ios' || (!explicit && iosProject && !androidProject)) {
+    if (!iosProject)
+      return { error: `No .xcodeproj found at or under ${root}` };
+    if (process.platform !== 'darwin') {
+      return {
+        error:
+          'iOS verification needs macOS: it reads the project with Xcode tooling and the device with simctl.',
+      };
+    }
+    return { platform: 'ios', path: iosProject };
+  }
+
+  if (explicit === 'android' || (!explicit && androidProject && !iosProject)) {
+    if (!androidProject) {
+      return { error: `No Gradle project found at or above ${root}` };
+    }
+    return { platform: 'android', path: androidProject };
+  }
+
+  if (iosProject && androidProject) {
+    return {
+      error:
+        'this path has both an Xcode project and a Gradle build; pass --platform ios or --platform android',
+    };
+  }
+  return { error: `No Xcode or Gradle project found at or under ${root}` };
+}
+
+/** The module directory, not the Gradle root: the app module is what gets verified. */
+async function locateAndroidProject(root: string): Promise<string | undefined> {
+  const isModule = async (dir: string): Promise<boolean> => {
+    for (const name of ['build.gradle', 'build.gradle.kts']) {
+      const text = await fs
+        .readFile(path.join(dir, name), 'utf8')
+        .catch(() => '');
+      if (/com\.android\.application/.test(text)) return true;
+    }
+    return false;
+  };
+
+  if (await isModule(root)) return root;
+
+  const found: string[] = [];
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    if (depth > 3) return;
+    const entries: string[] = await fs.readdir(dir).catch(() => []);
+    for (const entry of entries) {
+      if (
+        entry.startsWith('.') ||
+        ['node_modules', 'build', 'Pods', '.gradle'].includes(entry)
+      ) {
+        continue;
+      }
+      const full = path.join(dir, entry);
+      const stat = await fs.stat(full).catch(() => undefined);
+      if (!stat?.isDirectory()) continue;
+      if (await isModule(full)) {
+        found.push(full);
+        continue;
+      }
+      await walk(full, depth + 1);
+    }
+  };
+  await walk(root, 0);
+  found.sort((a, b) => a.split(path.sep).length - b.split(path.sep).length);
+  return found[0];
 }
 
 /** Accept either a project directory or the `.xcodeproj` itself. */

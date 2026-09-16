@@ -48,7 +48,10 @@ export async function loadAndroidProject(
   const projectPath = await findGradleRoot(root);
   if (!projectPath) return undefined;
 
-  const modules = await findAppModules(projectPath);
+  // The path handed in is usually the module itself — a sample app inside a bigger build
+  // is the normal shape here, and searching the whole root would pick a sibling instead.
+  const here = (await isAppModule(root)) ? root : undefined;
+  const modules = here ? [here] : await findAppModules(projectPath);
   const chosen = appModuleName
     ? modules.find((module) => path.basename(module) === appModuleName)
     : modules.length === 1
@@ -268,7 +271,7 @@ export function sdkModulesFrom(gradle: string): string[] {
     modules.add(match[1]);
   }
   for (const match of gradle.matchAll(
-    /project\s*\(?\s*["\']:([a-z0-9-]+)["\']/g
+    /project\s*\(?\s*["']:([a-z0-9-]+)["']/g
   )) {
     if (SDK_MODULE_NAMES.has(match[1])) modules.add(match[1]);
   }

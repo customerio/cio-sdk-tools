@@ -1,13 +1,14 @@
 import { CioContext } from '../cio/cli';
-import { ApnsCredential, apnsCredential } from '../cio/push';
+import { PushCredential, PushProvider, pushCredential } from '../cio/push';
 import { WorkspaceResolution, resolveWorkspace } from '../cio/workspace';
 import { fail, pass, warn } from '../ladder';
 import { Check, Rung } from '../types';
 
 export interface WorkspaceFacts {
   cio: CioContext;
+  provider: PushProvider;
   resolution?: WorkspaceResolution;
-  credential?: ApnsCredential;
+  credential?: PushCredential;
   credentialError?: string;
 }
 
@@ -17,11 +18,14 @@ export interface WorkspaceFacts {
  */
 export async function gatherWorkspace(options: {
   cio: CioContext;
+  provider: PushProvider;
   explicit?: string;
   siteId?: string;
   cacheKey: string;
 }): Promise<WorkspaceFacts> {
-  if (!options.cio.authenticated) return { cio: options.cio };
+  if (!options.cio.authenticated) {
+    return { cio: options.cio, provider: options.provider };
+  }
 
   const resolution = await resolveWorkspace({
     accountId: options.cio.accountId,
@@ -30,11 +34,17 @@ export async function gatherWorkspace(options: {
     cacheKey: options.cacheKey,
   });
 
-  if (!resolution.workspace) return { cio: options.cio, resolution };
+  if (!resolution.workspace) {
+    return { cio: options.cio, provider: options.provider, resolution };
+  }
 
-  const credential = await apnsCredential(resolution.workspace.id);
+  const credential = await pushCredential(
+    resolution.workspace.id,
+    options.provider
+  );
   return {
     cio: options.cio,
+    provider: options.provider,
     resolution,
     credential: credential.credential,
     credentialError: credential.ok ? undefined : credential.error,
@@ -114,23 +124,27 @@ function describeUnresolved(resolution?: WorkspaceResolution): string {
 }
 
 function credentialCheck(facts: WorkspaceFacts): Check {
+  const label =
+    facts.provider === 'fcm'
+      ? 'Workspace has an FCM push credential'
+      : 'Workspace has an APNs push credential';
+
   if (facts.credentialError) {
-    return warn(
-      'apns_credential',
-      'Workspace has an APNs push credential',
-      'workspace.lookup_failed',
-      [facts.credentialError]
-    );
+    return warn('push_credential', label, 'workspace.lookup_failed', [
+      facts.credentialError,
+    ]);
   }
   if (!facts.credential) {
     return fail(
-      'apns_credential',
-      'Workspace has an APNs push credential',
-      'workspace.apns_credential_missing',
-      ['no push_apns credential on this environment']
+      'push_credential',
+      label,
+      facts.provider === 'fcm'
+        ? 'workspace.fcm_credential_missing'
+        : 'workspace.apns_credential_missing',
+      [`no push_${facts.provider} credential on this environment`]
     );
   }
-  return pass('apns_credential', 'Workspace has an APNs push credential', [
+  return pass('push_credential', label, [
     facts.credential.username
       ? `key: ${facts.credential.username}`
       : 'key uploaded',
@@ -145,6 +159,9 @@ function environmentCheck(
   facts: WorkspaceFacts,
   apsEnvironment?: string
 ): Check | undefined {
+  // FCM has no sandbox and production split, so there is no pair to compare. Inventing a
+  // check here would mean inventing a distinction Firebase does not make.
+  if (facts.provider === 'fcm') return undefined;
   if (!facts.credential) return undefined;
 
   // An empty `config` is what the API returns for a credential whose environment was never

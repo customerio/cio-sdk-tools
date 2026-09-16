@@ -1,3 +1,4 @@
+import { promises as fs } from 'fs';
 import * as path from 'path';
 import xcode from 'xcode';
 import { readPlist, run } from '../exec';
@@ -26,6 +27,13 @@ export interface XcodeProjectModel {
   targets: Target[];
   /** True when build settings came from xcodebuild rather than the pbxproj alone. */
   resolvedByXcodebuild: boolean;
+  /**
+   * `pbxproj` is the property-list format every tool has parsed for twenty years;
+   * `json` is the `.xcproj` file Xcode 27.2 writes instead. Structure that only the raw
+   * file carries — build phases, and therefore embedding — is unavailable in the second
+   * case until there is a reader for it.
+   */
+  format: 'pbxproj' | 'json';
 }
 
 export function trimQuotes(value: string): string {
@@ -60,14 +68,34 @@ export async function loadProject(
   projectPath: string,
   configuration = 'Debug'
 ): Promise<XcodeProjectModel> {
-  const targets = readPbxproj(projectPath, configuration);
+  const format = await projectFormat(projectPath);
+  const targets =
+    format === 'pbxproj' ? readPbxproj(projectPath, configuration) : [];
   const model: XcodeProjectModel = {
     projectPath,
     projectName: path.basename(projectPath, '.xcodeproj'),
     configuration,
     targets,
     resolvedByXcodebuild: false,
+    format,
   };
+
+  // Nothing to read locally, so everything has to come from the toolchain — which parses
+  // whichever format the project is in and is the only format-agnostic source available.
+  if (format === 'json') {
+    const resolved = await resolveWithXcodebuild(projectPath, configuration);
+    if (resolved) {
+      model.targets = [...resolved.entries()].map(([name, settings]) => ({
+        name,
+        productType: settings.PRODUCT_TYPE,
+        settings,
+        embeds: [],
+        dependencies: [],
+      }));
+      model.resolvedByXcodebuild = true;
+    }
+    return model;
+  }
 
   if (targets.some(needsResolution)) {
     const resolved = await resolveWithXcodebuild(projectPath, configuration);
@@ -95,6 +123,29 @@ function needsResolution(target: Target): boolean {
     const value = target.settings[key];
     return value !== undefined && hasUnresolvedVariable(value);
   });
+}
+
+/**
+ * Which configuration file this project uses.
+ *
+ * Xcode 27.2 writes a JSON `.xcproj` inside the bundle in place of `project.pbxproj`, and a
+ * converted project has no pbxproj at all. Reading its absence as "no targets" is how a
+ * perfectly good project comes back as unconfigured, so the format is established first
+ * and named in the report.
+ */
+export async function projectFormat(
+  projectPath: string
+): Promise<'pbxproj' | 'json'> {
+  const pbxproj = await fs.stat(path.join(projectPath, 'project.pbxproj')).then(
+    () => true,
+    () => false
+  );
+  if (pbxproj) return 'pbxproj';
+
+  const entries = await fs.readdir(projectPath).catch(() => [] as string[]);
+  return entries.some((entry) => entry.endsWith('.xcproj'))
+    ? 'json'
+    : 'pbxproj';
 }
 
 function readPbxproj(projectPath: string, configuration: string): Target[] {

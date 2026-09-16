@@ -19,6 +19,7 @@ export interface CauseDefinition {
 const IOS_PUSH_DOCS = 'https://www.customer.io/docs/sdk/ios/push/';
 const IOS_RICH_PUSH_DOCS =
   'https://www.customer.io/docs/sdk/ios/push/#rich-push';
+const ANDROID_PUSH_DOCS = 'https://www.customer.io/docs/sdk/android/push/';
 const IOS_GETTING_STARTED_DOCS =
   'https://www.customer.io/docs/sdk/ios/getting-started/';
 
@@ -73,6 +74,15 @@ export const CAUSES: Record<string, CauseDefinition> = {
       'iOS runs exactly one service extension per notification, and which one is not something you control. Keep one and forward to the SDK from it.',
     docs: IOS_RICH_PUSH_DOCS,
   },
+  'wiring.project_format_json': {
+    stage: 'project_wiring',
+    severity: 'warning',
+    summary:
+      'This project uses the JSON .xcproj format, so the checks that need the raw project graph could not run.',
+    remedy:
+      'Targets and build settings still come from xcodebuild, which reads either format. Embedding is not exposed that way, so it is proven from the installed build instead — or not at all, if nothing is installed yet.',
+    docs: 'https://developer.apple.com/documentation/xcode/updating-your-xcode-project-configuration-file-format',
+  },
   'wiring.nse_not_embedded': {
     stage: 'project_wiring',
     severity: 'blocker',
@@ -123,6 +133,63 @@ export const CAUSES: Record<string, CauseDefinition> = {
     remedy:
       'Add the Push Notifications capability to the app target; Xcode creates the entitlements file with it.',
     docs: IOS_PUSH_DOCS,
+  },
+  'wiring.push_module_missing': {
+    stage: 'project_wiring',
+    severity: 'blocker',
+    summary: "The project does not depend on the SDK's push module.",
+    remedy:
+      'Add io.customer.android:messaging-push-fcm. Without it the SDK never sees a message: the module is what registers the Firebase service that receives one.',
+    docs: ANDROID_PUSH_DOCS,
+  },
+  'wiring.google_services_missing': {
+    stage: 'project_wiring',
+    severity: 'blocker',
+    summary: 'No google-services.json in the app module.',
+    remedy:
+      'Download it from the Firebase console into the app module. Firebase cannot issue a token without it, so there is nothing to send to.',
+    docs: ANDROID_PUSH_DOCS,
+  },
+  'wiring.google_services_package_mismatch': {
+    stage: 'project_wiring',
+    severity: 'blocker',
+    summary: "google-services.json does not list the app's own package name.",
+    remedy:
+      'Add this app to the Firebase project, or fetch the file for the right one. A mismatch here fails at registration, so the app never gets a token.',
+    docs: ANDROID_PUSH_DOCS,
+  },
+  'wiring.post_notifications_undeclared': {
+    stage: 'project_wiring',
+    severity: 'blocker',
+    summary:
+      'The manifest does not declare POST_NOTIFICATIONS, which Android 13 and later require before a notification can be shown.',
+    remedy:
+      'Add <uses-permission android:name="android.permission.POST_NOTIFICATIONS" /> and request it at runtime. Deliveries are still counted without it; nothing is ever displayed.',
+    docs: ANDROID_PUSH_DOCS,
+  },
+  'wiring.fcm_service_does_not_forward': {
+    stage: 'project_wiring',
+    severity: 'warning',
+    summary:
+      'The app declares its own FirebaseMessagingService and it does not appear to forward messages to the SDK.',
+    remedy:
+      'A service the app declares owns every message. Forward to the SDK from onMessageReceived, or every delivery goes uncounted while the notification still displays — the Android shape of the invisible failure.',
+    docs: ANDROID_PUSH_DOCS,
+  },
+  'device.notification_permission_denied': {
+    stage: 'device_ready',
+    severity: 'blocker',
+    summary: 'Notification permission is not granted on this target.',
+    remedy:
+      'Grant it with `adb shell pm grant <package> android.permission.POST_NOTIFICATIONS`, or accept the prompt in the app. Deliveries are counted either way; nothing is displayed.',
+  },
+  'workspace.fcm_credential_missing': {
+    stage: 'workspace_ready',
+    severity: 'blocker',
+    summary: 'The workspace has no FCM push credential.',
+    remedy:
+      'Upload the Firebase service account key in the workspace settings. Sends will be accepted and dropped until it exists.',
+    docs: ANDROID_PUSH_DOCS,
   },
   'workspace.apns_credential_missing': {
     stage: 'workspace_ready',
@@ -292,6 +359,21 @@ export const CAUSES: Record<string, CauseDefinition> = {
       'The log was attached and the app said nothing at all, so this cell proves nothing.',
     remedy:
       'Suspect the capture, not the push: check the log tool is streaming (a filter that matches no process name returns silence), and that the app is the build you think it is.',
+  },
+  'runtime.metric_not_tracked': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary: 'The SDK received the push and never counted a delivery for it.',
+    remedy:
+      'Check that automatic delivery tracking is on and that the message carries a delivery id. The notification still displays, which is what makes this failure invisible.',
+  },
+  'runtime.app_force_stopped': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      "The app was in Android's stopped state, which blocks delivery entirely — by design, not by defect.",
+    remedy:
+      'Launch the app once and re-run. Force-stopping from Settings (or `am force-stop`) puts an app in this state, and a push sent to it is never delivered: this is the single most common way Android push testing produces a false failure. `am kill` is the faithful "swiped away" case.',
   },
   'runtime.delivery_id_mismatch': {
     stage: 'delivered_matrix',

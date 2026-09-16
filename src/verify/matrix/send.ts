@@ -4,6 +4,8 @@ export interface SendRequest {
   /** Print the request and send nothing, so the orchestration can be exercised safely. */
   dryRun?: boolean;
   environmentId: string;
+  platform?: 'ios' | 'android';
+  provider?: 'apns' | 'fcm';
   token: string;
   /** Per-request, which is why this route is preferred: verifying a debug build must never
    * mean flipping the workspace's shared credential to sandbox and breaking production. */
@@ -36,8 +38,8 @@ export async function sendVerifyPush(
 ): Promise<SendResult> {
   const payload: Record<string, unknown> = {
     to: request.token,
-    platform: 'ios',
-    provider: 'apns',
+    platform: request.platform ?? 'ios',
+    provider: request.provider ?? 'apns',
     sandbox: request.sandbox,
     title: request.title,
     body: request.body,
