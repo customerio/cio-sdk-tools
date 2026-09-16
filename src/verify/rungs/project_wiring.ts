@@ -39,6 +39,9 @@ export interface WiringResult {
   app?: Target;
   nse?: Target;
   signals: SourceSignals;
+  /** Carried forward: rung 2 compares it against the workspace credential. */
+  apsEnvironment?: string;
+  bundleId?: string;
 }
 
 /**
@@ -85,7 +88,9 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
 
   rung.checks.push(await sdkPresenceCheck(input.scanRoot, signals));
   rung.checks.push(...initializationChecks(signals));
-  rung.checks.push(...(await pushCapabilityChecks(model, app)));
+
+  const push = await pushCapabilityChecks(model, app);
+  rung.checks.push(...push.checks);
 
   const { checks: nseChecks, nse } = await nseChecksFor(model, app);
   rung.checks.push(...nseChecks);
@@ -111,7 +116,15 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
     );
   }
 
-  return { rung, model, app, nse, signals };
+  return {
+    rung,
+    model,
+    app,
+    nse,
+    signals,
+    apsEnvironment: push.apsEnvironment,
+    bundleId: app.settings.PRODUCT_BUNDLE_IDENTIFIER,
+  };
 }
 
 function pickAppTarget(apps: Target[], name?: string): Target | undefined {
@@ -202,40 +215,47 @@ function initializationChecks(signals: SourceSignals): Check[] {
 async function pushCapabilityChecks(
   model: XcodeProjectModel,
   app: Target
-): Promise<Check[]> {
+): Promise<{ checks: Check[]; apsEnvironment?: string }> {
   const entitlements = entitlementsPath(model.projectPath, app);
   if (!entitlements) {
-    return [
-      fail(
-        'push_capability',
-        'App declares the push notification capability',
-        'wiring.entitlements_missing',
-        [`no CODE_SIGN_ENTITLEMENTS for target ${app.name}`]
-      ),
-    ];
+    return {
+      checks: [
+        fail(
+          'push_capability',
+          'App declares the push notification capability',
+          'wiring.entitlements_missing',
+          [`no CODE_SIGN_ENTITLEMENTS for target ${app.name}`]
+        ),
+      ],
+    };
   }
 
   const environment = await apsEnvironment(model.projectPath, app);
   const readable = path.relative(path.dirname(model.projectPath), entitlements);
   if (!environment) {
-    return [
-      fail(
-        'push_capability',
-        'App declares the push notification capability',
-        'wiring.push_capability_missing',
-        [`no aps-environment in ${readable}`]
-      ),
-    ];
+    return {
+      checks: [
+        fail(
+          'push_capability',
+          'App declares the push notification capability',
+          'wiring.push_capability_missing',
+          [`no aps-environment in ${readable}`]
+        ),
+      ],
+    };
   }
 
   // The value matters later: a sandbox build against a production credential is a whole
   // class of "sent fine, never arrived", and rung 2 compares the two.
-  return [
-    pass('push_capability', 'App declares the push notification capability', [
-      `aps-environment: ${environment}`,
-      readable,
-    ]),
-  ];
+  return {
+    apsEnvironment: environment,
+    checks: [
+      pass('push_capability', 'App declares the push notification capability', [
+        `aps-environment: ${environment}`,
+        readable,
+      ]),
+    ],
+  };
 }
 
 async function nseChecksFor(

@@ -124,6 +124,112 @@ export const CAUSES: Record<string, CauseDefinition> = {
       'Add the Push Notifications capability to the app target; Xcode creates the entitlements file with it.',
     docs: IOS_PUSH_DOCS,
   },
+  'workspace.apns_credential_missing': {
+    rung: 'workspace_ready',
+    severity: 'blocker',
+    summary: 'The workspace has no APNs push credential.',
+    remedy:
+      'Upload the APNs auth key in the workspace settings. Sends will be accepted and dropped until it exists.',
+    docs: IOS_PUSH_DOCS,
+  },
+  'workspace.env_mismatch': {
+    rung: 'workspace_ready',
+    severity: 'blocker',
+    summary:
+      "The workspace credential's environment does not match the build's aps-environment.",
+    remedy:
+      'A development build needs a sandbox credential and a release build needs a production one. This mismatch is the classic "the send returned 200 and nothing ever arrived".',
+    docs: IOS_PUSH_DOCS,
+  },
+  'workspace.credential_config_unknown': {
+    rung: 'workspace_ready',
+    severity: 'warning',
+    summary:
+      'The workspace credential does not say whether it is sandbox or production.',
+    remedy:
+      'Re-save the APNs credential so the workspace records its environment. Until it does, the sandbox-versus-production pairing cannot be checked, and that mismatch is silent on both ends.',
+    docs: IOS_PUSH_DOCS,
+  },
+  'workspace.lookup_failed': {
+    rung: 'workspace_ready',
+    severity: 'warning',
+    summary: 'The workspace credential could not be read.',
+    remedy:
+      'Check that the authenticated account can read this workspace. Nothing about the credential is proven either way.',
+  },
+  'device.not_available': {
+    rung: 'device_ready',
+    severity: 'blocker',
+    summary: 'The requested simulator or device is not usable.',
+    remedy:
+      'Boot the simulator or connect and unlock the device, then run again. Pass --target with a name or udid to choose between several.',
+  },
+  'device.app_not_installed': {
+    rung: 'device_ready',
+    severity: 'blocker',
+    summary: 'The app is not installed on the target.',
+    remedy:
+      'Build and run the app on this target first. Verification reads what the SDK recorded at runtime, so there has to have been a run.',
+  },
+  'device.container_unreadable': {
+    rung: 'device_ready',
+    severity: 'warning',
+    summary: "The app's data container could not be read.",
+    remedy:
+      'Container access needs a development build installed by Xcode. Without it the token and identity cannot be read, so the later rungs prove nothing.',
+  },
+  'device.token_unregistered': {
+    rung: 'device_ready',
+    severity: 'blocker',
+    summary: 'The SDK has no push token stored on this target.',
+    remedy:
+      'Register for notifications and accept the permission prompt, then background and foreground the app. Without a token there is no address to send to.',
+    docs: IOS_PUSH_DOCS,
+  },
+  'device.identity_anonymous': {
+    rung: 'device_ready',
+    severity: 'warning',
+    summary: 'The app has an anonymous profile only — identify has never run.',
+    remedy:
+      'Log in, or call identify, so the token belongs to a profile a campaign can address. An anonymous token still receives a direct send.',
+  },
+  'profile.not_found': {
+    rung: 'profile_linked',
+    severity: 'blocker',
+    summary: "No profile in this workspace matches the device's identity.",
+    remedy:
+      'Check the workspace is the one the app talks to, and that identify has reached it — profile sync runs on a cycle, so a login seconds old may not be there yet.',
+  },
+  'profile.no_device_linked': {
+    rung: 'profile_linked',
+    severity: 'blocker',
+    summary: 'The profile has no devices at all.',
+    remedy:
+      'The SDK registers the token against the identified profile. No devices means the token never reached the workspace, so every campaign send has nowhere to go.',
+  },
+  'profile.token_not_linked': {
+    rung: 'profile_linked',
+    severity: 'blocker',
+    summary:
+      'The profile has devices, but not the token this target is holding.',
+    remedy:
+      'This is the failure that hides behind a green dashboard: the profile looks addressable and the phone in your hand is not the device that gets the push. Re-identify after the token was issued, or clear the stale devices.',
+  },
+  'profile.app_identifier_mismatch': {
+    rung: 'profile_linked',
+    severity: 'warning',
+    summary:
+      "The linked device's app identifier is not the bundle id being verified.",
+    remedy:
+      'Usually means two builds share a profile. Harmless for this run, but a send addressed to the profile may reach the other app.',
+  },
+  'profile.push_disabled': {
+    rung: 'profile_linked',
+    severity: 'warning',
+    summary: 'The linked device reports push_enabled false.',
+    remedy:
+      'Treat this as a hint, not a verdict — it has read false while permission was genuinely granted, and a later identify flipped it true. The registered token is the stronger evidence.',
+  },
 };
 
 export function resolveCause(
