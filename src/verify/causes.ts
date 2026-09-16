@@ -176,6 +176,21 @@ export const CAUSES: Record<string, CauseDefinition> = {
       'A service the app declares owns every message. Forward to the SDK from onMessageReceived, or every delivery goes uncounted while the notification still displays — the Android shape of the invisible failure.',
     docs: ANDROID_PUSH_DOCS,
   },
+  'device.no_network': {
+    stage: 'device_ready',
+    severity: 'blocker',
+    summary: 'The target cannot reach the network, so no push can arrive.',
+    remedy:
+      'Check the emulator or device has a working connection before reading anything into a silent send.',
+  },
+  'device.dns_unresolved': {
+    stage: 'device_ready',
+    severity: 'blocker',
+    summary:
+      'The target has a network route but cannot resolve host names, so Firebase can never connect.',
+    remedy:
+      'Restart the emulator with `-dns-server 8.8.8.8` (an emulator loses DNS whenever the host resolver changes under it). Everything else looks healthy in this state, which is what makes it worth naming.',
+  },
   'device.notification_permission_denied': {
     stage: 'device_ready',
     severity: 'blocker',

@@ -1,6 +1,8 @@
 import {
   AndroidSdkState,
   AndroidTarget,
+  Connectivity,
+  connectivity,
   describeAndroidTarget,
   listAndroidTargets,
   notificationPermission,
@@ -19,6 +21,7 @@ export interface AndroidDeviceFacts {
   installed: boolean;
   stopped?: boolean;
   permissionGranted?: boolean;
+  network?: Connectivity;
   sdk?: AndroidSdkState;
 }
 
@@ -37,6 +40,7 @@ export async function gatherAndroidDevice(options: {
   };
   if (!target || !options.packageName) return facts;
 
+  facts.network = await connectivity(target.serial);
   facts.installed = await packageInstalled(target.serial, options.packageName);
   if (!facts.installed) return facts;
 
@@ -97,6 +101,11 @@ export function androidDeviceReady(
   }
   rung.checks.push(pass('app_installed', `App is installed: ${packageName}`));
 
+  const network = networkCheck(facts);
+  if (network) rung.checks.push(network);
+  // Nothing downstream means anything if Firebase cannot connect.
+  if (network?.verdict === 'fail') return rung;
+
   rung.checks.push(permissionCheck(facts));
   const stopped = stoppedCheck(facts);
   if (stopped) rung.checks.push(stopped);
@@ -109,6 +118,34 @@ export function androidDeviceReady(
  * Grantable without a human, which iOS has no equivalent for — so an unmet permission here
  * is a fixable state rather than a dead end, and the remedy says the command.
  */
+function networkCheck(facts: AndroidDeviceFacts): Check | undefined {
+  const network = facts.network;
+  if (!network) return undefined;
+
+  if (!network.ip) {
+    return fail(
+      'network_reachable',
+      'Target can reach Firebase',
+      'device.no_network',
+      ['no ping response from 8.8.8.8']
+    );
+  }
+  if (!network.dns) {
+    return fail(
+      'network_reachable',
+      'Target can reach Firebase',
+      'device.dns_unresolved',
+      [
+        'the network route is up but fcm.googleapis.com does not resolve',
+        'an emulator in this state answers pings and receives nothing',
+      ]
+    );
+  }
+  return pass('network_reachable', 'Target can reach Firebase', [
+    'fcm.googleapis.com resolves',
+  ]);
+}
+
 function permissionCheck(facts: AndroidDeviceFacts): Check {
   if (facts.permissionGranted === undefined) {
     return warn(

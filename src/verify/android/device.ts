@@ -119,6 +119,38 @@ export async function notificationPermission(
   return match ? match[1] === 'true' : undefined;
 }
 
+export interface Connectivity {
+  /** Raw IP reachability: the network is up at all. */
+  ip: boolean;
+  /** Name resolution, which is what Firebase actually needs. */
+  dns: boolean;
+}
+
+/**
+ * Can this target reach Firebase?
+ *
+ * An emulator that loses DNS — which happens whenever the host's resolver changes under a
+ * running instance — keeps its IP route and answers pings, so everything looks healthy
+ * while no push can ever arrive. Reporting that as "the push never arrived" blames the
+ * integration for the emulator's plumbing, and it cost a full matrix run to find.
+ */
+export async function connectivity(serial: string): Promise<Connectivity> {
+  const ip = await adb(
+    serial,
+    ['shell', 'ping', '-c', '1', '-W', '2', '8.8.8.8'],
+    30_000
+  );
+  const dns = await adb(
+    serial,
+    ['shell', 'ping', '-c', '1', '-W', '2', 'fcm.googleapis.com'],
+    30_000
+  );
+  return {
+    ip: /1 received|1 packets received/.test(ip.stdout),
+    dns: !/unknown host/i.test(dns.stdout + dns.stderr) && dns.code === 0,
+  };
+}
+
 export interface AndroidSdkState {
   deviceToken?: string;
   userId?: string;
