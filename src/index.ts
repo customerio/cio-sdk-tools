@@ -3,6 +3,7 @@
 import { program } from 'commander';
 import { doctorCommand } from './doctor';
 import { sendPushCommand } from './send_push';
+import { verifyCommand } from './verify';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson = require('../package.json');
@@ -14,5 +15,6 @@ program
 
 program.addCommand(doctorCommand);
 program.addCommand(sendPushCommand);
+program.addCommand(verifyCommand);
 
 program.parse();

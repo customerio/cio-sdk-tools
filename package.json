@@ -13,7 +13,8 @@
     "test:doctor:global": "./scripts/test-doctor/run.sh --global",
     "test:doctor:compare": "./scripts/test-doctor/run.sh --compare",
     "start": "npx tsc && node dist/index.js",
-    "compile": "npx tsc"
+    "compile": "npx tsc",
+    "test:verify": "npx tsc && node --test test/verify/*.test.js"
   },
   "bin": {
     "cio-sdk-tools": "./dist/index.js"
