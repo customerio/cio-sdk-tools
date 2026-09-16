@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { run } from '../exec';
+import { readPlist, run } from '../exec';
 
 export type TargetKind = 'simulator' | 'device';
 
@@ -140,6 +140,8 @@ export function selectTarget(
 
 export interface AppLocation {
   installed: boolean;
+  /** The installed bundle, when it is readable locally (simulators only). */
+  appPath?: string;
   /** Local directory holding the app's `Library/Preferences`, copied if need be. */
   preferences?: string;
   /** Removes anything this call copied off a device. */
@@ -168,8 +170,16 @@ async function locateSimulatorApp(
   if (code !== 0) {
     return { installed: false, error: stderr.trim().split('\n')[0] };
   }
+
+  const bundle = await run(
+    'xcrun',
+    ['simctl', 'get_app_container', target.udid, bundleId, 'app'],
+    60_000
+  );
+
   return {
     installed: true,
+    appPath: bundle.code === 0 ? bundle.stdout.trim() : undefined,
     preferences: path.join(stdout.trim(), 'Library', 'Preferences'),
   };
 }
@@ -355,4 +365,119 @@ async function nestedPlist(
   } finally {
     await fs.rm(scratch, { recursive: true, force: true });
   }
+}
+
+/**
+ * The entitlements of the build that is actually installed.
+ *
+ * Rung 1 proves the *project* asks for push; this proves the binary on the target does. The
+ * two come apart in a way that is silent and total: a build made with
+ * `CODE_SIGNING_ALLOWED=NO` carries no entitlements at all, APNs refuses to issue a token,
+ * and the SDK deletes the one it had — while its stored copy stays on disk looking healthy.
+ *
+ * On a simulator the entitlements live in the binary's own `__TEXT,__entitlements` section
+ * rather than in a signature, which is why `codesign -d --entitlements` comes back empty
+ * for a perfectly good simulator build.
+ */
+export async function installedEntitlements(
+  appPath: string
+): Promise<Record<string, string> | undefined> {
+  // Absent `undefined` versus empty `{}` is the whole point of this signature: see below.
+  const info = await readPlist<{ CFBundleExecutable?: string }>(
+    path.join(appPath, 'Info.plist')
+  );
+  const executable = info?.CFBundleExecutable;
+  if (!executable) return undefined;
+
+  const { stdout, code } = await run(
+    'otool',
+    ['-X', '-s', '__TEXT', '__entitlements', path.join(appPath, executable)],
+    60_000
+  );
+  // `undefined` means the question could not be asked; `{}` means it was asked and the
+  // binary carries no entitlements at all. Collapsing the two turns a build that cannot
+  // register into a check that quietly skips.
+  if (code !== 0) return undefined;
+
+  const text = stdout.trim() ? decodeOtoolSection(stdout) : '';
+  if (!text.includes('<plist')) return {};
+
+  // A handful of string values is all this is for; a full plist parse would mean writing
+  // the section out to a temp file for plutil, and nothing here needs the rest of it.
+  const entitlements: Record<string, string> = {};
+  for (const match of text.matchAll(
+    /<key>([^<]+)<\/key>\s*<string>([^<]*)<\/string>/g
+  )) {
+    entitlements[match[1]] = match[2];
+  }
+  return entitlements;
+}
+
+/** `otool -X -s` prints little-endian hex words, four to a line, after an address column. */
+function decodeOtoolSection(stdout: string): string {
+  const bytes: number[] = [];
+  for (const line of stdout.split('\n')) {
+    const words = line.trim().split(/\s+/).slice(1);
+    for (const word of words) {
+      if (!/^[0-9a-f]{8}$/i.test(word)) continue;
+      for (let i = 6; i >= 0; i -= 2) {
+        bytes.push(parseInt(word.slice(i, i + 2), 16));
+      }
+    }
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
+
+export interface Freshness {
+  installedAt?: Date;
+  storeWrittenAt?: Date;
+  /** True when the SDK's store predates the installed bundle. */
+  tokenPredatesInstall: boolean;
+}
+
+/**
+ * Whether the token on disk belongs to the build being verified.
+ *
+ * A reinstall gives the app a new bundle and leaves its container alone, so the stored
+ * token can be older than the binary it is supposed to belong to — and a dead token reads
+ * exactly like a live one.
+ */
+export async function tokenFreshness(
+  appPath: string | undefined,
+  preferencesDirectory: string,
+  bundleId: string
+): Promise<Freshness> {
+  const installedAt = appPath
+    ? (await fs.stat(appPath).catch(() => undefined))?.mtime
+    : undefined;
+  // The newest of the SDK's own store and the CDP layer's store, because the SDK rewrites
+  // its file only when the token actually changes: re-registering with the same token
+  // leaves it untouched, and comparing that alone warns about every reinstall forever.
+  const entries = await fs.readdir(preferencesDirectory).catch(() => []);
+  const written = entries.filter(
+    (entry: string) =>
+      entry === `io.customer.sdk.${bundleId}.shared.plist` ||
+      entry.startsWith('com.segment.storage.')
+  );
+  const times = (
+    await Promise.all(
+      written.map((entry: string) =>
+        fs
+          .stat(path.join(preferencesDirectory, entry))
+          .then((stat) => stat.mtime)
+          .catch(() => undefined)
+      )
+    )
+  ).filter((time): time is Date => Boolean(time));
+  const storeWrittenAt = times.length
+    ? new Date(Math.max(...times.map((time) => time.getTime())))
+    : undefined;
+
+  return {
+    installedAt,
+    storeWrittenAt,
+    tokenPredatesInstall: Boolean(
+      installedAt && storeWrittenAt && storeWrittenAt < installedAt
+    ),
+  };
 }

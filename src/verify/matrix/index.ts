@@ -71,7 +71,7 @@ export async function runDeliveredMatrix(
       section.cells.push(await runCell(state, options, capture, seenIds));
       // Sustained sends to one token appear to throttle; a pause between cells costs
       // nothing and removes a whole class of confusing near-misses.
-      await sleep(3_000);
+      await sleep(8_000);
     }
   } finally {
     await capture.stop();
@@ -155,7 +155,36 @@ async function runCell(
       )
     : false;
 
-  const arrived = await waitForArrival(options.target, before, evidence);
+  let arrived = await waitForArrival(options.target, before, evidence);
+
+  // Nothing arrived and the extension never woke: on a simulator that is as often APNs
+  // being slow as it is a real failure, and the tool has no business calling a delayed
+  // push a broken one. One re-send, said out loud in the evidence, settles which it was.
+  if (arrived === false && !ranInExtension(since())) {
+    const again = await sendVerifyPush({
+      dryRun: options.dryRun,
+      environmentId: options.environmentId,
+      token: options.token,
+      sandbox: options.sandbox,
+      title: `${title} (retry)`,
+      body: 'Sent by cio-sdk-tools verify push.',
+    });
+    evidence.push(
+      again.accepted
+        ? 'nothing arrived on the first send; re-sent once'
+        : `re-send rejected: ${again.error ?? 'unknown error'}`
+    );
+    if (again.accepted) {
+      await waitFor(
+        () =>
+          since().some((line) => NSE_MARKERS.completion.test(line.message)) &&
+          since().some((line) => NSE_MARKERS.accepted.test(line.message)),
+        timeout
+      );
+      arrived = await waitForArrival(options.target, before, evidence);
+    }
+  }
+
   const lines = since();
   const extensionRan = ranInExtension(lines);
   const tracking = lines.some((line) =>
@@ -192,6 +221,7 @@ async function runCell(
       available: capture.available,
       arrived,
       extensionRan,
+      tracked: tracking,
       accepted,
       sawLines: lines.length > 0,
       sentId: sent.deliveryId,
@@ -213,6 +243,8 @@ export function judge(observed: {
   available: boolean;
   arrived: boolean | undefined;
   extensionRan: boolean;
+  /** The SDK's own "tracking delivered" line: proof it was handed the request at all. */
+  tracked: boolean;
   accepted: boolean;
   sawLines: boolean;
   sentId?: string;
@@ -237,7 +269,12 @@ export function judge(observed: {
         ? { verdict: 'fail', cause: 'runtime.push_never_arrived' }
         : { verdict: 'fail', cause: 'runtime.nse_did_not_run' };
     }
-    return { verdict: 'fail', cause: 'runtime.metric_not_accepted' };
+    // Ran but never tried: the extension exists and never forwarded the request. That is a
+    // different defect from a report that was attempted and did not land, and it is the
+    // runtime proof of the static wiring.nse_does_not_forward warning.
+    return observed.tracked
+      ? { verdict: 'fail', cause: 'runtime.metric_not_accepted' }
+      : { verdict: 'fail', cause: 'runtime.nse_did_not_forward' };
   }
   if (observed.loggedIds.length > 0) {
     const wrongId = observed.sentId
@@ -288,7 +325,7 @@ async function waitForArrival(
     const after = await deliveredNotificationBlobs(target);
     newBlobs = [...(after ?? [])].filter((blob) => !before.has(blob));
     return newBlobs.length > 0;
-  }, 25_000);
+  }, 45_000);
   if (newBlobs.length > 0) {
     evidence.push(
       `arrived: ${newBlobs.length} new entries in the notification store`

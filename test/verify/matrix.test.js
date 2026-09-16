@@ -13,18 +13,18 @@ const line = (process, message) => ({ at: '00:00:00.000', process, message });
 
 test('arrived but never processed is a different failure from never arrived', () => {
   assert.deepStrictEqual(
-    judge({ available: true, arrived: true, extensionRan: false, accepted: false, sawLines: true, loggedIds: [], freshIds: [] }),
+    judge({ available: true, arrived: true, extensionRan: false, accepted: false, tracked: false, sawLines: true, loggedIds: [], freshIds: [] }),
     { verdict: 'fail', cause: 'runtime.nse_did_not_run' }
   );
   assert.deepStrictEqual(
-    judge({ available: true, arrived: false, extensionRan: false, accepted: false, sawLines: true, loggedIds: [], freshIds: [] }),
+    judge({ available: true, arrived: false, extensionRan: false, accepted: false, tracked: false, sawLines: true, loggedIds: [], freshIds: [] }),
     { verdict: 'fail', cause: 'runtime.push_never_arrived' }
   );
 });
 
 test('the extension running without the metric landing is its own cause', () => {
   assert.deepStrictEqual(
-    judge({ available: true, arrived: true, extensionRan: true, accepted: false, sawLines: true, loggedIds: [], freshIds: [] }),
+    judge({ available: true, arrived: true, extensionRan: true, tracked: true, accepted: false, sawLines: true, loggedIds: [], freshIds: [] }),
     { verdict: 'fail', cause: 'runtime.metric_not_accepted' }
   );
 });
@@ -186,5 +186,23 @@ test('a stream that attached and saw nothing blames the capture, not the extensi
       freshIds: [],
     }),
     { verdict: 'skip', cause: 'runtime.no_evidence' }
+  );
+});
+
+test('an extension that runs and never forwards is its own cause, not a failed report', () => {
+  // Arm B3 exactly: the extension is embedded and entitled, the push displays, and the SDK
+  // is never handed the request — so nothing is even attempted.
+  assert.deepStrictEqual(
+    judge({
+      available: true,
+      arrived: true,
+      extensionRan: true,
+      tracked: false,
+      accepted: false,
+      sawLines: true,
+      loggedIds: [],
+      freshIds: [],
+    }),
+    { verdict: 'fail', cause: 'runtime.nse_did_not_forward' }
   );
 });

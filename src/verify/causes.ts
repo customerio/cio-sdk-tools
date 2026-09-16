@@ -178,6 +178,23 @@ export const CAUSES: Record<string, CauseDefinition> = {
     remedy:
       'Container access needs a development build installed by Xcode. Without it the token and identity cannot be read, so the later rungs prove nothing.',
   },
+  'device.installed_build_cannot_register': {
+    stage: 'device_ready',
+    severity: 'blocker',
+    summary:
+      'The installed build carries no aps-environment entitlement, so it cannot register for push at all.',
+    remedy:
+      'Install a build made with code signing on — a build made with CODE_SIGNING_ALLOWED=NO has no entitlements, APNs refuses it a token, and the SDK deletes the one it had while its stored copy stays on disk looking healthy.',
+    docs: IOS_PUSH_DOCS,
+  },
+  'device.token_predates_install': {
+    stage: 'device_ready',
+    severity: 'warning',
+    summary:
+      'The stored push token is older than the installed build, so it may not belong to it.',
+    remedy:
+      'Launch the app once and let the SDK re-register. A reinstall leaves the container alone, and a dead token reads exactly like a live one.',
+  },
   'device.token_unregistered': {
     stage: 'device_ready',
     severity: 'blocker',
@@ -251,6 +268,15 @@ export const CAUSES: Record<string, CauseDefinition> = {
       'The push arrived and the Notification Service Extension never ran on it.',
     remedy:
       'This is the invisible failure. The notification displays, the dashboard shows the provider accepted it, and no delivery is ever counted. Check the extension is embedded, entitled to the App Group, and forwarding to the SDK.',
+  },
+  'runtime.nse_did_not_forward': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary:
+      'The extension ran on the push and never handed it to the SDK, so nothing was even attempted.',
+    remedy:
+      'Call MessagingPush.shared.didReceive(request, withContentHandler:) from didReceive. The notification still displays, which is what makes this failure invisible from the outside.',
+    docs: IOS_RICH_PUSH_DOCS,
   },
   'runtime.metric_not_accepted': {
     stage: 'delivered_matrix',

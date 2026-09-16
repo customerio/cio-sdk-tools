@@ -1,14 +1,17 @@
 import {
   DeviceSdkState,
+  Freshness,
   Target,
   describeTarget,
+  installedEntitlements,
   listTargets,
   locateApp,
   readSdkState,
   selectTarget,
+  tokenFreshness,
 } from '../ios/device';
-import { fail, pass, warn } from '../ladder';
-import { Rung } from '../types';
+import { fail, pass, skipped, warn } from '../ladder';
+import { Check, Rung } from '../types';
 
 export interface DeviceFacts {
   target?: Target;
@@ -16,9 +19,13 @@ export interface DeviceFacts {
   ambiguous: Target[];
   selector?: string;
   installed: boolean;
+  appPath?: string;
   preferences?: string;
   containerError?: string;
   sdk?: DeviceSdkState;
+  /** Entitlements of the build actually installed; absent when they cannot be read. */
+  entitlements?: Record<string, string>;
+  freshness?: Freshness;
   cleanup?: () => Promise<void>;
 }
 
@@ -45,12 +52,21 @@ export async function gatherDevice(options: {
 
   const located = await locateApp(target, options.bundleId);
   facts.installed = located.installed;
+  facts.appPath = located.appPath;
   facts.preferences = located.preferences;
   facts.containerError = located.error;
   facts.cleanup = located.cleanup;
 
+  if (located.appPath) {
+    facts.entitlements = await installedEntitlements(located.appPath);
+  }
   if (located.preferences) {
     facts.sdk = await readSdkState(located.preferences, options.bundleId);
+    facts.freshness = await tokenFreshness(
+      located.appPath,
+      located.preferences,
+      options.bundleId
+    );
   }
   return facts;
 }
@@ -120,9 +136,59 @@ export function deviceReady(facts: DeviceFacts, bundleId?: string): Rung {
     return rung;
   }
 
+  const capable = installedBuildCheck(facts);
+  if (capable) rung.checks.push(capable);
+  // A build that cannot register explains a dead token, so there is nothing to learn from
+  // reading one.
+  if (capable?.verdict === 'fail') return rung;
+
   rung.checks.push(tokenCheck(facts));
+  const fresh = freshnessCheck(facts);
+  if (fresh) rung.checks.push(fresh);
   rung.checks.push(identityCheck(facts));
   return rung;
+}
+
+function installedBuildCheck(facts: DeviceFacts): Check | undefined {
+  // Only a simulator's bundle is readable from here. A phone's entitlements live in its
+  // signature, inside a bundle this tool never has a copy of.
+  if (!facts.appPath) return undefined;
+
+  if (!facts.entitlements) {
+    return skipped(
+      'installed_build_push_capable',
+      'Installed build can register for push',
+      'the installed binary carries no entitlements section to read'
+    );
+  }
+
+  const environment = facts.entitlements['aps-environment'];
+  return environment
+    ? pass(
+        'installed_build_push_capable',
+        'Installed build can register for push',
+        [`aps-environment: ${environment}`]
+      )
+    : fail(
+        'installed_build_push_capable',
+        'Installed build can register for push',
+        'device.installed_build_cannot_register',
+        ['the installed binary declares no aps-environment']
+      );
+}
+
+function freshnessCheck(facts: DeviceFacts): Check | undefined {
+  const freshness = facts.freshness;
+  if (!freshness?.tokenPredatesInstall) return undefined;
+  return warn(
+    'token_freshness',
+    'Stored token belongs to the installed build',
+    'device.token_predates_install',
+    [
+      `build installed ${freshness.installedAt?.toISOString()}`,
+      `token stored ${freshness.storeWrittenAt?.toISOString()}`,
+    ]
+  );
 }
 
 function tokenCheck(facts: DeviceFacts) {
