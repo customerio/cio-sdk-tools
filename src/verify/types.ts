@@ -16,6 +16,11 @@ export type RungId =
 
 export type Severity = 'blocker' | 'warning';
 
+/** Where a finding came from: a preflight rung, or the runtime matrix. */
+export type Stage = RungId | 'delivered_matrix';
+
+export type AppStateName = 'killed' | 'background' | 'foreground';
+
 export interface Check {
   /** Stable within a rung; the plugin keys off `cause`, humans key off `label`. */
   id: string;
@@ -35,9 +40,34 @@ export interface Rung {
   skipped?: string;
 }
 
+export interface MatrixCell {
+  state: AppStateName;
+  verdict: Verdict;
+  cause?: string;
+  evidence: string[];
+  /** As returned by the send, for correlating against the log. */
+  deliveryId?: string;
+}
+
+/**
+ * The matrix has the opposite rule to the ladder: every cell runs, because a failure in one
+ * app state hiding a pass in another is exactly the bug worth catching.
+ */
+export interface MatrixSection {
+  metric: 'delivered';
+  cells: MatrixCell[];
+  /** Set when no cell ran at all. */
+  skipped?: string;
+  logs?: {
+    how?: string;
+    evidencePath?: string;
+    unavailableReason?: string;
+  };
+}
+
 export interface ReportedCause {
   code: string;
-  rung: RungId;
+  stage: Stage;
   severity: Severity;
   summary: string;
   remedy: string;
@@ -53,6 +83,8 @@ export interface Report {
   finishedAt: string;
   project: { path: string; framework: string; name?: string };
   rungs: Rung[];
+  /** Absent unless a real push was sent. */
+  matrix?: MatrixSection;
   /** `warn` means every assertion passed but something is worth a developer's attention. */
   verdict: Verdict;
   /** The failing and warning checks, in ladder order, resolved against the registry. */

@@ -74,7 +74,7 @@ test('the report carries causes with their remedy, which is what the plugin read
   const report = ladder.toReport(meta());
   assert.strictEqual(report.schema, 1);
   assert.strictEqual(report.causes.length, 1);
-  assert.strictEqual(report.causes[0].rung, 'project_wiring');
+  assert.strictEqual(report.causes[0].stage, 'project_wiring');
   assert.match(report.causes[0].remedy, /three places/);
   assert.deepStrictEqual(report.causes[0].evidence, ['code: group.a', 'extension: none']);
   assert.strictEqual(report.exitCode, EXIT.verificationFailed);

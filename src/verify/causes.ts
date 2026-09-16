@@ -1,4 +1,4 @@
-import { ReportedCause, RungId, Severity } from './types';
+import { ReportedCause, Severity, Stage } from './types';
 
 /**
  * The cause registry is the contract between this CLI and anything reading it — an LLM
@@ -9,7 +9,7 @@ import { ReportedCause, RungId, Severity } from './types';
  * (`summary`), and what does the developer do next (`remedy`).
  */
 export interface CauseDefinition {
-  rung: RungId;
+  stage: Stage;
   severity: Severity;
   summary: string;
   remedy: string;
@@ -24,7 +24,7 @@ const IOS_GETTING_STARTED_DOCS =
 
 export const CAUSES: Record<string, CauseDefinition> = {
   'wiring.sdk_absent': {
-    rung: 'project_wiring',
+    stage: 'project_wiring',
     severity: 'blocker',
     summary: 'The Customer.io SDK is not a dependency of this project.',
     remedy:
@@ -32,7 +32,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
     docs: IOS_GETTING_STARTED_DOCS,
   },
   'wiring.init_absent': {
-    rung: 'project_wiring',
+    stage: 'project_wiring',
     severity: 'blocker',
     summary: 'No call to CustomerIO.initialize was found in the app sources.',
     remedy:
@@ -40,7 +40,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
     docs: IOS_GETTING_STARTED_DOCS,
   },
   'wiring.init_not_at_launch': {
-    rung: 'project_wiring',
+    stage: 'project_wiring',
     severity: 'blocker',
     summary:
       'CustomerIO.initialize runs from a SwiftUI view body, which is re-evaluated on every redraw and carries no guarantee of running before the system delivers a launch push.',
@@ -49,7 +49,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
     docs: IOS_GETTING_STARTED_DOCS,
   },
   'wiring.init_launch_unproven': {
-    rung: 'project_wiring',
+    stage: 'project_wiring',
     severity: 'warning',
     summary:
       'CustomerIO.initialize was found, but no path from a launch method to it could be resolved.',
@@ -57,7 +57,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
       'Nothing to fix if initialization runs at launch through a helper the tool could not follow. Worth a glance: initialization that runs later than launch loses pushes that arrive before it.',
   },
   'wiring.nse_missing': {
-    rung: 'project_wiring',
+    stage: 'project_wiring',
     severity: 'blocker',
     summary: 'The project has no Notification Service Extension target.',
     remedy:
@@ -65,7 +65,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
     docs: IOS_RICH_PUSH_DOCS,
   },
   'wiring.nse_multiple': {
-    rung: 'project_wiring',
+    stage: 'project_wiring',
     severity: 'blocker',
     summary:
       'More than one Notification Service Extension is embedded in the app.',
@@ -74,7 +74,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
     docs: IOS_RICH_PUSH_DOCS,
   },
   'wiring.nse_not_embedded': {
-    rung: 'project_wiring',
+    stage: 'project_wiring',
     severity: 'blocker',
     summary:
       'A Notification Service Extension target exists but the app does not embed it.',
@@ -83,7 +83,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
     docs: IOS_RICH_PUSH_DOCS,
   },
   'wiring.nse_does_not_forward': {
-    rung: 'project_wiring',
+    stage: 'project_wiring',
     severity: 'warning',
     summary:
       'The Notification Service Extension never hands the request to the SDK.',
@@ -92,7 +92,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
     docs: IOS_RICH_PUSH_DOCS,
   },
   'wiring.app_group_mismatch': {
-    rung: 'project_wiring',
+    stage: 'project_wiring',
     severity: 'blocker',
     summary:
       'The App Group in the extension code is not granted by the extension entitlements.',
@@ -101,7 +101,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
     docs: IOS_RICH_PUSH_DOCS,
   },
   'wiring.app_group_absent': {
-    rung: 'project_wiring',
+    stage: 'project_wiring',
     severity: 'warning',
     summary: 'No App Group is configured for the extension.',
     remedy:
@@ -109,7 +109,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
     docs: IOS_RICH_PUSH_DOCS,
   },
   'wiring.push_capability_missing': {
-    rung: 'project_wiring',
+    stage: 'project_wiring',
     severity: 'blocker',
     summary: 'The app entitlements do not declare aps-environment.',
     remedy:
@@ -117,7 +117,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
     docs: IOS_PUSH_DOCS,
   },
   'wiring.entitlements_missing': {
-    rung: 'project_wiring',
+    stage: 'project_wiring',
     severity: 'blocker',
     summary: 'The app target has no entitlements file.',
     remedy:
@@ -125,7 +125,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
     docs: IOS_PUSH_DOCS,
   },
   'workspace.apns_credential_missing': {
-    rung: 'workspace_ready',
+    stage: 'workspace_ready',
     severity: 'blocker',
     summary: 'The workspace has no APNs push credential.',
     remedy:
@@ -133,7 +133,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
     docs: IOS_PUSH_DOCS,
   },
   'workspace.env_mismatch': {
-    rung: 'workspace_ready',
+    stage: 'workspace_ready',
     severity: 'blocker',
     summary:
       "The workspace credential's environment does not match the build's aps-environment.",
@@ -142,7 +142,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
     docs: IOS_PUSH_DOCS,
   },
   'workspace.credential_config_unknown': {
-    rung: 'workspace_ready',
+    stage: 'workspace_ready',
     severity: 'warning',
     summary:
       'The workspace credential does not say whether it is sandbox or production.',
@@ -151,35 +151,35 @@ export const CAUSES: Record<string, CauseDefinition> = {
     docs: IOS_PUSH_DOCS,
   },
   'workspace.lookup_failed': {
-    rung: 'workspace_ready',
+    stage: 'workspace_ready',
     severity: 'warning',
     summary: 'The workspace credential could not be read.',
     remedy:
       'Check that the authenticated account can read this workspace. Nothing about the credential is proven either way.',
   },
   'device.not_available': {
-    rung: 'device_ready',
+    stage: 'device_ready',
     severity: 'blocker',
     summary: 'The requested simulator or device is not usable.',
     remedy:
       'Boot the simulator or connect and unlock the device, then run again. Pass --target with a name or udid to choose between several.',
   },
   'device.app_not_installed': {
-    rung: 'device_ready',
+    stage: 'device_ready',
     severity: 'blocker',
     summary: 'The app is not installed on the target.',
     remedy:
       'Build and run the app on this target first. Verification reads what the SDK recorded at runtime, so there has to have been a run.',
   },
   'device.container_unreadable': {
-    rung: 'device_ready',
+    stage: 'device_ready',
     severity: 'warning',
     summary: "The app's data container could not be read.",
     remedy:
       'Container access needs a development build installed by Xcode. Without it the token and identity cannot be read, so the later rungs prove nothing.',
   },
   'device.token_unregistered': {
-    rung: 'device_ready',
+    stage: 'device_ready',
     severity: 'blocker',
     summary: 'The SDK has no push token stored on this target.',
     remedy:
@@ -187,28 +187,28 @@ export const CAUSES: Record<string, CauseDefinition> = {
     docs: IOS_PUSH_DOCS,
   },
   'device.identity_anonymous': {
-    rung: 'device_ready',
+    stage: 'device_ready',
     severity: 'warning',
     summary: 'The app has an anonymous profile only — identify has never run.',
     remedy:
       'Log in, or call identify, so the token belongs to a profile a campaign can address. An anonymous token still receives a direct send.',
   },
   'profile.not_found': {
-    rung: 'profile_linked',
+    stage: 'profile_linked',
     severity: 'blocker',
     summary: "No profile in this workspace matches the device's identity.",
     remedy:
       'Check the workspace is the one the app talks to, and that identify has reached it — profile sync runs on a cycle, so a login seconds old may not be there yet.',
   },
   'profile.no_device_linked': {
-    rung: 'profile_linked',
+    stage: 'profile_linked',
     severity: 'blocker',
     summary: 'The profile has no devices at all.',
     remedy:
       'The SDK registers the token against the identified profile. No devices means the token never reached the workspace, so every campaign send has nowhere to go.',
   },
   'profile.token_not_linked': {
-    rung: 'profile_linked',
+    stage: 'profile_linked',
     severity: 'blocker',
     summary:
       'The profile has devices, but not the token this target is holding.',
@@ -216,7 +216,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
       'This is the failure that hides behind a green dashboard: the profile looks addressable and the phone in your hand is not the device that gets the push. Re-identify after the token was issued, or clear the stale devices.',
   },
   'profile.app_identifier_mismatch': {
-    rung: 'profile_linked',
+    stage: 'profile_linked',
     severity: 'warning',
     summary:
       "The linked device's app identifier is not the bundle id being verified.",
@@ -224,11 +224,47 @@ export const CAUSES: Record<string, CauseDefinition> = {
       'Usually means two builds share a profile. Harmless for this run, but a send addressed to the profile may reach the other app.',
   },
   'profile.push_disabled': {
-    rung: 'profile_linked',
+    stage: 'profile_linked',
     severity: 'warning',
     summary: 'The linked device reports push_enabled false.',
     remedy:
       'Treat this as a hint, not a verdict — it has read false while permission was genuinely granted, and a later identify flipped it true. The registered token is the stronger evidence.',
+  },
+  'send.provider_rejected': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary: 'Customer.io refused the send.',
+    remedy:
+      'Read the error: it is usually the token, the credential, or a sandbox/production mismatch. Nothing about the SDK is proven either way until a send is accepted.',
+  },
+  'runtime.push_never_arrived': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary: 'The send was accepted and nothing reached the device at all.',
+    remedy:
+      'Look at the credential pairing and the token first. A freshly booted simulator also lags minutes behind an accepted send, so try once more before believing this.',
+  },
+  'runtime.nse_did_not_run': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary:
+      'The push arrived and the Notification Service Extension never ran on it.',
+    remedy:
+      'This is the invisible failure. The notification displays, the dashboard shows the provider accepted it, and no delivery is ever counted. Check the extension is embedded, entitled to the App Group, and forwarding to the SDK.',
+  },
+  'runtime.metric_not_accepted': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary: 'The extension ran and the delivered metric was never accepted.',
+    remedy:
+      'The SDK tried and the report did not land — usually the cdpApiKey the extension initializes with, or no network in the extension process. The pending-delivery queue holds it for the app to retry.',
+  },
+  'runtime.delivery_id_mismatch': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary: 'The delivery counted on the device is not the one this run sent.',
+    remedy:
+      'Usually an earlier push still in flight, so the cell proves less than it appears to. Re-run with the app quiet, and treat the timing as suspect if it repeats.',
   },
 };
 
@@ -241,7 +277,7 @@ export function resolveCause(
     // An unregistered code is a bug in this tool, and saying so beats reporting nothing.
     return {
       code,
-      rung: 'project_wiring',
+      stage: 'project_wiring',
       severity: 'blocker',
       summary: `Unregistered cause code: ${code}`,
       remedy:

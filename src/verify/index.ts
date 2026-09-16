@@ -1,8 +1,11 @@
 import { Command } from 'commander';
 import { promises as fs } from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { cioContext } from './cio/cli';
 import { Ladder } from './ladder';
+import { runDeliveredMatrix } from './matrix';
+import { ALL_STATES, AppState } from './matrix/states';
 import { deviceReady, gatherDevice } from './rungs/device_ready';
 import { profileLinked } from './rungs/profile_linked';
 import { projectWiring } from './rungs/project_wiring';
@@ -19,6 +22,10 @@ type VerifyPushOptions = {
   configuration: string;
   target?: string;
   workspace?: string;
+  send: boolean;
+  dryRun: boolean;
+  states?: string;
+  evidence?: string;
 };
 
 const RUNG_TITLES: Record<RungId, string> = {
@@ -59,6 +66,21 @@ const pushCommand = new Command('push')
     '--workspace <id>',
     'workspace (environment) id, skipping auto-selection'
   )
+  .option(
+    '--send',
+    'send real pushes and follow them to the delivered metric',
+    false
+  )
+  .option(
+    '--states <list>',
+    `app states to cover when sending (${ALL_STATES.join(', ')})`
+  )
+  .option(
+    '--dry-run',
+    'with --send, do everything except the send itself',
+    false
+  )
+  .option('--evidence <dir>', 'directory to write captured logs into')
   .action(async (pathArg: string, options: VerifyPushOptions) => {
     process.exitCode = await verifyPush(pathArg, options);
   });
@@ -81,9 +103,16 @@ async function verifyPush(
     return toolError(options, `No .xcodeproj found at or under ${pathArg}`);
   }
 
+  let states: AppState[] | undefined;
+  try {
+    states = parseStates(options.states);
+  } catch (error) {
+    return toolError(options, (error as Error).message, EXIT.badInput);
+  }
+
   const startedAt = new Date().toISOString();
   const ladder = new Ladder();
-  const projectName = await climb(ladder, projectPath, options);
+  const projectName = await climb(ladder, projectPath, options, states);
 
   const built = ladder.toReport({
     schema: 1,
@@ -106,7 +135,8 @@ async function verifyPush(
 async function climb(
   ladder: Ladder,
   projectPath: string,
-  options: VerifyPushOptions
+  options: VerifyPushOptions,
+  states?: AppState[]
 ): Promise<string | undefined> {
   const wiring = await projectWiring({
     projectPath,
@@ -158,6 +188,14 @@ async function climb(
         bundleId: wiring.bundleId,
       })
     );
+
+    await matrix(ladder, options, states, {
+      target: device.target,
+      bundleId: wiring.bundleId,
+      environmentId: workspace.resolution?.workspace?.id,
+      token: device.sdk?.pushDeviceToken,
+      sandbox: wiring.apsEnvironment !== 'production',
+    });
     return wiring.model.projectName;
   } finally {
     // Anything pulled off a physical device lives in a temp directory.
@@ -169,6 +207,89 @@ function skipRest(ladder: Ladder, ids: RungId[]): void {
   for (const id of ids) {
     ladder.skip(id, RUNG_TITLES[id], 'an earlier rung failed');
   }
+  ladder.setMatrix({
+    metric: 'delivered',
+    cells: [],
+    skipped: 'preflight did not pass, so no push was sent',
+  });
+}
+
+/**
+ * Sending is opt-in, and its absence is reported rather than omitted: a preflight that
+ * passes proves the integration *could* report a delivery, which is not the same claim as
+ * one that did. Without --send the verdict stays inconclusive on purpose.
+ */
+async function matrix(
+  ladder: Ladder,
+  options: VerifyPushOptions,
+  states: AppState[] | undefined,
+  inputs: {
+    target?: Parameters<typeof runDeliveredMatrix>[0]['target'];
+    bundleId?: string;
+    environmentId?: string;
+    token?: string;
+    sandbox: boolean;
+  }
+): Promise<void> {
+  if (!options.send) {
+    ladder.setMatrix({
+      metric: 'delivered',
+      cells: [],
+      skipped:
+        'no push was sent — pass --send to send one per app state and follow it to the metric',
+    });
+    return;
+  }
+
+  if (
+    !inputs.target ||
+    !inputs.bundleId ||
+    !inputs.environmentId ||
+    !inputs.token
+  ) {
+    ladder.setMatrix({
+      metric: 'delivered',
+      cells: [],
+      skipped:
+        'a target, a workspace and a registered token are all needed to send',
+    });
+    return;
+  }
+
+  const evidenceDirectory =
+    options.evidence ??
+    path.join(
+      os.tmpdir(),
+      `cio-verify-${new Date().toISOString().slice(0, 19)}`
+    );
+
+  ladder.setMatrix(
+    await runDeliveredMatrix({
+      target: inputs.target,
+      bundleId: inputs.bundleId,
+      environmentId: inputs.environmentId,
+      token: inputs.token,
+      sandbox: inputs.sandbox,
+      states,
+      dryRun: options.dryRun,
+      evidenceDirectory,
+    })
+  );
+}
+
+function parseStates(list?: string): AppState[] | undefined {
+  if (!list) return undefined;
+  const wanted = list
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean) as AppState[];
+  const unknown = wanted.filter((state) => !ALL_STATES.includes(state));
+  if (unknown.length > 0) {
+    throw new Error(
+      `unknown app state${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}`
+    );
+  }
+  return wanted;
 }
 
 async function emit(
@@ -189,11 +310,15 @@ async function emit(
 }
 
 /** Report a failure of the tool itself, which is never a verdict about the integration. */
-function toolError(options: VerifyPushOptions, message: string): number {
+function toolError(
+  options: VerifyPushOptions,
+  message: string,
+  code: number = EXIT.toolError
+): number {
   if (options.json) {
     process.stdout.write(
       `${JSON.stringify(
-        { schema: 1, error: message, exitCode: EXIT.toolError },
+        { schema: 1, error: message, exitCode: code },
         null,
         2
       )}\n`
@@ -201,7 +326,7 @@ function toolError(options: VerifyPushOptions, message: string): number {
   } else {
     process.stderr.write(`${message}\n`);
   }
-  return EXIT.toolError;
+  return code;
 }
 
 /** Accept either a project directory or the `.xcodeproj` itself. */
