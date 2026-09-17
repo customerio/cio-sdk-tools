@@ -206,3 +206,28 @@ test('a physical Android device is out of scope and skips rather than being used
   assert.match(rung.skipped, /emulator only/);
   assert.strictEqual(phone.isEmulator, false);
 });
+
+test('the handoff worker is the acceptance signal, and its absence is not a failure', () => {
+  // Observed on API 35: tracked lands in ~30ms, the notification ~6s later, the worker up
+  // to ~40s after that. A slow worker is not a broken integration.
+  assert.deepStrictEqual(
+    judgeAndroid({ ...base, accepted: true }),
+    { verdict: 'pass' }
+  );
+  assert.deepStrictEqual(
+    judgeAndroid({ ...base, accepted: false }),
+    { verdict: 'pass' }
+  );
+});
+
+test('the handoff markers match the SDK’s two success phrasings', () => {
+  const success = '[CIO-Push-Handoff] worker success, removed key=dgS_abc==';
+  const already = '[CIO-Push-Handoff] worker skipped, already delivered key=dgS_abc==';
+  const queued = '[CIO-Push-Handoff] enqueued WM key=dgS_abc==';
+  assert.ok(ANDROID_MARKERS.handoffDelivered.test(success));
+  assert.ok(ANDROID_MARKERS.handoffAlreadyDelivered.test(already));
+  assert.ok(ANDROID_MARKERS.handoffQueued.test(queued));
+  // "already delivered" must not read as the plain success line, and vice versa.
+  assert.ok(!ANDROID_MARKERS.handoffDelivered.test(already));
+  assert.ok(!ANDROID_MARKERS.handoffAlreadyDelivered.test(success));
+});

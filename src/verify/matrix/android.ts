@@ -128,9 +128,19 @@ async function runCell(
   );
 
   const since = () => capture.lines.slice(mark);
+  const seen = (marker: RegExp) =>
+    since().some((line) => marker.test(line.message));
   const timeout = options.cellTimeoutMs ?? 45_000;
+
+  // Wait for the end of the sequence, not the middle. `tracked` lands within tens of
+  // milliseconds; the notification follows ~6s later and the handoff worker up to ~40s
+  // after that, so stopping at `tracked` reports a displayed notification as absent.
+  await waitFor(() => seen(ANDROID_MARKERS.tracked), timeout);
   await waitFor(
-    () => since().some((line) => ANDROID_MARKERS.tracked.test(line.message)),
+    () =>
+      seen(ANDROID_MARKERS.shown) &&
+      (seen(ANDROID_MARKERS.handoffDelivered) ||
+        seen(ANDROID_MARKERS.handoffAlreadyDelivered)),
     timeout
   );
 
@@ -145,6 +155,14 @@ async function runCell(
   const duplicate = lines.some((line) =>
     ANDROID_MARKERS.duplicate.test(line.message)
   );
+  const accepted = lines.some(
+    (line) =>
+      ANDROID_MARKERS.handoffDelivered.test(line.message) ||
+      ANDROID_MARKERS.handoffAlreadyDelivered.test(line.message)
+  );
+  const queued = lines.some((line) =>
+    ANDROID_MARKERS.handoffQueued.test(line.message)
+  );
   const ids = androidDeliveryIds(lines);
   const freshIds = ids.filter((id) => !seenIds.has(id));
   for (const id of ids) seenIds.add(id);
@@ -153,6 +171,13 @@ async function runCell(
     evidence.push(
       `log: ${lines.length} lines, received: ${received}, tracked: ${tracked}, ` +
         `notification shown: ${shown}${duplicate ? ', deduplicated' : ''}`
+    );
+    evidence.push(
+      accepted
+        ? 'handoff worker confirmed the delivery was reported'
+        : queued
+        ? 'queued for the handoff worker; no confirmation within the window'
+        : 'no handoff queue activity seen'
     );
     if (ids.length > 0) evidence.push(`delivery ids in log: ${ids.join(', ')}`);
   } else {
@@ -168,6 +193,7 @@ async function runCell(
       stopped: Boolean(stopped),
       received,
       tracked,
+      accepted,
       loggedIds: ids,
       freshIds,
     }),
@@ -176,12 +202,12 @@ async function runCell(
 }
 
 /**
- * Android's evidence is thinner than iOS's by one step, and saying so is the honest move.
+ * What the Android evidence adds up to.
  *
- * The SDK hands the delivered event to the CDP pipeline, which flushes in batches, and
- * logs nothing when that succeeds. So `tracked` — the SDK counted the delivery — is as far
- * as the device can testify; server-side confirmation is a different question from a
- * different source.
+ * `tracked` is the assertion: the SDK counted the delivery. The handoff worker's
+ * confirmation is stronger, but it arrives up to forty seconds later, so its absence inside
+ * the window belongs in the evidence rather than in the verdict — a slow worker is not a
+ * broken integration.
  */
 export function judgeAndroid(observed: {
   available: boolean;
@@ -189,6 +215,8 @@ export function judgeAndroid(observed: {
   stopped: boolean;
   received: boolean;
   tracked: boolean;
+  /** The handoff worker's confirmation, which can lag the tracking line by ~40s. */
+  accepted?: boolean;
   loggedIds: string[];
   freshIds: string[];
 }): { verdict: Verdict; cause?: string } {

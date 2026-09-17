@@ -105,17 +105,37 @@ export function parseLogcat(raw: string): LogLine | undefined {
 }
 
 /**
- * The SDK's own phrasings on Android, which differ from iOS by more than wording.
+ * The SDK's own phrasings on Android.
  *
- * There is no per-metric confirmation line here: the SDK hands the delivered event to the
- * CDP pipeline, which flushes in batches, so `tracked` is the strongest local evidence
- * available. Claiming acceptance from these lines would be claiming more than they say.
+ * There *is* an acceptance signal here, contrary to a first reading of the source: the
+ * delivered metric goes through a handoff queue backed by WorkManager, and the worker says
+ * either `worker success, removed key=<id>` or `worker skipped, already delivered key=<id>`.
+ * Both mean the delivery was reported; the second means it had already gone out directly.
+ *
+ * The timing matters as much as the wording. A full sequence observed on API 35:
+ *
+ *   00.000  Received new message with deliveryId
+ *   00.030  Tracking push message delivered with deliveryId
+ *   00.050  handoff: appended pending entry
+ *   00.160  handoff: enqueued WM
+ *   05.650  handleNotificationTrigger (FCM re-delivers the message)
+ *   05.900  Received duplicate message with deliveryId  ← normal, the SDK dedupes
+ *   06.010  Showing notification for message
+ *   38.300  handoff: worker success / skipped
+ *
+ * Stopping at `tracked` therefore misses the notification and the acceptance entirely — the
+ * same mistake as waiting for `delivered` instead of `normal completion` on iOS.
  */
 export const ANDROID_MARKERS = {
   received: /Received new message with deliveryId: /,
   tracked: /Tracking push message delivered with deliveryId: /,
   shown: /Showing notification for message: /,
+  /** FCM re-delivering the same message. Evidence, never a fault. */
   duplicate: /Received duplicate message with deliveryId: /,
+  handoffQueued: /\[CIO-Push-Handoff\] enqueued WM key=/,
+  handoffDelivered: /\[CIO-Push-Handoff\] worker success, removed key=/,
+  handoffAlreadyDelivered:
+    /\[CIO-Push-Handoff\] worker skipped, already delivered key=/,
 } as const;
 
 export function androidDeliveryIds(lines: LogLine[]): string[] {
