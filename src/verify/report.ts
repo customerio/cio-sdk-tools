@@ -33,8 +33,8 @@ export interface CellHandle {
 
 export interface Reporter {
   readonly level: Level;
-  /** The run's first line: what is being verified. */
-  start(subject: string): void;
+  /** The run's opening block: what is being verified, and against what. */
+  start(subject: string, facts?: [string, string][]): void;
   rung(title: string): RungHandle;
   matrix(how?: string): void;
   cell(state: string): CellHandle;
@@ -153,9 +153,12 @@ export function createReporter(options: {
   return {
     level,
 
-    start(subject: string) {
+    start(subject: string, facts: [string, string][] = []) {
       line();
       line(`${chalk.bold('verify push')} ${chalk.dim('·')} ${subject}`);
+      for (const [label, value] of facts) {
+        line(`  ${chalk.dim(label.padEnd(9))}  ${value}`);
+      }
       line();
     },
 

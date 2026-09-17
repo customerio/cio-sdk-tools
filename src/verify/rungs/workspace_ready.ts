@@ -1,6 +1,6 @@
 import { CioContext } from '../cio/cli';
 import { PushCredential, PushProvider, pushCredential } from '../cio/push';
-import { WorkspaceResolution, resolveWorkspace } from '../cio/workspace';
+import { WorkspaceResolution } from '../cio/workspace';
 import { fail, pass, warn } from '../ladder';
 import { Check, RUNG_TITLES, Rung } from '../types';
 
@@ -19,21 +19,14 @@ export interface WorkspaceFacts {
 export async function gatherWorkspace(options: {
   cio: CioContext;
   provider: PushProvider;
-  explicit?: string;
-  siteId?: string;
-  cacheKey: string;
+  /** Settled by the selection phase — this rung checks the choice, it does not make it. */
+  resolution: WorkspaceResolution;
 }): Promise<WorkspaceFacts> {
   if (!options.cio.authenticated) {
     return { cio: options.cio, provider: options.provider };
   }
 
-  const resolution = await resolveWorkspace({
-    accountId: options.cio.accountId,
-    explicit: options.explicit,
-    siteId: options.siteId,
-    cacheKey: options.cacheKey,
-  });
-
+  const resolution = options.resolution;
   if (!resolution.workspace) {
     return { cio: options.cio, provider: options.provider, resolution };
   }
@@ -98,32 +91,17 @@ function workspaceEvidence(resolution: WorkspaceResolution): string[] {
   switch (resolution.how) {
     case 'explicit':
       return ['chosen with --workspace'];
-    case 'cached':
-      return [`cached for this project, siteId ${resolution.matchedSiteId}`];
-    case 'site_id':
-      return [
-        `matched the siteId the SDK stored on the device: ${resolution.matchedSiteId}`,
-        `swept ${resolution.swept} environments`,
-      ];
+    case 'chosen':
+      return [`chosen from ${resolution.candidates.length} workspaces`];
     case 'only_environment':
-      return ['the account has one environment'];
+      return ['the account has one workspace'];
     default:
       return [];
   }
 }
 
 function describeUnresolved(resolution?: WorkspaceResolution): string {
-  if (!resolution) return 'no account id in the cio CLI config';
-  if (resolution.how === 'ambiguous') {
-    const names = resolution.candidates
-      .slice(0, 8)
-      .map((w) => `${w.name ?? w.id} (${w.id})`)
-      .join(', ');
-    return `could not tell which workspace this app talks to; pass --workspace <id>. Candidates: ${names}`;
-  }
-  return resolution.matchedSiteId
-    ? `siteId ${resolution.matchedSiteId} matched none of the ${resolution.swept} environments; pass --workspace <id>`
-    : 'no siteId could be read off the device; pass --workspace <id>';
+  return resolution?.unresolvedReason ?? 'no account id in the cio CLI config';
 }
 
 function credentialCheck(facts: WorkspaceFacts): Check {

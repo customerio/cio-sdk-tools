@@ -1,29 +1,25 @@
-import { promises as fs } from 'fs';
-import * as path from 'path';
-import { getCacheDir } from '../../doctor/utils/cache';
+import { Asker } from '../prompt';
 import { cioApi } from './cli';
 
 export interface Workspace {
   id: string;
   name?: string;
+  /** How profiles are identified here — the lookup in rung 4 depends on it. */
+  identifierType?: string;
 }
 
 export type Resolution =
   | 'explicit'
-  | 'cached'
-  | 'site_id'
+  | 'chosen'
   | 'only_environment'
-  | 'ambiguous'
   | 'unresolved';
 
 export interface WorkspaceResolution {
   workspace?: Workspace;
   how: Resolution;
-  /** Offered to the user when the answer was not unique. */
+  /** Everything the account can see, for the picker and for the failure message. */
   candidates: Workspace[];
-  /** Environments swept looking for the device's siteId. */
-  swept?: number;
-  matchedSiteId?: string;
+  unresolvedReason?: string;
 }
 
 export async function listEnvironments(
@@ -40,61 +36,59 @@ export async function listEnvironments(
   return raw
     .map((entry) => entry as Record<string, unknown>)
     .filter((entry) => entry.id !== undefined)
-    .map((entry) => ({ id: String(entry.id), name: entry.name as string }));
-}
-
-export async function siteIds(environmentId: string): Promise<string[]> {
-  const res = await cioApi<{ site_ids?: string[] }>(
-    '/v1/environments/{environment_id}/site_ids',
-    { environment_id: environmentId }
-  );
-  const ids = res.data?.site_ids;
-  return Array.isArray(ids) ? ids : [];
+    .map((entry) => ({
+      id: String(entry.id),
+      name: entry.name as string,
+      identifierType: entry.identifier_type as string,
+    }));
 }
 
 /**
- * Which workspace is this app talking to?
+ * Which workspace should this app be talking to?
  *
- * The device knows, and nothing else does: the siteId the SDK received in its settings is
- * the one fact on the phone that ties the build to a workspace. So the siteId is swept
- * across the account's environments — around 7s for a dozen of them, which is why the
- * answer is cached per project afterwards.
- *
- * Uniqueness is observed, not guaranteed. Zero or several matches fall through to a named
- * picker rather than a guess, and `--workspace` always wins.
+ * Asked, never inferred. The previous version swept the account's environments for the
+ * siteId the SDK had stored, which was wrong twice over: `siteId` is an argument to the
+ * in-app messaging module, so a push-only app has none at all, and even where it exists
+ * it makes the app's own configuration the authority on what the app's configuration
+ * should be. Connecting to the intended workspace is part of what is being verified, so
+ * the answer has to come from outside the thing under test.
  */
 export async function resolveWorkspace(options: {
   accountId?: string;
   explicit?: string;
-  siteId?: string;
-  cacheKey: string;
+  asker: Asker;
 }): Promise<WorkspaceResolution> {
-  if (options.explicit) {
+  if (!options.accountId) {
     return {
-      workspace: { id: options.explicit },
-      how: 'explicit',
+      how: 'unresolved',
       candidates: [],
+      unresolvedReason: 'no account id in the cio CLI config',
     };
   }
 
-  if (options.siteId) {
-    const cached = await readCache(options.cacheKey);
-    if (cached && cached.siteId === options.siteId) {
-      return {
-        workspace: { id: cached.workspaceId, name: cached.name },
-        how: 'cached',
-        candidates: [],
-        matchedSiteId: options.siteId,
-      };
-    }
-  }
-
-  if (!options.accountId) {
-    return { how: 'unresolved', candidates: [] };
-  }
-
   const environments = await listEnvironments(options.accountId);
-  if (environments.length === 0) return { how: 'unresolved', candidates: [] };
+  if (environments.length === 0) {
+    return {
+      how: 'unresolved',
+      candidates: [],
+      unresolvedReason: 'the account has no workspaces this login can read',
+    };
+  }
+
+  if (options.explicit) {
+    // A typo in --workspace would otherwise surface as a 404 three rungs later.
+    const known = environments.find(
+      (environment) => environment.id === options.explicit
+    );
+    return known
+      ? { workspace: known, how: 'explicit', candidates: environments }
+      : {
+          how: 'unresolved',
+          candidates: environments,
+          unresolvedReason: `workspace ${options.explicit} is not one this login can read`,
+        };
+  }
+
   if (environments.length === 1) {
     return {
       workspace: environments[0],
@@ -103,69 +97,14 @@ export async function resolveWorkspace(options: {
     };
   }
 
-  if (options.siteId) {
-    const matches: Workspace[] = [];
-    for (const environment of environments) {
-      const ids = await siteIds(environment.id);
-      if (ids.includes(options.siteId)) matches.push(environment);
-    }
-    if (matches.length === 1) {
-      await writeCache(options.cacheKey, {
-        workspaceId: matches[0].id,
-        name: matches[0].name,
-        siteId: options.siteId,
-        resolvedAt: new Date().toISOString(),
-      });
-      return {
-        workspace: matches[0],
-        how: 'site_id',
-        candidates: environments,
-        swept: environments.length,
-        matchedSiteId: options.siteId,
-      };
-    }
-    return {
-      how: matches.length > 1 ? 'ambiguous' : 'unresolved',
-      candidates: matches.length > 1 ? matches : environments,
-      swept: environments.length,
-      matchedSiteId: options.siteId,
-    };
-  }
-
-  return { how: 'ambiguous', candidates: environments };
-}
-
-interface CacheEntry {
-  workspaceId: string;
-  name?: string;
-  siteId: string;
-  resolvedAt: string;
-}
-
-function cachePath(): string {
-  return path.join(getCacheDir(), 'verify-workspaces.json');
-}
-
-async function readCache(key: string): Promise<CacheEntry | undefined> {
-  const text = await fs.readFile(cachePath(), 'utf8').catch(() => undefined);
-  if (!text) return undefined;
-  try {
-    return (JSON.parse(text) as Record<string, CacheEntry>)[key];
-  } catch {
-    return undefined;
-  }
-}
-
-async function writeCache(key: string, entry: CacheEntry): Promise<void> {
-  const file = cachePath();
-  const existing = await fs.readFile(file, 'utf8').catch(() => '{}');
-  let all: Record<string, CacheEntry> = {};
-  try {
-    all = JSON.parse(existing) as Record<string, CacheEntry>;
-  } catch {
-    all = {};
-  }
-  all[key] = entry;
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, `${JSON.stringify(all, null, 2)}\n`, 'utf8');
+  const chosen = await options.asker.select(
+    'Which workspace should this app be reporting to?',
+    environments.map((environment) => ({
+      value: environment,
+      label: environment.name ?? environment.id,
+      hint: environment.id,
+    })),
+    { flag: '--workspace <id>' }
+  );
+  return { workspace: chosen, how: 'chosen', candidates: environments };
 }

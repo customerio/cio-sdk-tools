@@ -25,20 +25,19 @@ test('without the cio CLI the workspace rung skips and says how to get it', () =
   assert.match(rung.skipped, /@customerio\/cli/);
 });
 
-test('an ambiguous workspace skips with the candidates, rather than guessing one', () => {
+test('an unresolved workspace skips with the reason, rather than guessing one', () => {
+  // Ambiguity is settled by the picker before the climb starts, so what reaches this rung
+  // is a workspace or an explanation — never a guess.
   const rung = workspaceReady({
     cio: authed,
     resolution: {
-      how: 'ambiguous',
-      candidates: [
-        { id: '1', name: 'One' },
-        { id: '2', name: 'Two' },
-      ],
+      how: 'unresolved',
+      candidates: [{ id: '1', name: 'One' }],
+      unresolvedReason: 'workspace 999 is not one this login can read',
     },
   });
   assert.strictEqual(Ladder.verdictOf(rung), 'skip');
-  assert.match(rung.skipped, /--workspace/);
-  assert.match(rung.skipped, /One \(1\), Two \(2\)/);
+  assert.match(rung.skipped, /999 is not one this login can read/);
 });
 
 test('a missing APNs credential fails the workspace rung', () => {
@@ -68,13 +67,20 @@ test('development against sandbox passes', () => {
   const rung = workspaceReady(
     {
       cio: authed,
-      resolution: { how: 'site_id', candidates: [], workspace: { id: '122175' }, swept: 12, matchedSiteId: 'abc' },
+      resolution: {
+        how: 'chosen',
+        candidates: [{ id: '122175' }, { id: '94996' }],
+        workspace: { id: '122175' },
+      },
       credential: { config: 'sandbox' },
     },
     'development'
   );
   assert.strictEqual(Ladder.verdictOf(rung), 'pass');
-  assert.match(check(rung, 'workspace_selected').evidence.join(' '), /matched the siteId/);
+  assert.match(
+    check(rung, 'workspace_selected').evidence.join(' '),
+    /chosen from 2 workspaces/
+  );
 });
 
 test('a credential with no recorded environment warns instead of quietly skipping', () => {

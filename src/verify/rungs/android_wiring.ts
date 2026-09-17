@@ -24,6 +24,8 @@ export interface AndroidWiringResult {
 export async function androidWiring(input: {
   projectPath: string;
   appModuleName?: string;
+  /** Already parsed by the selection phase, which needed it to list the variants. */
+  model?: AndroidProjectModel;
 }): Promise<AndroidWiringResult> {
   const rung: Rung = {
     id: 'project_wiring',
@@ -31,10 +33,9 @@ export async function androidWiring(input: {
     checks: [],
   };
 
-  const model = await loadAndroidProject(
-    input.projectPath,
-    input.appModuleName
-  );
+  const model =
+    input.model ??
+    (await loadAndroidProject(input.projectPath, input.appModuleName));
   if (!model) {
     rung.skipped = `no Gradle app module found at or above ${input.projectPath}`;
     return { rung };

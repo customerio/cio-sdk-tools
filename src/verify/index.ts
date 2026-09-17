@@ -3,11 +3,20 @@ import { Command } from 'commander';
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { cioContext, setActiveProfile } from './cio/cli';
+import { CioContext, cioContext, setActiveProfile } from './cio/cli';
 import { stopwatch } from './clock';
 import { PushProvider } from './cio/push';
 import { Ladder } from './ladder';
 import { Level, Reporter, createReporter } from './report';
+import { MissingInput, createAsker, describeMissingInput } from './prompt';
+import {
+  Selection,
+  selectionFacts,
+  selectForAndroid,
+  selectForIos,
+} from './select';
+import { AndroidProjectModel, loadAndroidProject } from './android/project';
+import { XcodeProjectModel, loadProject } from './ios/xcode';
 import { runDeliveredMatrix } from './matrix';
 import { runAndroidDeliveredMatrix } from './matrix/android';
 import { ALL_STATES, AppState } from './matrix/states';
@@ -41,6 +50,8 @@ type VerifyPushOptions = {
   resend: boolean;
   quiet: boolean;
   verbose: boolean;
+  package?: string;
+  nonInteractive: boolean;
   states?: string;
   evidence?: string;
 };
@@ -76,6 +87,15 @@ const pushCommand = new Command('push')
     'simulator, device or emulator to verify against'
   )
   .option('--platform <ios|android>', 'skip platform detection')
+  .option(
+    '--package <applicationId>',
+    'Android application id to verify, when the module builds several variants'
+  )
+  .option(
+    '--non-interactive',
+    'never prompt; every choice must come from a flag',
+    false
+  )
   .option(
     '--app-module <name>',
     'Gradle app module to verify, when the project builds several'
@@ -153,19 +173,99 @@ async function verifyPush(
     return toolError(options, (error as Error).message, ERROR_CODES.validation);
   }
 
-  const reporter = createReporter({ level: levelFrom(options) });
+  const level = levelFrom(options);
+  const reporter = createReporter({ level });
+
+  // Questions come before anything is touched, and a run that cannot ask says which flag
+  // would have answered it. `--json` implies non-interactive: a machine reading stdout is
+  // not going to type a number.
+  const asker = createAsker({
+    interactive:
+      level !== 'json' &&
+      !options.nonInteractive &&
+      Boolean(process.stdin.isTTY),
+  });
+
+  const cio = await cioContext();
+  const startedAt = new Date().toISOString();
+  const ladder = new Ladder();
+
+  let selection: Selection;
+  let model: XcodeProjectModel | AndroidProjectModel | undefined;
+  try {
+    if (detected.platform === 'android') {
+      const parsed = await loadAndroidProject(detected.path, options.appModule);
+      model = parsed;
+      selection = await selectForAndroid({
+        cio,
+        asker,
+        model: parsed,
+        appModule: options.appModule,
+        packageName: options.package,
+        workspace: options.workspace,
+        target: options.target,
+        states,
+        send: options.send,
+      });
+    } else {
+      const parsed = await loadProject(
+        detected.path,
+        options.configuration ?? 'Debug'
+      );
+      model = parsed;
+      selection = await selectForIos({
+        cio,
+        asker,
+        model: parsed,
+        appTarget: options.appTarget,
+        workspace: options.workspace,
+        target: options.target,
+        states,
+        send: options.send,
+      });
+    }
+  } catch (error) {
+    if (error instanceof MissingInput) {
+      // The message stays one line and the candidates go in `details`, so an agent reads
+      // a list instead of parsing a paragraph.
+      return toolError(options, error.message, ERROR_CODES.validation, {
+        details: { flag: error.flag, candidates: error.candidates },
+        humanSuffix: describeMissingInput(error)
+          .split('\n')
+          .slice(1)
+          .join('\n'),
+      });
+    }
+    throw error;
+  }
+
   reporter.start(
     `${path.basename(detected.path, path.extname(detected.path))} ${chalk.dim(
       `· ${detected.platform === 'android' ? 'Android' : 'iOS'}`
-    )}`
+    )}`,
+    selectionFacts(selection)
   );
 
-  const startedAt = new Date().toISOString();
-  const ladder = new Ladder();
   const projectName =
     detected.platform === 'android'
-      ? await climbAndroid(ladder, detected.path, options, reporter, states)
-      : await climb(ladder, detected.path, options, reporter, states);
+      ? await climbAndroid(
+          ladder,
+          detected.path,
+          options,
+          reporter,
+          cio,
+          selection,
+          model as AndroidProjectModel
+        )
+      : await climb(
+          ladder,
+          detected.path,
+          options,
+          reporter,
+          cio,
+          selection,
+          model as XcodeProjectModel
+        );
 
   const built = ladder.toReport({
     schema: 1,
@@ -197,7 +297,9 @@ async function climb(
   projectPath: string,
   options: VerifyPushOptions,
   reporter: Reporter,
-  states?: AppState[]
+  cio: CioContext,
+  selection: Selection,
+  model: XcodeProjectModel
 ): Promise<string | undefined> {
   const wiringRung = reporter.rung(RUNG_TITLES.project_wiring);
   wiringRung.phase('reading the project');
@@ -205,7 +307,8 @@ async function climb(
     projectPath,
     scanRoot: path.dirname(projectPath),
     configuration: options.configuration,
-    appTargetName: options.appTarget,
+    appTargetName: selection.appTargetName,
+    model,
   });
   wiringRung.done(wiring.rung);
   ladder.adopt(wiring.rung);
@@ -226,21 +329,18 @@ async function climb(
   deviceRung.phase('reading the target');
   const device = await gatherDevice({
     bundleId: wiring.bundleId,
-    selector: options.target,
+    selector: selection.targetSelector,
   });
   const deviceMs = deviceTimer();
 
   try {
-    const cio = await cioContext();
     const workspaceTimer = stopwatch();
     const workspaceRung = reporter.rung(RUNG_TITLES.workspace_ready);
     workspaceRung.phase('resolving the workspace');
     const workspace = await gatherWorkspace({
       cio,
       provider: wiring.provider,
-      explicit: options.workspace,
-      siteId: device.sdk?.siteId,
-      cacheKey: projectPath,
+      resolution: selection.resolution,
     });
     const ready = workspaceReady(workspace, wiring.apsEnvironment);
     ladder.adopt(ready, workspaceTimer());
@@ -272,7 +372,7 @@ async function climb(
     ladder.adopt(profile, profileTimer());
     profileRung.done(profile);
 
-    await matrix(ladder, options, reporter, states, {
+    await matrix(ladder, options, reporter, selection.states, {
       target: device.target,
       bundleId: wiring.bundleId,
       provider: wiring.provider,
@@ -408,10 +508,14 @@ async function emit(
 function toolError(
   options: VerifyPushOptions,
   message: string,
-  code: ErrorCode = ERROR_CODES.general
+  code: ErrorCode = ERROR_CODES.general,
+  extra?: { details?: unknown; humanSuffix?: string }
 ): number {
-  const exitCode = printError(code, message);
-  if (!options.json) process.stderr.write(`${message}\n`);
+  const exitCode = printError(code, message, { details: extra?.details });
+  if (!options.json) {
+    process.stderr.write(`${message}\n`);
+    if (extra?.humanSuffix) process.stderr.write(`${extra.humanSuffix}\n`);
+  }
   return exitCode;
 }
 
@@ -428,13 +532,16 @@ async function climbAndroid(
   projectPath: string,
   options: VerifyPushOptions,
   reporter: Reporter,
-  states?: AppState[]
+  cio: CioContext,
+  selection: Selection,
+  model: AndroidProjectModel
 ): Promise<string | undefined> {
   const wiringRung = reporter.rung(RUNG_TITLES.project_wiring);
   wiringRung.phase('reading the project');
   const wiring = await androidWiring({
     projectPath,
-    appModuleName: options.appModule,
+    appModuleName: selection.appModuleName,
+    model,
   });
   wiringRung.done(wiring.rung);
   ladder.adopt(wiring.rung);
@@ -450,22 +557,22 @@ async function climbAndroid(
   const deviceTimer = stopwatch();
   const deviceRung = reporter.rung(RUNG_TITLES.device_ready);
   deviceRung.phase('reading the emulator');
+  // The project says which ids it *can* build; the chosen variant says which one is
+  // installed, and they differ the moment an applicationIdSuffix is in play.
+  const packageName = selection.packageName ?? wiring.applicationId;
   const device = await gatherAndroidDevice({
-    packageName: wiring.applicationId,
-    selector: options.target,
+    packageName,
+    selector: selection.targetSelector,
   });
   const deviceMs = deviceTimer();
 
-  const cio = await cioContext();
   const workspaceTimer = stopwatch();
   const workspaceRung = reporter.rung(RUNG_TITLES.workspace_ready);
   workspaceRung.phase('resolving the workspace');
   const workspace = await gatherWorkspace({
     cio,
     provider: 'fcm',
-    explicit: options.workspace,
-    siteId: device.sdk?.siteId,
-    cacheKey: projectPath,
+    resolution: selection.resolution,
   });
   const ready = workspaceReady(workspace);
   ladder.adopt(ready, workspaceTimer());
@@ -475,7 +582,7 @@ async function climbAndroid(
     return wiring.model.appModuleName;
   }
 
-  const deviceRungResult = androidDeviceReady(device, wiring.applicationId);
+  const deviceRungResult = androidDeviceReady(device, packageName);
   ladder.adopt(deviceRungResult, deviceMs);
   deviceRung.done(deviceRungResult);
   if (ladder.halted) {
@@ -497,9 +604,9 @@ async function climbAndroid(
   ladder.adopt(profile, profileTimer());
   profileRung.done(profile);
 
-  await androidMatrix(ladder, options, reporter, states, {
+  await androidMatrix(ladder, options, reporter, selection.states, {
     serial: device.target?.serial,
-    packageName: wiring.applicationId,
+    packageName,
     environmentId: workspace.resolution?.workspace?.id,
     token: device.sdk?.deviceToken,
   });

@@ -32,6 +32,12 @@ export interface WiringInput {
   configuration?: string;
   /** Needed only when the project builds more than one app. */
   appTargetName?: string;
+  /**
+   * An already-parsed project. The selection phase has to read the project to offer its
+   * app targets, and one `xcodebuild -showBuildSettings` costs 16s — paying it twice for
+   * the same answer was not acceptable.
+   */
+  model?: XcodeProjectModel;
 }
 
 export interface WiringResult {
@@ -76,7 +82,8 @@ export function providerFrom(sdkImports: string[]): PushProvider {
 
 export async function projectWiring(input: WiringInput): Promise<WiringResult> {
   const configuration = input.configuration ?? 'Debug';
-  const model = await loadProject(input.projectPath, configuration);
+  const model =
+    input.model ?? (await loadProject(input.projectPath, configuration));
   const rung: Rung = {
     id: 'project_wiring',
     title: RUNG_TITLES.project_wiring,

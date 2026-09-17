@@ -535,3 +535,90 @@ function reachableFrom(
 
   return out;
 }
+
+export interface BuildVariant {
+  /** The id the build actually produced, suffixes and flavour overrides included. */
+  applicationId: string;
+  variantName: string;
+  /** When this variant was last built, so the newest is offered first. */
+  builtAt?: Date;
+  source: 'output-metadata' | 'build script';
+}
+
+/**
+ * Which application ids can this module produce?
+ *
+ * Read from AGP's own output rather than the build script. `applicationIdSuffix`, flavour
+ * overrides and anything computed in the DSL are invisible to a regex, and asking Gradle
+ * costs a JVM start and still cannot say which variant was installed. AGP writes the
+ * answer to `build/outputs/apk/<variant>/output-metadata.json` on every build, so the
+ * artifact is both cheaper and more truthful than the script that produced it.
+ *
+ * A module that has never been built yields nothing here, which is the honest answer:
+ * nothing is installed either, and the remedy is to build it.
+ */
+export async function buildVariants(
+  moduleDirectory: string
+): Promise<BuildVariant[]> {
+  const root = path.join(moduleDirectory, 'build', 'outputs', 'apk');
+  const files = await findOutputMetadata(root, 0);
+  const variants: BuildVariant[] = [];
+
+  for (const file of files) {
+    const text = await fs.readFile(file, 'utf8').catch(() => undefined);
+    if (!text) continue;
+    try {
+      const parsed = JSON.parse(text) as {
+        applicationId?: string;
+        variantName?: string;
+      };
+      if (!parsed.applicationId) continue;
+      const stat = await fs.stat(file).catch(() => undefined);
+      variants.push({
+        applicationId: parsed.applicationId,
+        variantName: parsed.variantName ?? path.basename(path.dirname(file)),
+        builtAt: stat?.mtime,
+        source: 'output-metadata',
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  // Newest first: the one just built is nearly always the one under test.
+  variants.sort(
+    (a, b) => (b.builtAt?.getTime() ?? 0) - (a.builtAt?.getTime() ?? 0)
+  );
+  return dedupeVariants(variants);
+}
+
+function dedupeVariants(variants: BuildVariant[]): BuildVariant[] {
+  const seen = new Set<string>();
+  return variants.filter((variant) => {
+    const key = `${variant.applicationId}·${variant.variantName}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Flavour dimensions nest, so the metadata can sit a level or two down. */
+async function findOutputMetadata(
+  directory: string,
+  depth: number
+): Promise<string[]> {
+  if (depth > 2) return [];
+  const entries = await fs
+    .readdir(directory, { withFileTypes: true })
+    .catch(() => []);
+  const found: string[] = [];
+  for (const entry of entries) {
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      found.push(...(await findOutputMetadata(full, depth + 1)));
+    } else if (entry.name === 'output-metadata.json') {
+      found.push(full);
+    }
+  }
+  return found;
+}
