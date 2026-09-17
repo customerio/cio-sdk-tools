@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { cioContext, setActiveProfile } from './cio/cli';
+import { stopwatch } from './clock';
 import { Ladder } from './ladder';
 import { Narrator, createNarrator } from './narrate';
 import { runDeliveredMatrix } from './matrix';
@@ -173,13 +174,16 @@ async function climb(
   states?: AppState[],
   narrator?: Narrator
 ): Promise<string | undefined> {
+  const wiringTimer = stopwatch();
+  const wiringStep = narrator?.step('reading the project');
   const wiring = await projectWiring({
     projectPath,
     scanRoot: path.dirname(projectPath),
     configuration: options.configuration,
     appTargetName: options.appTarget,
   });
-  ladder.adopt(wiring.rung);
+  wiringStep?.done(wiring.model.projectName);
+  ladder.adopt(wiring.rung, wiringTimer());
   if (ladder.halted) {
     skipRest(ladder, ['workspace_ready', 'device_ready', 'profile_linked']);
     return wiring.model.projectName;
@@ -188,15 +192,18 @@ async function climb(
   // The device is read before the workspace rung is evaluated, though it is reported after
   // it: the siteId the SDK stored on the device is the only thing tying this build to a
   // workspace, so rung 2's subject comes out of rung 3's evidence.
+  const deviceTimer = stopwatch();
   const deviceStep = narrator?.step('reading the target');
   const device = await gatherDevice({
     bundleId: wiring.bundleId,
     selector: options.target,
   });
   deviceStep?.done(device.target ? device.target.name : 'no target');
+  const deviceMs = deviceTimer();
 
   try {
     const cio = await cioContext();
+    const workspaceTimer = stopwatch();
     const workspaceStep = narrator?.step('resolving the workspace');
     const workspace = await gatherWorkspace({
       cio,
@@ -206,28 +213,33 @@ async function climb(
       cacheKey: projectPath,
     });
     workspaceStep?.done(workspace.resolution?.workspace?.id ?? 'unresolved');
-    ladder.adopt(workspaceReady(workspace, wiring.apsEnvironment));
+    ladder.adopt(
+      workspaceReady(workspace, wiring.apsEnvironment),
+      workspaceTimer()
+    );
     if (ladder.halted) {
       skipRest(ladder, ['device_ready', 'profile_linked']);
       return wiring.model.projectName;
     }
 
-    ladder.adopt(deviceReady(device, wiring.bundleId));
+    ladder.adopt(deviceReady(device, wiring.bundleId), deviceMs);
     if (ladder.halted) {
       skipRest(ladder, ['profile_linked']);
       return wiring.model.projectName;
     }
 
-    ladder.adopt(
-      await profileLinked({
-        cio,
-        environmentId: workspace.resolution?.workspace?.id,
-        userId: device.sdk?.userId,
-        anonymousId: device.sdk?.anonymousId,
-        token: device.sdk?.pushDeviceToken,
-        bundleId: wiring.bundleId,
-      })
-    );
+    const profileTimer = stopwatch();
+    const profileStep = narrator?.step('checking the profile');
+    const profile = await profileLinked({
+      cio,
+      environmentId: workspace.resolution?.workspace?.id,
+      userId: device.sdk?.userId,
+      anonymousId: device.sdk?.anonymousId,
+      token: device.sdk?.pushDeviceToken,
+      bundleId: wiring.bundleId,
+    });
+    profileStep?.done();
+    ladder.adopt(profile, profileTimer());
 
     await matrix(ladder, options, states, narrator, {
       target: device.target,
@@ -350,8 +362,12 @@ async function emit(
       'utf8'
     );
   }
+  const totalMs =
+    new Date(built.finishedAt).getTime() - new Date(built.startedAt).getTime();
   process.stdout.write(
-    options.json ? `${JSON.stringify(built, null, 2)}\n` : ladder.render()
+    options.json
+      ? `${JSON.stringify(built, null, 2)}\n`
+      : ladder.render(totalMs)
   );
 }
 
@@ -384,24 +400,30 @@ async function climbAndroid(
   states?: AppState[],
   narrator?: Narrator
 ): Promise<string | undefined> {
+  const wiringTimer = stopwatch();
+  const wiringStep = narrator?.step('reading the project');
   const wiring = await androidWiring({
     projectPath,
     appModuleName: options.appModule,
   });
-  ladder.adopt(wiring.rung);
+  wiringStep?.done(wiring.model?.appModuleName ?? 'no app module');
+  ladder.adopt(wiring.rung, wiringTimer());
   if (ladder.halted || !wiring.model) {
     skipRest(ladder, ['workspace_ready', 'device_ready', 'profile_linked']);
     return wiring.model?.appModuleName;
   }
 
+  const deviceTimer = stopwatch();
   const deviceStep = narrator?.step('reading the emulator');
   const device = await gatherAndroidDevice({
     packageName: wiring.applicationId,
     selector: options.target,
   });
   deviceStep?.done(device.target ? device.target.serial : 'no emulator');
+  const deviceMs = deviceTimer();
 
   const cio = await cioContext();
+  const workspaceTimer = stopwatch();
   const workspaceStep = narrator?.step('resolving the workspace');
   const workspace = await gatherWorkspace({
     cio,
@@ -411,28 +433,30 @@ async function climbAndroid(
     cacheKey: projectPath,
   });
   workspaceStep?.done(workspace.resolution?.workspace?.id ?? 'unresolved');
-  ladder.adopt(workspaceReady(workspace));
+  ladder.adopt(workspaceReady(workspace), workspaceTimer());
   if (ladder.halted) {
     skipRest(ladder, ['device_ready', 'profile_linked']);
     return wiring.model.appModuleName;
   }
 
-  ladder.adopt(androidDeviceReady(device, wiring.applicationId));
+  ladder.adopt(androidDeviceReady(device, wiring.applicationId), deviceMs);
   if (ladder.halted) {
     skipRest(ladder, ['profile_linked']);
     return wiring.model.appModuleName;
   }
 
-  ladder.adopt(
-    await profileLinked({
-      cio,
-      environmentId: workspace.resolution?.workspace?.id,
-      userId: device.sdk?.userId,
-      anonymousId: device.sdk?.anonymousId,
-      token: device.sdk?.deviceToken,
-      bundleId: wiring.applicationId,
-    })
-  );
+  const profileTimer = stopwatch();
+  const profileStep = narrator?.step('checking the profile');
+  const profile = await profileLinked({
+    cio,
+    environmentId: workspace.resolution?.workspace?.id,
+    userId: device.sdk?.userId,
+    anonymousId: device.sdk?.anonymousId,
+    token: device.sdk?.deviceToken,
+    bundleId: wiring.applicationId,
+  });
+  profileStep?.done();
+  ladder.adopt(profile, profileTimer());
 
   await androidMatrix(ladder, options, states, narrator, {
     serial: device.target?.serial,

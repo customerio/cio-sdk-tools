@@ -95,7 +95,7 @@ test('a narrated step heartbeats, closes once, and uses lines when not a termina
   });
   const step = narrator.step('waiting');
   await new Promise((resolve) => setTimeout(resolve, 55));
-  step.done('counted');
+  const took = step.done('counted');
   step.done('counted again');
 
   assert.strictEqual(written[0], 'waiting...\n');
@@ -103,6 +103,16 @@ test('a narrated step heartbeats, closes once, and uses lines when not a termina
     written.filter((line) => line.includes('still waiting')).length >= 2,
     'expected heartbeats'
   );
-  assert.strictEqual(written[written.length - 1], 'waiting... counted\n');
+  // The closing line carries the elapsed time, and the step reports it to its caller so a
+  // phase can be timed without a second clock.
+  assert.match(written[written.length - 1], /^waiting\.\.\. counted \(\d+ms\)\n$/);
+  assert.ok(took >= 50, `expected a measured duration, got ${took}`);
   assert.ok(!written.some((line) => line.includes('counted again')), 'done was not idempotent');
+});
+
+test('a silent narrator still times its steps, because --json is where timings matter', async () => {
+  const narrator = createNarrator({ json: true, out: { write: () => {} } });
+  const step = narrator.step('working');
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.ok(step.done() >= 25, 'a silenced step reported no duration');
 });

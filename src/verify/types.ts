@@ -38,6 +38,12 @@ export interface Rung {
   checks: Check[];
   /** Set when the rung did not run at all, which is not the same as passing. */
   skipped?: string;
+  /**
+   * Wall time spent producing this rung's evidence, which is not the same as the time
+   * between rungs: the device is read before the workspace rung is evaluated though it is
+   * reported after it, so each duration is attributed to the rung whose facts it bought.
+   */
+  durationMs?: number;
 }
 
 export interface MatrixCell {
@@ -47,6 +53,8 @@ export interface MatrixCell {
   evidence: string[];
   /** As returned by the send, for correlating against the log. */
   deliveryId?: string;
+  /** Staging the app state, sending, and following the push to the metric. */
+  durationMs?: number;
 }
 
 /**
@@ -63,6 +71,8 @@ export interface MatrixSection {
     evidencePath?: string;
     unavailableReason?: string;
   };
+  /** The whole matrix, including the pauses between cells. */
+  durationMs?: number;
 }
 
 export interface ReportedCause {

@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { resolveCause } from './causes';
+import { formatMs } from './clock';
 import {
   Check,
   EXIT,
@@ -35,7 +36,8 @@ export class Ladder {
    * Take a rung a checker assembled on its own, and halt if it failed. Rungs are built
    * outside the ladder so each one can be unit-tested without a climb around it.
    */
-  adopt(rung: Rung): Rung {
+  adopt(rung: Rung, durationMs?: number): Rung {
+    if (durationMs !== undefined) rung.durationMs = durationMs;
     this.rungs.push(rung);
     if (Ladder.verdictOf(rung) === 'fail') this.halt();
     return rung;
@@ -137,12 +139,16 @@ export class Ladder {
     };
   }
 
-  render(): string {
+  render(totalMs?: number): string {
     const out: string[] = [''];
 
     this.rungs.forEach((rung, index) => {
       const verdict = Ladder.verdictOf(rung);
-      const suffix = rung.skipped ? chalk.dim('   (skipped)') : '';
+      const suffix = rung.skipped
+        ? chalk.dim('   (skipped)')
+        : rung.durationMs !== undefined
+        ? chalk.dim(`   ${formatMs(rung.durationMs)}`)
+        : '';
       out.push(`  ${index + 1}  ${chalk.bold(rung.title)}${suffix}`);
       if (rung.skipped) out.push(`     ${chalk.dim(rung.skipped)}`);
 
@@ -190,6 +196,9 @@ export class Ladder {
     } else {
       out.push(chalk.green('  preflight passed.'));
     }
+    if (totalMs !== undefined) {
+      out.push(chalk.dim(`  ${formatMs(totalMs)} total.`));
+    }
     out.push('');
     return out.join('\n');
   }
@@ -198,6 +207,10 @@ export class Ladder {
     const out: string[] = [
       `  ${chalk.bold(`${section.metric} matrix`)}${
         section.logs?.how ? chalk.dim(`   (${section.logs.how})`) : ''
+      }${
+        section.durationMs !== undefined
+          ? chalk.dim(`   ${formatMs(section.durationMs)}`)
+          : ''
       }`,
     ];
 
@@ -207,7 +220,11 @@ export class Ladder {
     }
 
     for (const cell of section.cells) {
-      out.push(`     ${glyph(cell.verdict)} ${cell.state.padEnd(11)}`);
+      const took =
+        cell.durationMs !== undefined
+          ? chalk.dim(formatMs(cell.durationMs))
+          : '';
+      out.push(`     ${glyph(cell.verdict)} ${cell.state.padEnd(11)} ${took}`);
       for (const line of cell.evidence) out.push(`         ${chalk.dim(line)}`);
       if (cell.cause && cell.verdict !== 'pass') {
         out.push(`         ${chalk.dim(cell.cause)}`);

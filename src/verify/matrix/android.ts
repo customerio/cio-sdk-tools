@@ -10,6 +10,7 @@ import { setAndroidState } from './android_states';
 import { LogCapture } from './logs';
 import { sendVerifyPush } from './send';
 import { ALL_STATES, AppState } from './states';
+import { stopwatch } from '../clock';
 
 export interface AndroidMatrixOptions {
   dryRun?: boolean;
@@ -51,15 +52,20 @@ export async function runAndroidDeliveredMatrix(
     },
   };
 
+  const sectionTimer = stopwatch();
   try {
     if (capture.available) await sleep(1_500);
     const seenIds = new Set<string>();
     for (const state of states) {
-      section.cells.push(await runCell(state, options, capture, seenIds));
+      const cellTimer = stopwatch();
+      const cell = await runCell(state, options, capture, seenIds);
+      cell.durationMs = cellTimer();
+      section.cells.push(cell);
       await sleep(5_000);
     }
   } finally {
     await capture.stop();
+    section.durationMs = sectionTimer();
   }
 
   return section;

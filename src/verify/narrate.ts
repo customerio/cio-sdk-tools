@@ -14,9 +14,12 @@
  * Never emitted with `--json`. Narration is for people; mixing it into a machine stream is
  * how a parser ends up with prose in it.
  */
+import chalk from 'chalk';
+import { formatMs, stopwatch } from './clock';
+
 export interface Step {
-  /** Closes the line. `note` replaces the default "done". */
-  done(note?: string): void;
+  /** Closes the line. `note` replaces the default "done". Returns the elapsed ms. */
+  done(note?: string): number;
 }
 
 export interface Narrator {
@@ -43,23 +46,30 @@ export function createNarrator(options: {
 
   return {
     step(message: string): Step {
+      const elapsed = stopwatch();
       out.write(multiline ? `${message}...\n` : `  ${message}...`);
       const timer = setInterval(() => {
-        out.write(multiline ? `${message}... still waiting\n` : '.');
+        // The heartbeat carries the elapsed time too, so a long wait is legible while it
+        // is still happening rather than only in hindsight.
+        out.write(
+          multiline
+            ? `${message}... still waiting (${formatMs(elapsed())})\n`
+            : '.'
+        );
       }, interval);
       timer.unref?.();
 
       let closed = false;
+      let took = 0;
       return {
         done(note?: string) {
-          if (closed) return;
+          if (closed) return took;
           closed = true;
+          took = elapsed();
           clearInterval(timer);
-          out.write(
-            multiline
-              ? `${message}... ${note ?? 'done'}\n`
-              : `${note ?? 'done'}\n`
-          );
+          const tail = `${note ?? 'done'} ${chalk.dim(`(${formatMs(took)})`)}`;
+          out.write(multiline ? `${message}... ${tail}\n` : `${tail}\n`);
+          return took;
         },
       };
     },
@@ -71,7 +81,11 @@ export function createNarrator(options: {
 
 function silent(): Narrator {
   return {
-    step: () => ({ done: () => undefined }),
+    // Still timed, so a caller can use the step's own number under `--json`.
+    step: () => {
+      const elapsed = stopwatch();
+      return { done: () => elapsed() };
+    },
     say: () => undefined,
   };
 }

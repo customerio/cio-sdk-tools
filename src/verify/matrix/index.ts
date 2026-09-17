@@ -14,6 +14,7 @@ import {
 } from './logs';
 import { sendVerifyPush } from './send';
 import { ALL_STATES, AppState, setAppState } from './states';
+import { stopwatch } from '../clock';
 
 export interface MatrixOptions {
   /** Exercise every step except the send itself. */
@@ -70,19 +71,24 @@ export async function runDeliveredMatrix(
     },
   };
 
+  const sectionTimer = stopwatch();
   try {
     // Give the stream a moment to attach, or the first cell's lines are simply missing.
     if (capture.available) await sleep(2_500);
 
     const seenIds = new Set<string>();
     for (const state of states) {
-      section.cells.push(await runCell(state, options, capture, seenIds));
+      const cellTimer = stopwatch();
+      const cell = await runCell(state, options, capture, seenIds);
+      cell.durationMs = cellTimer();
+      section.cells.push(cell);
       // Sustained sends to one token appear to throttle; a pause between cells costs
       // nothing and removes a whole class of confusing near-misses.
       await sleep(8_000);
     }
   } finally {
     await capture.stop();
+    section.durationMs = sectionTimer();
   }
 
   return section;
