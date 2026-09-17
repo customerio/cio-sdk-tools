@@ -3,7 +3,7 @@ import { createWriteStream, WriteStream } from 'fs';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { adb, adbPath } from '../android/adb';
-import { LogCapture, LogLine } from './logs';
+import { LogCapture, LogLine, trackCapture } from './logs';
 
 /**
  * Android's log needs no extra tooling and no root — `adb logcat` gives the SDK's debug
@@ -41,6 +41,7 @@ export async function startAndroidCapture(
     '-v',
     'time',
   ]);
+  trackCapture(child);
 
   const lines: LogLine[] = [];
   let buffer = '';

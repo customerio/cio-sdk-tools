@@ -106,6 +106,16 @@ export async function startCapture(
   // `-p` and `-K` are mutually exclusive, and passing both makes idevicesyslog print
   // usage and exit — which read as "the app logged nothing" and accused a working
   // extension three times over. A process filter excludes the kernel anyway.
+  const attached = await existingDeviceStream(target.udid);
+  if (attached) {
+    return {
+      ...NOT_CAPTURING,
+      unavailableReason:
+        `idevicesyslog (pid ${attached}) is already attached to this device, so a second ` +
+        'stream would read nothing — stop it and run again',
+    };
+  }
+
   const filter = processNames.filter(Boolean).join('|');
   const args = filter
     ? ['-u', target.udid, '-p', filter]
@@ -118,6 +128,24 @@ export async function startCapture(
     filter ? `idevicesyslog -p "${filter}"` : 'idevicesyslog (unfiltered)',
     evidencePath
   );
+}
+
+/**
+ * `idevicesyslog` already attached to this device?
+ *
+ * The simulator path has had this check for a while; the device path did not, and the
+ * consequence is worse there — an orphan survives across runs, and the second attach reads
+ * as an extension that never ran.
+ */
+async function existingDeviceStream(udid: string): Promise<string | undefined> {
+  const { stdout, code } = await run(
+    'pgrep',
+    ['-f', `idevicesyslog -u ${udid}`],
+    10_000
+  );
+  if (code !== 0) return undefined;
+  const pid = stdout.trim().split('\n')[0];
+  return pid && pid !== String(process.pid) ? pid : undefined;
 }
 
 async function existingSimulatorStream(
@@ -133,6 +161,40 @@ async function existingSimulatorStream(
   return pid && pid !== String(process.pid) ? pid : undefined;
 }
 
+/**
+ * Every live capture, so an interrupt cannot leave one attached.
+ *
+ * `stop()` runs on the happy path only, and a run that is interrupted — or that throws
+ * before its `finally` — used to orphan the stream. That is not merely untidy: a leftover
+ * stream against the same target makes the *next* run's capture silently return nothing,
+ * which is the exact condition this module works hardest to tell apart from an SDK that
+ * did nothing. One was found alive 25 hours after the run that started it.
+ */
+const live = new Set<ChildProcess>();
+let cleanupInstalled = false;
+
+export function trackCapture(child: ChildProcess): void {
+  track(child);
+}
+
+function track(child: ChildProcess): void {
+  live.add(child);
+  child.once('exit', () => live.delete(child));
+  if (cleanupInstalled) return;
+  cleanupInstalled = true;
+  const killAll = (): void => {
+    for (const process of live) process.kill('SIGKILL');
+    live.clear();
+  };
+  process.once('exit', killAll);
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+    process.once(signal, () => {
+      killAll();
+      process.exit(130);
+    });
+  }
+}
+
 /** Bounded so an unfiltered device log cannot exhaust memory mid-run. */
 const MAX_RETAINED_LINES = 40_000;
 
@@ -144,6 +206,7 @@ async function streamProcess(
   evidencePath?: string
 ): Promise<LogCapture> {
   const child: ChildProcess = spawn(command, args);
+  track(child);
   const lines: LogLine[] = [];
   let buffer = '';
   let stderr = '';

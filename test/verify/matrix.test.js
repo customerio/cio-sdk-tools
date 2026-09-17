@@ -206,3 +206,25 @@ test('an extension that runs and never forwards is its own cause, not a failed r
     { verdict: 'fail', cause: 'runtime.nse_did_not_forward' }
   );
 });
+
+test('an interrupted run cannot leave a log stream attached', () => {
+  const { trackCapture } = require('../../dist/verify/matrix/logs');
+  const before = process.listenerCount('SIGINT');
+  const killed = [];
+  const fake = {
+    kill: (signal) => killed.push(signal),
+    once: (event, handler) => (event === 'exit' ? undefined : handler),
+  };
+  trackCapture(fake);
+  // The handlers are installed once, whatever the number of captures.
+  trackCapture(fake);
+  assert.ok(
+    process.listenerCount('SIGINT') >= before,
+    'no interrupt handler was installed'
+  );
+
+  // The exit path kills what is still live: a leftover stream against the same target
+  // makes the next run's capture silently return nothing.
+  process.emit('exit', 0);
+  assert.deepStrictEqual(killed, ['SIGKILL']);
+});
