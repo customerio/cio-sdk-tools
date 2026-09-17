@@ -178,6 +178,10 @@ async function chooseStates(
 ): Promise<AppState[] | undefined> {
   if (!input.send) return input.states;
   if (input.states) return input.states;
+  // The one question with an obvious answer, so a non-interactive run takes it rather
+  // than refusing: all three states, because a state-dependent failure is a real bug and
+  // the whole point of the matrix is to catch it.
+  if (!input.asker.interactive) return [...ALL_STATES];
   return input.asker.select(
     'How much should be sent?',
     [

@@ -87,6 +87,33 @@ export async function packageInstalled(
  * here: a force-stopped app is not delivered to at all, by design. A developer who stops
  * the app from Settings and then sends a push sees nothing and concludes push is broken.
  */
+/**
+ * When this build went on the device.
+ *
+ * `lastUpdateTime` is the one that matters — `firstInstallTime` survives reinstalls of
+ * later builds, so it answers a different question. Both come out of the `dumpsys package`
+ * call this module already makes for the stopped state, which is why freshness costs
+ * nothing to know on Android and needed the app bundle's mtime on iOS.
+ */
+export function installTimesFrom(dump: string): {
+  firstInstall?: Date;
+  lastUpdate?: Date;
+} {
+  const parse = (label: string): Date | undefined => {
+    const match = dump.match(
+      new RegExp(`${label}=(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})`)
+    );
+    if (!match) return undefined;
+    // dumpsys prints device-local time with no zone, which is the best available.
+    const parsed = new Date(match[1].replace(' ', 'T'));
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  };
+  return {
+    firstInstall: parse('firstInstallTime'),
+    lastUpdate: parse('lastUpdateTime'),
+  };
+}
+
 export async function packageStopped(
   serial: string,
   packageName: string
@@ -100,6 +127,21 @@ export async function packageStopped(
   if (code !== 0) return undefined;
   const match = stdout.match(/User \d+:[^\n]*stopped=(true|false)/);
   return match ? match[1] === 'true' : undefined;
+}
+
+export async function packageInstalledAt(
+  serial: string,
+  packageName: string
+): Promise<Date | undefined> {
+  const { stdout, code } = await adb(serial, [
+    'shell',
+    'dumpsys',
+    'package',
+    packageName,
+  ]);
+  if (code !== 0) return undefined;
+  const times = installTimesFrom(stdout);
+  return times.lastUpdate ?? times.firstInstall;
 }
 
 export async function notificationPermission(

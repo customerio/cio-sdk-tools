@@ -7,6 +7,7 @@ import {
   listAndroidTargets,
   notificationPermission,
   packageInstalled,
+  packageInstalledAt,
   packageStopped,
   readAndroidSdkState,
   selectAndroidTarget,
@@ -21,6 +22,8 @@ export interface AndroidDeviceFacts {
   installed: boolean;
   stopped?: boolean;
   permissionGranted?: boolean;
+  /** When this build went on: `lastUpdateTime` from the dump we already read. */
+  installedAt?: Date;
   network?: Connectivity;
   sdk?: AndroidSdkState;
 }
@@ -45,6 +48,10 @@ export async function gatherAndroidDevice(options: {
   if (!facts.installed) return facts;
 
   facts.stopped = await packageStopped(target.serial, options.packageName);
+  facts.installedAt = await packageInstalledAt(
+    target.serial,
+    options.packageName
+  );
   facts.permissionGranted = await notificationPermission(
     target.serial,
     options.packageName

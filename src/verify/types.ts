@@ -121,6 +121,12 @@ export interface Report {
    * rendering both as a tick hid that.
    */
   provenance: 'read' | 'observed';
+  /**
+   * Things worth knowing that are not findings. Freshness lives here: a run against a
+   * week-old build can be perfectly green, so its age is advice for whoever orchestrates
+   * the install, never an assertion about the integration.
+   */
+  advice?: string[];
   /** `warn` means every assertion passed but something is worth a developer's attention. */
   verdict: Verdict;
   /** The failing and warning checks, in ladder order, resolved against the registry. */

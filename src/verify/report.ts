@@ -256,6 +256,11 @@ export function createReporter(options: {
         body.push('');
       }
 
+      for (const note of report.advice ?? []) {
+        body.push(`  ${chalk.dim('fyi')}  ${chalk.dim(note)}`);
+        body.push('');
+      }
+
       const failing = report.rungs.find((rung) =>
         rung.checks.some((check) => check.verdict === 'fail')
       );

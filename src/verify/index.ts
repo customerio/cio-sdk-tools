@@ -8,7 +8,21 @@ import { stopwatch } from './clock';
 import { PushProvider } from './cio/push';
 import { Ladder } from './ladder';
 import { Level, Reporter, createReporter } from './report';
-import { MissingInput, createAsker, describeMissingInput } from './prompt';
+import {
+  Asker,
+  MissingInput,
+  createAsker,
+  describeMissingInput,
+} from './prompt';
+import { freshness, watchFor } from './observe';
+import { startAndroidCapture } from './matrix/android_logs';
+import { startCapture } from './matrix/logs';
+import {
+  Target as IosTarget,
+  listTargets,
+  locateApp,
+  readSdkState,
+} from './ios/device';
 import {
   Selection,
   selectionFacts,
@@ -20,6 +34,7 @@ import { XcodeProjectModel, loadProject } from './ios/xcode';
 import { runDeliveredMatrix } from './matrix';
 import { runAndroidDeliveredMatrix } from './matrix/android';
 import { ALL_STATES, AppState } from './matrix/states';
+import { packageInstalled, readAndroidSdkState } from './android/device';
 import {
   androidDeviceReady,
   gatherAndroidDevice,
@@ -52,6 +67,7 @@ type VerifyPushOptions = {
   verbose: boolean;
   package?: string;
   nonInteractive: boolean;
+  observe: boolean;
   states?: string;
   evidence?: string;
 };
@@ -94,6 +110,11 @@ const pushCommand = new Command('push')
   .option(
     '--non-interactive',
     'never prompt; every choice must come from a flag',
+    false
+  )
+  .option(
+    '--observe',
+    'watch the install, the token and the login happen, instead of reading what they left behind',
     false
   )
   .option(
@@ -246,7 +267,7 @@ async function verifyPush(
     selectionFacts(selection)
   );
 
-  const projectName =
+  const climbed =
     detected.platform === 'android'
       ? await climbAndroid(
           ladder,
@@ -255,7 +276,8 @@ async function verifyPush(
           reporter,
           cio,
           selection,
-          model as AndroidProjectModel
+          model as AndroidProjectModel,
+          asker
         )
       : await climb(
           ladder,
@@ -264,14 +286,21 @@ async function verifyPush(
           reporter,
           cio,
           selection,
-          model as XcodeProjectModel
+          model as XcodeProjectModel,
+          asker
         );
 
   const built = ladder.toReport({
     schema: 1,
-    // Everything this command reads today is recovered after the fact. `observed` arrives
-    // with the flow that holds a capture open across install, launch and login.
-    provenance: 'read',
+    // `observed` is only claimed when the run actually watched a fact appear. An agent
+    // that installed the build before calling us leaves nothing to watch, and that run is
+    // honestly a `read` — the freshness note is where its recency shows up.
+    provenance: climbed.observed ? 'observed' : 'read',
+    advice: climbed.freshnessNote
+      ? [
+          `${climbed.freshnessNote} — a run that watches a fresh install proves more; see --observe`,
+        ]
+      : undefined,
     tool: { name: packageJson.name, version: packageJson.version },
     command: 'verify push',
     startedAt,
@@ -279,12 +308,20 @@ async function verifyPush(
     project: {
       path: detected.path,
       framework: detected.platform === 'android' ? 'Android' : 'iOS',
-      name: projectName,
+      name: climbed.projectName,
     },
   });
 
   await emit(built, reporter, options);
   return built.exitCode;
+}
+
+interface ClimbResult {
+  projectName?: string;
+  /** True when the run watched a fact appear rather than reading it afterwards. */
+  observed?: boolean;
+  /** Advice, never an assertion: how old the build under test is. */
+  freshnessNote?: string;
 }
 
 /**
@@ -299,8 +336,9 @@ async function climb(
   reporter: Reporter,
   cio: CioContext,
   selection: Selection,
-  model: XcodeProjectModel
-): Promise<string | undefined> {
+  model: XcodeProjectModel,
+  asker: Asker
+): Promise<ClimbResult> {
   const wiringRung = reporter.rung(RUNG_TITLES.project_wiring);
   wiringRung.phase('reading the project');
   const wiring = await projectWiring({
@@ -318,12 +356,33 @@ async function climb(
       'device_ready',
       'profile_linked',
     ]);
-    return wiring.model.projectName;
+    return { projectName: wiring.model.projectName };
   }
 
   // The device is read before the workspace rung is evaluated, though it is reported after
   // it: the siteId the SDK stored on the device is the only thing tying this build to a
   // workspace, so rung 2's subject comes out of rung 3's evidence.
+  // Observed mode watches the facts appear before anything reads them.
+  let observed = false;
+  if (options.observe && selection.targetSelector && wiring.bundleId) {
+    const chosen = (await listTargets()).find(
+      (candidate: IosTarget) =>
+        candidate.udid === selection.targetSelector ||
+        candidate.name === selection.targetSelector
+    );
+    if (chosen) {
+      const watch = await observeIos({
+        target: chosen,
+        bundleId: wiring.bundleId,
+        reporter,
+        asker,
+        evidenceDirectory: options.evidence,
+        processNames: wiring.processNames,
+      });
+      observed = watch.observed;
+    }
+  }
+
   const deviceTimer = stopwatch();
   const deviceRung = reporter.rung(RUNG_TITLES.device_ready);
   deviceRung.phase('reading the target');
@@ -347,7 +406,7 @@ async function climb(
     workspaceRung.done(ready);
     if (ladder.halted) {
       skipRest(ladder, reporter, ['device_ready', 'profile_linked']);
-      return wiring.model.projectName;
+      return { projectName: wiring.model.projectName };
     }
 
     const deviceRungResult = deviceReady(device, wiring.bundleId);
@@ -355,7 +414,7 @@ async function climb(
     deviceRung.done(deviceRungResult);
     if (ladder.halted) {
       skipRest(ladder, reporter, ['profile_linked']);
-      return wiring.model.projectName;
+      return { projectName: wiring.model.projectName };
     }
 
     const profileTimer = stopwatch();
@@ -384,11 +443,216 @@ async function climb(
       sandbox: wiring.apsEnvironment !== 'production',
       processNames: wiring.processNames,
     });
-    return wiring.model.projectName;
+    return {
+      projectName: wiring.model.projectName,
+      observed,
+      freshnessNote: freshness({
+        installedAt: device.freshness?.installedAt,
+        observed,
+      }).note,
+    };
   } finally {
     // Anything pulled off a physical device lives in a temp directory.
     await device.cleanup?.();
   }
+}
+
+/**
+ * Observed mode, Android.
+ *
+ * A capture opens before anything else, because the interesting failures are the ones
+ * where nothing appears — a token that never arrives has its reason in the log, and that
+ * is exactly the run where an after-the-fact read has nothing to show. The capture is
+ * stopped before the climb continues: two concurrent log streams on one target return
+ * nothing at all, and the matrix opens its own.
+ */
+async function observeAndroid(input: {
+  serial: string;
+  packageName: string;
+  reporter: Reporter;
+  asker: Asker;
+  evidenceDirectory?: string;
+}): Promise<{ observed: boolean; evidencePath?: string; notes: string[] }> {
+  const handle = input.reporter.rung('Observing');
+  const capture = await startAndroidCapture(
+    input.serial,
+    input.evidenceDirectory
+  );
+  const notes: string[] = [];
+  let observed = false;
+
+  try {
+    const installed = await watchFor(
+      {
+        label: 'app installed',
+        instruction: `Install and launch the build on ${input.serial}.`,
+        probe: async () =>
+          (await packageInstalled(input.serial, input.packageName))
+            ? true
+            : undefined,
+      },
+      askerPhases(input, handle)
+    );
+    if (installed.timedOut) {
+      notes.push('the app was never installed while watching');
+      return { observed, evidencePath: capture.evidencePath, notes };
+    }
+    if (installed.at) {
+      observed = true;
+      notes.push('watched the app appear on the target');
+    }
+
+    const token = await watchFor(
+      {
+        label: 'push token',
+        instruction:
+          'Launch the app, and allow notifications, so the SDK registers a token.',
+        probe: async () =>
+          (await readAndroidSdkState(input.serial, input.packageName))
+            .deviceToken,
+      },
+      askerPhases(input, handle)
+    );
+    if (token.at) {
+      observed = true;
+      notes.push('watched the SDK register a push token');
+    } else if (token.timedOut) {
+      notes.push('no push token appeared while watching');
+    }
+
+    const identity = await watchFor(
+      {
+        label: 'login',
+        instruction: 'Log in on the device so the SDK identifies a profile.',
+        probe: async () =>
+          (await readAndroidSdkState(input.serial, input.packageName)).userId,
+      },
+      askerPhases(input, handle)
+    );
+    if (identity.at) {
+      observed = true;
+      notes.push(`watched a login as ${identity.value}`);
+    } else if (identity.timedOut) {
+      notes.push('nobody logged in while watching');
+    }
+  } finally {
+    await capture.stop();
+    handle.done({
+      id: 'device_ready',
+      title: 'Observing',
+      checks: [],
+      skipped: notes.join('; ') || 'nothing left to watch',
+    });
+  }
+
+  return { observed, evidencePath: capture.evidencePath, notes };
+}
+
+/** Observed mode, iOS. Same shape; the probes read the simulator or device container. */
+async function observeIos(input: {
+  target: Parameters<typeof startCapture>[0];
+  bundleId: string;
+  reporter: Reporter;
+  asker: Asker;
+  evidenceDirectory?: string;
+  processNames?: string[];
+}): Promise<{ observed: boolean; evidencePath?: string; notes: string[] }> {
+  const handle = input.reporter.rung('Observing');
+  const capture = await startCapture(
+    input.target,
+    input.evidenceDirectory,
+    input.processNames ?? []
+  );
+  const notes: string[] = [];
+  let observed = false;
+
+  const read = async () => {
+    const located = await locateApp(input.target, input.bundleId);
+    if (!located.installed || !located.preferences) return undefined;
+    const state = await readSdkState(located.preferences, input.bundleId);
+    await located.cleanup?.();
+    return state;
+  };
+
+  try {
+    const installed = await watchFor(
+      {
+        label: 'app installed',
+        instruction: `Install and launch the build on ${input.target.name}.`,
+        probe: async () =>
+          (await locateApp(input.target, input.bundleId)).installed
+            ? true
+            : undefined,
+      },
+      askerPhases(input, handle)
+    );
+    if (installed.timedOut) {
+      notes.push('the app was never installed while watching');
+      return { observed, evidencePath: capture.evidencePath, notes };
+    }
+    if (installed.at) {
+      observed = true;
+      notes.push('watched the app appear on the target');
+    }
+
+    const token = await watchFor(
+      {
+        label: 'push token',
+        instruction:
+          'Launch the app, and allow notifications, so the SDK registers a token.',
+        probe: async () => (await read())?.pushDeviceToken,
+      },
+      askerPhases(input, handle)
+    );
+    if (token.at) {
+      observed = true;
+      notes.push('watched the SDK register a push token');
+    } else if (token.timedOut) {
+      notes.push('no push token appeared while watching');
+    }
+
+    const identity = await watchFor(
+      {
+        label: 'login',
+        instruction: 'Log in on the device so the SDK identifies a profile.',
+        probe: async () => (await read())?.userId,
+      },
+      askerPhases(input, handle)
+    );
+    if (identity.at) {
+      observed = true;
+      notes.push(`watched a login as ${identity.value}`);
+    } else if (identity.timedOut) {
+      notes.push('nobody logged in while watching');
+    }
+  } finally {
+    await capture.stop();
+    handle.done({
+      id: 'device_ready',
+      title: 'Observing',
+      checks: [],
+      skipped: notes.join('; ') || 'nothing left to watch',
+    });
+  }
+
+  return { observed, evidencePath: capture.evidencePath, notes };
+}
+
+function askerPhases(
+  input: { reporter: Reporter; asker: Asker },
+  handle: { phase(text: string): void }
+): {
+  asker: Asker;
+  onPhase: (text: string) => void;
+  onInstruction: (text: string) => void;
+} {
+  return {
+    asker: input.asker,
+    onPhase: (text) => handle.phase(text),
+    // Instructions are for a person; an agent that has already installed the build never
+    // sees them, because the probe is true on the first tick.
+    onInstruction: (text) => input.reporter.note(text),
+  };
 }
 
 function skipRest(ladder: Ladder, reporter: Reporter, ids: RungId[]): void {
@@ -537,8 +801,9 @@ async function climbAndroid(
   reporter: Reporter,
   cio: CioContext,
   selection: Selection,
-  model: AndroidProjectModel
-): Promise<string | undefined> {
+  model: AndroidProjectModel,
+  asker: Asker
+): Promise<ClimbResult> {
   const wiringRung = reporter.rung(RUNG_TITLES.project_wiring);
   wiringRung.phase('reading the project');
   const wiring = await androidWiring({
@@ -554,15 +819,28 @@ async function climbAndroid(
       'device_ready',
       'profile_linked',
     ]);
-    return wiring.model?.appModuleName;
+    return { projectName: wiring.model?.appModuleName };
+  }
+
+  // The project says which ids it *can* build; the chosen variant says which one is
+  // installed, and they differ the moment an applicationIdSuffix is in play.
+  const packageName = selection.packageName ?? wiring.applicationId;
+
+  let observed = false;
+  if (options.observe && selection.targetSelector && packageName) {
+    const watch = await observeAndroid({
+      serial: selection.targetSelector,
+      packageName,
+      reporter,
+      asker,
+      evidenceDirectory: options.evidence,
+    });
+    observed = watch.observed;
   }
 
   const deviceTimer = stopwatch();
   const deviceRung = reporter.rung(RUNG_TITLES.device_ready);
   deviceRung.phase('reading the emulator');
-  // The project says which ids it *can* build; the chosen variant says which one is
-  // installed, and they differ the moment an applicationIdSuffix is in play.
-  const packageName = selection.packageName ?? wiring.applicationId;
   const device = await gatherAndroidDevice({
     packageName,
     selector: selection.targetSelector,
@@ -582,7 +860,7 @@ async function climbAndroid(
   workspaceRung.done(ready);
   if (ladder.halted) {
     skipRest(ladder, reporter, ['device_ready', 'profile_linked']);
-    return wiring.model.appModuleName;
+    return { projectName: wiring.model.appModuleName };
   }
 
   const deviceRungResult = androidDeviceReady(device, packageName);
@@ -590,7 +868,7 @@ async function climbAndroid(
   deviceRung.done(deviceRungResult);
   if (ladder.halted) {
     skipRest(ladder, reporter, ['profile_linked']);
-    return wiring.model.appModuleName;
+    return { projectName: wiring.model.appModuleName };
   }
 
   const profileTimer = stopwatch();
@@ -610,6 +888,11 @@ async function climbAndroid(
   ladder.adopt(profile, profileTimer());
   profileRung.done(profile);
 
+  const androidFreshness = freshness({
+    installedAt: device.installedAt,
+    observed,
+  });
+
   await androidMatrix(ladder, options, reporter, selection.states, {
     serial: device.target?.serial,
     packageName,
@@ -617,7 +900,11 @@ async function climbAndroid(
     token: device.sdk?.deviceToken,
   });
 
-  return wiring.model.appModuleName;
+  return {
+    projectName: wiring.model.appModuleName,
+    observed,
+    freshnessNote: androidFreshness.note,
+  };
 }
 
 async function androidMatrix(
