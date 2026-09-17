@@ -1,5 +1,11 @@
 import { CioContext } from '../cio/cli';
-import { Profile, findProfile } from '../cio/push';
+import {
+  IdentityHit,
+  Profile,
+  findIdentityElsewhere,
+  findProfile,
+} from '../cio/push';
+import { Workspace } from '../cio/workspace';
 import { fail, pass, warn } from '../ladder';
 import { RUNG_TITLES, Rung } from '../types';
 
@@ -10,6 +16,14 @@ export interface ProfileInput {
   anonymousId?: string;
   token?: string;
   bundleId?: string;
+  /**
+   * The other workspaces this login can read. Only used when the chosen one disappoints:
+   * an identity or a device found elsewhere turns "no profile here" into "here is where
+   * your app is actually reporting", which is the whole point of choosing a workspace
+   * rather than inferring one.
+   */
+  candidates?: Workspace[];
+  onSweep?: (workspace: Workspace) => void;
 }
 
 /**
@@ -46,18 +60,39 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
   }
 
   const profile = await findProfile(input.environmentId, identifier);
+  const linked = profile?.devices.some((device) => device.id === input.token);
+
+  // Sweep only when the chosen workspace has not answered the question.
+  const hits = !profile || !linked ? await sweep(input, identifier) : [];
+  const elsewhere = describeHits(hits);
+
   if (!profile) {
     rung.checks.push(
       fail(
         'profile_found',
         `Profile exists for ${identifier}`,
-        'profile.not_found',
+        hits.length > 0
+          ? hits[0].hasToken
+            ? 'profile.device_in_other_workspace'
+            : 'profile.identity_in_other_workspace'
+          : 'profile.not_found',
         [
           `exact match on id and email in environment ${input.environmentId}`,
-          'profile sync runs on a cycle, so a login seconds old may not be there yet',
+          ...elsewhere,
+          // Only worth saying when nothing was found anywhere: once the profile has been
+          // located in another workspace, sync latency is not the explanation.
+          ...(hits.length === 0
+            ? [
+                'profile sync runs on a cycle, so a login seconds old may not be there yet',
+              ]
+            : []),
         ]
       )
     );
+    rung.summary =
+      hits.length > 0
+        ? `found in ${hits[0].workspace.name ?? hits[0].workspace.id}`
+        : 'no profile';
     return rung;
   }
 
@@ -71,9 +106,64 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
   );
 
   rung.checks.push(...deviceLinkChecks(profile, input));
+
+  // The profile is here and the device is not. If the device is on the same identity in
+  // another workspace, that is the explanation, and it outranks "the token is stale".
+  const holder = hits.find((hit) => hit.hasToken);
+  if (!linked && holder) {
+    rung.checks.push(
+      fail(
+        'device_elsewhere',
+        'This device belongs to the chosen workspace',
+        'profile.device_in_other_workspace',
+        describeHits(hits)
+      )
+    );
+  } else if (!linked && hits.length > 0) {
+    rung.checks.push(
+      warn(
+        'identity_elsewhere',
+        'This identity exists only in the chosen workspace',
+        'profile.identity_in_other_workspace',
+        describeHits(hits)
+      )
+    );
+  }
+
   const devices = profile?.devices?.length ?? 0;
-  rung.summary = `${devices} device${devices === 1 ? '' : 's'}`;
+  rung.summary = holder
+    ? `device is in ${holder.workspace.name ?? holder.workspace.id}`
+    : `${devices} device${devices === 1 ? '' : 's'}`;
   return rung;
+}
+
+async function sweep(
+  input: ProfileInput,
+  identifier: string
+): Promise<IdentityHit[]> {
+  if (!input.candidates || input.candidates.length <= 1) return [];
+  return findIdentityElsewhere({
+    identifier,
+    token: input.token,
+    candidates: input.candidates,
+    skip: input.environmentId,
+    onProgress: input.onSweep,
+  });
+}
+
+/** Exported for tests: turning hits into evidence is the part worth pinning. */
+export function describeHits(hits: IdentityHit[]): string[] {
+  if (hits.length === 0) return [];
+  return hits.map(
+    (hit) =>
+      `${hit.hasToken ? 'this device is' : 'this identity is'} in ${
+        hit.workspace.name ?? hit.workspace.id
+      } (${hit.workspace.id})${
+        hit.hasToken
+          ? ''
+          : ` · ${hit.devices} device${hit.devices === 1 ? '' : 's'}`
+      }`
+  );
 }
 
 /** Exported for tests: the linking judgement is pure, the lookup around it is not. */

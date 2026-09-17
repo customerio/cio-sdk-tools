@@ -188,3 +188,80 @@ test('a closed stdin answers immediately instead of looking like a hang', async 
     return true;
   });
 });
+
+// --- the failure-path sweep ----------------------------------------------
+
+const { findIdentityElsewhere } = require('../../dist/verify/cio/push');
+const { describeHits } = require('../../dist/verify/rungs/profile_linked');
+
+test('the sweep says which workspace actually holds the device', async () => {
+  const swept = [];
+  cli.cioApi = async (_path, params) => {
+    swept.push(params.environment_id);
+    // Only 122175 knows this person, and it holds the exact token.
+    if (params.environment_id !== '122175') return { ok: true, data: {} };
+    return {
+      ok: true,
+      data: {
+        customers: [
+          { id: 'cio_1', devices: [{ id: 'TOKEN', attributes: {} }] },
+        ],
+      },
+    };
+  };
+
+  const hits = await findIdentityElsewhere({
+    identifier: 'cli@mo.io',
+    token: 'TOKEN',
+    candidates: [
+      { id: '94996', name: 'Expo' },
+      { id: '122175', name: 'Native' },
+      { id: '68200', name: 'Testing' },
+    ],
+    skip: '94996',
+  });
+
+  assert.ok(!swept.includes('94996'), 'it re-checked the chosen workspace');
+  assert.deepStrictEqual(
+    hits.map((hit) => `${hit.workspace.id}:${hit.hasToken}`),
+    ['122175:true']
+  );
+  assert.deepStrictEqual(describeHits(hits), [
+    'this device is in Native (122175)',
+  ]);
+});
+
+test('an identity found without the token is reported as the weaker finding', () => {
+  const hits = [
+    { workspace: { id: '68200', name: 'Testing' }, cioId: 'c', hasToken: false, devices: 2 },
+  ];
+  assert.deepStrictEqual(describeHits(hits), [
+    'this identity is in Testing (68200) · 2 devices',
+  ]);
+});
+
+test('a workspace holding the device outranks one holding only the name', async () => {
+  cli.cioApi = async (_path, params) => ({
+    ok: true,
+    data: {
+      customers: [
+        {
+          id: 'c',
+          devices:
+            params.environment_id === '122175'
+              ? [{ id: 'TOKEN', attributes: {} }]
+              : [],
+        },
+      ],
+    },
+  });
+  const hits = await findIdentityElsewhere({
+    identifier: 'cli@mo.io',
+    token: 'TOKEN',
+    candidates: [
+      { id: '68200', name: 'Testing' },
+      { id: '122175', name: 'Native' },
+    ],
+  });
+  assert.strictEqual(hits[0].workspace.id, '122175');
+});

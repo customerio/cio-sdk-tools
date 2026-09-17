@@ -292,6 +292,22 @@ export const CAUSES: Record<string, CauseDefinition> = {
     remedy:
       'Log in, or call identify, so the token belongs to a profile a campaign can address. An anonymous token still receives a direct send.',
   },
+  'profile.device_in_other_workspace': {
+    stage: 'profile_linked',
+    severity: 'blocker',
+    summary:
+      'This device is registered in a different workspace from the one you chose.',
+    remedy:
+      'The app is reporting to another workspace: check the CDP API key passed to CustomerIO.initialize against the key for the workspace you picked. Pushes sent from the chosen workspace will never reach this device.',
+  },
+  'profile.identity_in_other_workspace': {
+    stage: 'profile_linked',
+    severity: 'blocker',
+    summary:
+      'The identity this app logged in as exists in a different workspace.',
+    remedy:
+      "Either the app is using another workspace's CDP API key, or this login happened against a different environment. Compare the key in CustomerIO.initialize with the workspace you picked.",
+  },
   'profile.not_found': {
     stage: 'profile_linked',
     severity: 'blocker',

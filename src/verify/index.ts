@@ -367,6 +367,9 @@ async function climb(
       userId: device.sdk?.userId,
       anonymousId: device.sdk?.anonymousId,
       token: device.sdk?.pushDeviceToken,
+      candidates: selection.resolution.candidates,
+      onSweep: (workspace) =>
+        profileRung.phase(`looking in ${workspace.name ?? workspace.id}`),
       bundleId: wiring.bundleId,
     });
     ladder.adopt(profile, profileTimer());
@@ -599,7 +602,10 @@ async function climbAndroid(
     userId: device.sdk?.userId,
     anonymousId: device.sdk?.anonymousId,
     token: device.sdk?.deviceToken,
-    bundleId: wiring.applicationId,
+    candidates: selection.resolution.candidates,
+    onSweep: (workspace) =>
+      profileRung.phase(`looking in ${workspace.name ?? workspace.id}`),
+    bundleId: packageName,
   });
   ladder.adopt(profile, profileTimer());
   profileRung.done(profile);
