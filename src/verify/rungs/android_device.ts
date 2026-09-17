@@ -12,7 +12,7 @@ import {
   selectAndroidTarget,
 } from '../android/device';
 import { fail, pass, warn } from '../ladder';
-import { Check, Rung } from '../types';
+import { Check, RUNG_TITLES, Rung } from '../types';
 
 export interface AndroidDeviceFacts {
   target?: AndroidTarget;
@@ -57,7 +57,11 @@ export function androidDeviceReady(
   facts: AndroidDeviceFacts,
   packageName?: string
 ): Rung {
-  const rung: Rung = { id: 'device_ready', title: 'Device ready', checks: [] };
+  const rung: Rung = {
+    id: 'device_ready',
+    title: RUNG_TITLES.device_ready,
+    checks: [],
+  };
 
   if (!facts.target) {
     if (facts.selector) {
@@ -111,6 +115,14 @@ export function androidDeviceReady(
   if (stopped) rung.checks.push(stopped);
   rung.checks.push(tokenCheck(facts));
   rung.checks.push(identityCheck(facts));
+  rung.summary = [
+    facts.target?.serial,
+    facts.sdk?.deviceToken
+      ? `token ${facts.sdk.deviceToken.slice(0, 8)}…`
+      : 'no token',
+  ]
+    .filter(Boolean)
+    .join(' · ');
   return rung;
 }
 

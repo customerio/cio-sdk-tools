@@ -1,5 +1,4 @@
 import { packageStopped } from '../android/device';
-import { Narrator } from '../narrate';
 import { MatrixCell, MatrixSection, Verdict } from '../types';
 import {
   ANDROID_MARKERS,
@@ -11,10 +10,11 @@ import { LogCapture } from './logs';
 import { sendVerifyPush } from './send';
 import { ALL_STATES, AppState } from './states';
 import { stopwatch } from '../clock';
+import { CellHandle, Reporter } from '../report';
 
 export interface AndroidMatrixOptions {
   dryRun?: boolean;
-  narrator?: Narrator;
+  reporter?: Reporter;
   serial: string;
   packageName: string;
   environmentId: string;
@@ -52,6 +52,7 @@ export async function runAndroidDeliveredMatrix(
     },
   };
 
+  options.reporter?.matrix(capture.how);
   const sectionTimer = stopwatch();
   try {
     if (capture.available) await sleep(1_500);
@@ -71,17 +72,32 @@ export async function runAndroidDeliveredMatrix(
   return section;
 }
 
+/**
+ * One handle per cell, closed on every return path. The body reports phases; only this
+ * wrapper closes the line, so a cell can never finish without saying how it went.
+ */
 async function runCell(
   state: AppState,
   options: AndroidMatrixOptions,
   capture: LogCapture,
   seenIds: Set<string>
 ): Promise<MatrixCell> {
+  const handle = options.reporter?.cell(state);
+  const cell = await runCellBody(state, options, capture, seenIds, handle);
+  handle?.done(cell);
+  return cell;
+}
+
+async function runCellBody(
+  state: AppState,
+  options: AndroidMatrixOptions,
+  capture: LogCapture,
+  seenIds: Set<string>,
+  handle?: CellHandle
+): Promise<MatrixCell> {
   const evidence: string[] = [];
 
-  const step = options.narrator?.step(
-    `${state}: sending and following the push`
-  );
+  handle?.phase('staging the app state');
   const staged = await setAndroidState(
     options.serial,
     options.packageName,
@@ -96,6 +112,7 @@ async function runCell(
   }
 
   const mark = capture.lines.length;
+  handle?.phase('sending');
   const sent = await sendVerifyPush({
     dryRun: options.dryRun,
     environmentId: options.environmentId,
@@ -111,7 +128,6 @@ async function runCell(
   });
 
   if (sent.wouldSend) {
-    step?.done('dry run');
     return {
       state,
       verdict: 'skip',
@@ -125,7 +141,6 @@ async function runCell(
   if (!sent.accepted) {
     // `FCM_UNREGISTERED` belongs in the report verbatim: it means the token is invalid,
     // and the usual cause is a token scraped from logcat, which truncates long lines.
-    step?.done('send rejected');
     return {
       state,
       verdict: 'fail',
@@ -148,7 +163,9 @@ async function runCell(
   // Wait for the end of the sequence, not the middle. `tracked` lands within tens of
   // milliseconds; the notification follows ~6s later and the handoff worker up to ~40s
   // after that, so stopping at `tracked` reports a displayed notification as absent.
+  handle?.phase('waiting for the SDK to track it');
   await waitFor(() => seen(ANDROID_MARKERS.tracked), timeout);
+  handle?.phase('waiting for the notification and the handoff worker');
   await waitFor(
     () =>
       seen(ANDROID_MARKERS.shown) &&
@@ -196,8 +213,6 @@ async function runCell(
   } else {
     evidence.push(`no log capture: ${capture.unavailableReason}`);
   }
-
-  step?.done(tracked ? 'counted' : 'no metric');
 
   return {
     state,

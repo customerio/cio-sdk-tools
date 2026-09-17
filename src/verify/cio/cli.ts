@@ -180,13 +180,52 @@ export async function cioApi<T>(
     };
   }
 
-  try {
-    const parsed = JSON.parse(body);
-    if (parsed?.error) {
-      return { ok: false, error: String(parsed.message ?? parsed.error) };
+  // A failing `cio api` prints its envelope to stdout *and* stderr, so the body can hold
+  // two JSON objects. Parsing the whole thing throws, and the raw double envelope used to
+  // end up verbatim in a check's evidence.
+  const parsed = firstJson(body);
+  if (parsed === undefined) return { ok: false, error: body.slice(0, 400) };
+  if ((parsed as { error?: unknown })?.error) {
+    return {
+      ok: false,
+      error: readableError(parsed as Record<string, unknown>),
+    };
+  }
+  return { ok: code === 0, data: parsed as T };
+}
+
+/** The first parseable JSON value in a body that may hold several, one per line. */
+function firstJson(body: string): unknown {
+  for (const line of body.split('\n')) {
+    const text = line.trim();
+    if (!text) continue;
+    try {
+      return JSON.parse(text);
+    } catch {
+      continue;
     }
-    return { ok: code === 0, data: parsed as T };
+  }
+  return undefined;
+}
+
+/**
+ * One sentence a person can read. The API's own errors arrive as JSON nested inside the
+ * envelope's message, and the detail is the only part worth surfacing — the full body is
+ * still available under --verbose, where every command and its exit code is printed.
+ */
+function readableError(envelope: Record<string, unknown>): string {
+  const message = String(envelope.message ?? envelope.error);
+  const nested = /^(API error \d+): (\{.*\})$/s.exec(message);
+  if (!nested) return message;
+  try {
+    const body = JSON.parse(nested[2]) as {
+      errors?: { detail?: string }[];
+      message?: string;
+    };
+    const detail = body.errors?.[0]?.detail ?? body.message;
+    if (!detail) return nested[1];
+    return `${nested[1]}: ${detail.replace(/\s*\(reference [^)]*\)/, '')}`;
   } catch {
-    return { ok: false, error: body.slice(0, 400) };
+    return nested[1];
   }
 }

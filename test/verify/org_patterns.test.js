@@ -2,7 +2,6 @@ const test = require('node:test');
 const assert = require('node:assert');
 
 const { ERROR_CODES, exitCodeForError, printError } = require('../../dist/verify/errors');
-const { createNarrator } = require('../../dist/verify/narrate');
 const { selectCredentials } = require('../../dist/verify/cio/cli');
 
 /**
@@ -73,46 +72,5 @@ test('a legacy flat config is the default profile, and nothing else', () => {
   assert.strictEqual(selectCredentials(legacy, 'staging'), undefined);
 });
 
-test('narration is silent in json mode and in quiet mode', () => {
-  for (const options of [{ json: true }, { json: false, quiet: true }]) {
-    const written = [];
-    const narrator = createNarrator({
-      ...options,
-      out: { write: (c) => written.push(String(c)) },
-    });
-    narrator.step('working').done();
-    narrator.say('a fact');
-    assert.deepStrictEqual(written, [], JSON.stringify(options));
-  }
-});
-
-test('a narrated step heartbeats, closes once, and uses lines when not a terminal', async () => {
-  const written = [];
-  const narrator = createNarrator({
-    json: false,
-    intervalMs: 20,
-    out: { write: (c) => written.push(String(c)), isTTY: false },
-  });
-  const step = narrator.step('waiting');
-  await new Promise((resolve) => setTimeout(resolve, 55));
-  const took = step.done('counted');
-  step.done('counted again');
-
-  assert.strictEqual(written[0], 'waiting...\n');
-  assert.ok(
-    written.filter((line) => line.includes('still waiting')).length >= 2,
-    'expected heartbeats'
-  );
-  // The closing line carries the elapsed time, and the step reports it to its caller so a
-  // phase can be timed without a second clock.
-  assert.match(written[written.length - 1], /^waiting\.\.\. counted \(\d+ms\)\n$/);
-  assert.ok(took >= 50, `expected a measured duration, got ${took}`);
-  assert.ok(!written.some((line) => line.includes('counted again')), 'done was not idempotent');
-});
-
-test('a silent narrator still times its steps, because --json is where timings matter', async () => {
-  const narrator = createNarrator({ json: true, out: { write: () => {} } });
-  const step = narrator.step('working');
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  assert.ok(step.done() >= 25, 'a silenced step reported no duration');
-});
+// The narrator's own properties — silence under --json, a heartbeat, one close per step —
+// live on the reporter now and are covered in report.test.js.

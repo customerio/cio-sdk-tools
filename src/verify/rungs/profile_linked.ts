@@ -1,7 +1,7 @@
 import { CioContext } from '../cio/cli';
 import { Profile, findProfile } from '../cio/push';
 import { fail, pass, warn } from '../ladder';
-import { Rung } from '../types';
+import { RUNG_TITLES, Rung } from '../types';
 
 export interface ProfileInput {
   cio: CioContext;
@@ -23,7 +23,7 @@ export interface ProfileInput {
 export async function profileLinked(input: ProfileInput): Promise<Rung> {
   const rung: Rung = {
     id: 'profile_linked',
-    title: 'Profile linked to this device',
+    title: RUNG_TITLES.profile_linked,
     checks: [],
   };
 
@@ -71,6 +71,8 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
   );
 
   rung.checks.push(...deviceLinkChecks(profile, input));
+  const devices = profile?.devices?.length ?? 0;
+  rung.summary = `${devices} device${devices === 1 ? '' : 's'}`;
   return rung;
 }
 

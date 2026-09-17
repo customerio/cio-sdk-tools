@@ -5,7 +5,7 @@ import {
   resolveInitAtLaunch,
 } from '../android/project';
 import { fail, pass, warn } from '../ladder';
-import { Check, Rung } from '../types';
+import { Check, RUNG_TITLES, Rung } from '../types';
 
 export interface AndroidWiringResult {
   rung: Rung;
@@ -27,7 +27,7 @@ export async function androidWiring(input: {
 }): Promise<AndroidWiringResult> {
   const rung: Rung = {
     id: 'project_wiring',
-    title: 'Project wiring',
+    title: RUNG_TITLES.project_wiring,
     checks: [],
   };
 
@@ -58,6 +58,9 @@ export async function androidWiring(input: {
   const forwarding = messagingServiceCheck(model);
   if (forwarding) rung.checks.push(forwarding);
 
+  rung.summary = `${model.appModuleName} · ${
+    model.sdkModules.find((name) => name.includes('push')) ?? 'no push module'
+  }`;
   return { rung, model, applicationId: model.applicationId };
 }
 

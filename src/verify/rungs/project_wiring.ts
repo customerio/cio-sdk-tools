@@ -1,7 +1,8 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { fail, pass, skipped, warn } from '../ladder';
-import { Check, Rung } from '../types';
+import { Check, RUNG_TITLES, Rung } from '../types';
+import { PushProvider } from '../cio/push';
 import {
   Target,
   XcodeProjectModel,
@@ -39,6 +40,13 @@ export interface WiringResult {
   app?: Target;
   nse?: Target;
   signals: SourceSignals;
+  /**
+   * Which push transport this app was built for, read from the SDK product it links rather
+   * than assumed. An iOS app can ship push over Firebase — `MessagingPushFCM` — and then
+   * the workspace needs an FCM credential, so assuming APNs convicted a correctly wired
+   * app with `workspace.apns_credential_missing`.
+   */
+  provider: PushProvider;
   /** Carried forward: rung 2 compares it against the workspace credential. */
   apsEnvironment?: string;
   bundleId?: string;
@@ -53,12 +61,25 @@ export interface WiringResult {
  * workspace and no network. It is also the only rung that can explain a later silence — a
  * missing extension makes "no delivered metric" a certainty rather than a mystery.
  */
+/**
+ * The transport this app links, not the one we hope it links.
+ *
+ * `MessagingPushFCM` and `MessagingPushAPN` are mutually exclusive products; an app that
+ * links neither still reports APNs, because that is the default an iOS integration is
+ * assumed to be and rung 1 already fails it for having no push module at all.
+ */
+export function providerFrom(sdkImports: string[]): PushProvider {
+  const fcm = sdkImports.some((name) => /MessagingPushFCM$/.test(name));
+  const apns = sdkImports.some((name) => /MessagingPushAPN$/.test(name));
+  return fcm && !apns ? 'fcm' : 'apns';
+}
+
 export async function projectWiring(input: WiringInput): Promise<WiringResult> {
   const configuration = input.configuration ?? 'Debug';
   const model = await loadProject(input.projectPath, configuration);
   const rung: Rung = {
     id: 'project_wiring',
-    title: 'Project wiring',
+    title: RUNG_TITLES.project_wiring,
     checks: [],
   };
 
@@ -76,7 +97,12 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
           model.projectPath
         )} uses the JSON .xcproj format and xcodebuild ` +
         'returned no targets for it — Xcode 27.2 or later is needed to read one';
-      return { rung, model, signals };
+      return {
+        rung,
+        model,
+        signals,
+        provider: providerFrom(signals.sdkImports),
+      };
     }
     rung.skipped =
       apps.length === 0
@@ -84,7 +110,7 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
         : `${apps.length} application targets (${apps
             .map((t) => t.name)
             .join(', ')}); pass --app-target to choose one`;
-    return { rung, model, signals };
+    return { rung, model, signals, provider: providerFrom(signals.sdkImports) };
   }
 
   rung.checks.push(
@@ -139,12 +165,16 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
     );
   }
 
+  rung.summary = `${
+    providerFrom(signals.sdkImports) === 'fcm' ? 'FCM' : 'APNs'
+  } · ${nse ? `extension ${nse.name}` : 'no extension'}`;
   return {
     rung,
     model,
     app,
     nse,
     signals,
+    provider: providerFrom(signals.sdkImports),
     apsEnvironment: push.apsEnvironment,
     bundleId: app.settings.PRODUCT_BUNDLE_IDENTIFIER,
     processNames: [app, nse]

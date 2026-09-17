@@ -16,6 +16,18 @@ export type RungId =
 
 export type Severity = 'blocker' | 'warning';
 
+/**
+ * Titles are shared because they are read in two places that must agree: the roll-up
+ * column and the report a plugin reads. They drifted once — the column said "Profile
+ * linked" while the report said "Profile linked to this device".
+ */
+export const RUNG_TITLES: Record<RungId, string> = {
+  project_wiring: 'Project wiring',
+  workspace_ready: 'Workspace ready',
+  device_ready: 'Device ready',
+  profile_linked: 'Profile linked',
+};
+
 /** Where a finding came from: a preflight rung, or the runtime matrix. */
 export type Stage = RungId | 'delivered_matrix';
 
@@ -39,6 +51,11 @@ export interface Rung {
   /** Set when the rung did not run at all, which is not the same as passing. */
   skipped?: string;
   /**
+   * One short phrase for the roll-up line — the single fact a reader wants when the rung
+   * passed. Written by the rung that knows it; the renderer only counts checks.
+   */
+  summary?: string;
+  /**
    * Wall time spent producing this rung's evidence, which is not the same as the time
    * between rungs: the device is read before the workspace rung is evaluated though it is
    * reported after it, so each duration is attributed to the rung whose facts it bought.
@@ -55,6 +72,8 @@ export interface MatrixCell {
   deliveryId?: string;
   /** Staging the app state, sending, and following the push to the metric. */
   durationMs?: number;
+  /** One short phrase for the roll-up line. */
+  summary?: string;
 }
 
 /**
@@ -95,6 +114,13 @@ export interface Report {
   rungs: Rung[];
   /** Absent unless a real push was sent. */
   matrix?: MatrixSection;
+  /**
+   * How the facts were obtained. `read` means they were recovered from storage and the
+   * server after the fact, so the moment they were written is unknown; `observed` means
+   * the run watched them happen. A green report of each kind is not the same claim, and
+   * rendering both as a tick hid that.
+   */
+  provenance: 'read' | 'observed';
   /** `warn` means every assertion passed but something is worth a developer's attention. */
   verdict: Verdict;
   /** The failing and warning checks, in ladder order, resolved against the registry. */

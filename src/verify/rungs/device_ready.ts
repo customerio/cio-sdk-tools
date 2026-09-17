@@ -11,7 +11,7 @@ import {
   tokenFreshness,
 } from '../ios/device';
 import { fail, pass, skipped, warn } from '../ladder';
-import { Check, Rung } from '../types';
+import { Check, RUNG_TITLES, Rung } from '../types';
 
 export interface DeviceFacts {
   target?: Target;
@@ -72,7 +72,11 @@ export async function gatherDevice(options: {
 }
 
 export function deviceReady(facts: DeviceFacts, bundleId?: string): Rung {
-  const rung: Rung = { id: 'device_ready', title: 'Device ready', checks: [] };
+  const rung: Rung = {
+    id: 'device_ready',
+    title: RUNG_TITLES.device_ready,
+    checks: [],
+  };
 
   if (!facts.target) {
     // A named target that is not there is a failure; nothing named and nothing available is
@@ -146,6 +150,14 @@ export function deviceReady(facts: DeviceFacts, bundleId?: string): Rung {
   const fresh = freshnessCheck(facts);
   if (fresh) rung.checks.push(fresh);
   rung.checks.push(identityCheck(facts));
+  rung.summary = [
+    facts.target?.name,
+    facts.sdk?.pushDeviceToken
+      ? `token ${facts.sdk.pushDeviceToken.slice(0, 8)}…`
+      : 'no token',
+  ]
+    .filter(Boolean)
+    .join(' · ');
   return rung;
 }
 

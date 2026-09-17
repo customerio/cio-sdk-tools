@@ -3,7 +3,6 @@ import * as os from 'os';
 import * as path from 'path';
 import { run } from '../exec';
 import { Target } from '../ios/device';
-import { Narrator } from '../narrate';
 import { MatrixCell, MatrixSection, Verdict } from '../types';
 import {
   LogCapture,
@@ -15,6 +14,8 @@ import {
 import { sendVerifyPush } from './send';
 import { ALL_STATES, AppState, setAppState } from './states';
 import { stopwatch } from '../clock';
+import { CellHandle, Reporter } from '../report';
+import { PushProvider } from '../cio/push';
 
 export interface MatrixOptions {
   /** Exercise every step except the send itself. */
@@ -25,12 +26,14 @@ export interface MatrixOptions {
    * is the stance `cio`'s own send path takes by never retrying a POST implicitly.
    */
   resend?: boolean;
-  narrator?: Narrator;
+  reporter?: Reporter;
   target: Target;
   bundleId: string;
   environmentId: string;
   token: string;
   sandbox: boolean;
+  /** Read off the linked SDK product; an iOS app can deliver push over Firebase. */
+  provider: PushProvider;
   states?: AppState[];
   /** App and extension process names, so a device log can be filtered to them. */
   processNames?: string[];
@@ -71,6 +74,7 @@ export async function runDeliveredMatrix(
     },
   };
 
+  options.reporter?.matrix(capture.how);
   const sectionTimer = stopwatch();
   try {
     // Give the stream a moment to attach, or the first cell's lines are simply missing.
@@ -94,17 +98,32 @@ export async function runDeliveredMatrix(
   return section;
 }
 
+/**
+ * One handle per cell, closed on every return path. The body reports phases; only this
+ * wrapper closes the line, so a cell can never finish without saying how it went.
+ */
 async function runCell(
   state: AppState,
   options: MatrixOptions,
   capture: LogCapture,
   seenIds: Set<string>
 ): Promise<MatrixCell> {
+  const handle = options.reporter?.cell(state);
+  const cell = await runCellBody(state, options, capture, seenIds, handle);
+  handle?.done(cell);
+  return cell;
+}
+
+async function runCellBody(
+  state: AppState,
+  options: MatrixOptions,
+  capture: LogCapture,
+  seenIds: Set<string>,
+  handle?: CellHandle
+): Promise<MatrixCell> {
   const evidence: string[] = [];
 
-  const step = options.narrator?.step(
-    `${state}: sending and following the push`
-  );
+  handle?.phase('staging the app state');
   const staged = await setAppState(
     options.target,
     options.bundleId,
@@ -120,17 +139,19 @@ async function runCell(
   const title = `cio verify · ${state} · ${new Date()
     .toISOString()
     .slice(11, 19)}`;
+  handle?.phase('sending');
   const sent = await sendVerifyPush({
     dryRun: options.dryRun,
     environmentId: options.environmentId,
     token: options.token,
     sandbox: options.sandbox,
+    platform: 'ios',
+    provider: options.provider,
     title,
     body: 'Sent by cio-sdk-tools verify push.',
   });
 
   if (sent.wouldSend) {
-    step?.done('dry run');
     return {
       state,
       verdict: 'skip',
@@ -143,7 +164,6 @@ async function runCell(
   }
 
   if (!sent.accepted) {
-    step?.done('send rejected');
     return {
       state,
       verdict: 'fail',
@@ -165,6 +185,7 @@ async function runCell(
 
   // Wait for the *end* of the sequence. `delivered` fires part way through, so stopping
   // there truncates the capture and loses the rich-push outcome entirely.
+  handle?.phase('waiting for the extension to finish');
   const finished = capture.available
     ? await waitFor(
         () =>
@@ -174,6 +195,7 @@ async function runCell(
       )
     : false;
 
+  handle?.phase('waiting for the push to arrive');
   let arrived = await waitForArrival(options.target, before, evidence);
 
   // Nothing arrived and the extension never woke: on a simulator that is as often APNs
@@ -184,6 +206,7 @@ async function runCell(
     arrived === false &&
     !ranInExtension(since())
   ) {
+    handle?.phase('nothing arrived — sending once more');
     const again = await sendVerifyPush({
       dryRun: options.dryRun,
       environmentId: options.environmentId,
@@ -236,8 +259,6 @@ async function runCell(
   } else {
     evidence.push(`no log capture: ${capture.unavailableReason}`);
   }
-
-  step?.done(accepted ? 'counted' : 'no metric');
 
   return {
     state,

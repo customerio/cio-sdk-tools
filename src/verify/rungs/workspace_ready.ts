@@ -2,7 +2,7 @@ import { CioContext } from '../cio/cli';
 import { PushCredential, PushProvider, pushCredential } from '../cio/push';
 import { WorkspaceResolution, resolveWorkspace } from '../cio/workspace';
 import { fail, pass, warn } from '../ladder';
-import { Check, Rung } from '../types';
+import { Check, RUNG_TITLES, Rung } from '../types';
 
 export interface WorkspaceFacts {
   cio: CioContext;
@@ -57,7 +57,7 @@ export function workspaceReady(
 ): Rung {
   const rung: Rung = {
     id: 'workspace_ready',
-    title: 'Workspace ready',
+    title: RUNG_TITLES.workspace_ready,
     checks: [],
   };
 
@@ -85,6 +85,9 @@ export function workspaceReady(
   );
 
   rung.checks.push(credentialCheck(facts));
+  rung.summary = `${
+    resolution.workspace?.name ?? resolution.workspace?.id ?? 'unresolved'
+  } · ${facts.provider === 'fcm' ? 'FCM' : 'APNs'}`;
   const environment = environmentCheck(facts, apsEnvironment);
   if (environment) rung.checks.push(environment);
 

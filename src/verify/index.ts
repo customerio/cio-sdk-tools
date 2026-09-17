@@ -1,11 +1,13 @@
+import chalk from 'chalk';
 import { Command } from 'commander';
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { cioContext, setActiveProfile } from './cio/cli';
 import { stopwatch } from './clock';
+import { PushProvider } from './cio/push';
 import { Ladder } from './ladder';
-import { Narrator, createNarrator } from './narrate';
+import { Level, Reporter, createReporter } from './report';
 import { runDeliveredMatrix } from './matrix';
 import { runAndroidDeliveredMatrix } from './matrix/android';
 import { ALL_STATES, AppState } from './matrix/states';
@@ -19,7 +21,7 @@ import { profileLinked } from './rungs/profile_linked';
 import { projectWiring } from './rungs/project_wiring';
 import { gatherWorkspace, workspaceReady } from './rungs/workspace_ready';
 import { ERROR_CODES, ErrorCode, printError } from './errors';
-import { Report, RungId } from './types';
+import { RUNG_TITLES, Report, RungId } from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson = require('../../package.json');
@@ -38,15 +40,9 @@ type VerifyPushOptions = {
   dryRun: boolean;
   resend: boolean;
   quiet: boolean;
+  verbose: boolean;
   states?: string;
   evidence?: string;
-};
-
-const RUNG_TITLES: Record<RungId, string> = {
-  project_wiring: 'Project wiring',
-  workspace_ready: 'Workspace ready',
-  device_ready: 'Device ready',
-  profile_linked: 'Profile linked to this device',
 };
 
 /**
@@ -110,13 +106,33 @@ const pushCommand = new Command('push')
     '--no-resend',
     'never send a second push when the first does not arrive'
   )
-  .option('-q, --quiet', 'suppress progress narration', false)
+  .option(
+    '-v, --verbose',
+    'print every check, every command and every phase (also CIO_VERBOSE=1)',
+    false
+  )
+  .option(
+    '-q, --quiet',
+    'print only the verdict and what to do about it',
+    false
+  )
   .option('--evidence <dir>', 'directory to write captured logs into')
   .action(async (pathArg: string, options: VerifyPushOptions) => {
     process.exitCode = await verifyPush(pathArg, options);
   });
 
 verifyCommand.addCommand(pushCommand);
+
+/**
+ * `CIO_VERBOSE` exists because Expo's `EXPO_DEBUG` habit is worth borrowing: the moment
+ * you want detail is usually inside a script you are not editing.
+ */
+function levelFrom(options: VerifyPushOptions): Level {
+  if (options.json) return 'json';
+  if (options.verbose || process.env.CIO_VERBOSE === '1') return 'verbose';
+  if (options.quiet) return 'quiet';
+  return 'human';
+}
 
 async function verifyPush(
   pathArg: string,
@@ -137,16 +153,25 @@ async function verifyPush(
     return toolError(options, (error as Error).message, ERROR_CODES.validation);
   }
 
-  const narrator = createNarrator({ json: options.json, quiet: options.quiet });
+  const reporter = createReporter({ level: levelFrom(options) });
+  reporter.start(
+    `${path.basename(detected.path, path.extname(detected.path))} ${chalk.dim(
+      `· ${detected.platform === 'android' ? 'Android' : 'iOS'}`
+    )}`
+  );
+
   const startedAt = new Date().toISOString();
   const ladder = new Ladder();
   const projectName =
     detected.platform === 'android'
-      ? await climbAndroid(ladder, detected.path, options, states, narrator)
-      : await climb(ladder, detected.path, options, states, narrator);
+      ? await climbAndroid(ladder, detected.path, options, reporter, states)
+      : await climb(ladder, detected.path, options, reporter, states);
 
   const built = ladder.toReport({
     schema: 1,
+    // Everything this command reads today is recovered after the fact. `observed` arrives
+    // with the flow that holds a capture open across install, launch and login.
+    provenance: 'read',
     tool: { name: packageJson.name, version: packageJson.version },
     command: 'verify push',
     startedAt,
@@ -158,7 +183,7 @@ async function verifyPush(
     },
   });
 
-  await emit(built, ladder, options);
+  await emit(built, reporter, options);
   return built.exitCode;
 }
 
@@ -171,21 +196,25 @@ async function climb(
   ladder: Ladder,
   projectPath: string,
   options: VerifyPushOptions,
-  states?: AppState[],
-  narrator?: Narrator
+  reporter: Reporter,
+  states?: AppState[]
 ): Promise<string | undefined> {
-  const wiringTimer = stopwatch();
-  const wiringStep = narrator?.step('reading the project');
+  const wiringRung = reporter.rung(RUNG_TITLES.project_wiring);
+  wiringRung.phase('reading the project');
   const wiring = await projectWiring({
     projectPath,
     scanRoot: path.dirname(projectPath),
     configuration: options.configuration,
     appTargetName: options.appTarget,
   });
-  wiringStep?.done(wiring.model.projectName);
-  ladder.adopt(wiring.rung, wiringTimer());
+  wiringRung.done(wiring.rung);
+  ladder.adopt(wiring.rung);
   if (ladder.halted) {
-    skipRest(ladder, ['workspace_ready', 'device_ready', 'profile_linked']);
+    skipRest(ladder, reporter, [
+      'workspace_ready',
+      'device_ready',
+      'profile_linked',
+    ]);
     return wiring.model.projectName;
   }
 
@@ -193,43 +222,45 @@ async function climb(
   // it: the siteId the SDK stored on the device is the only thing tying this build to a
   // workspace, so rung 2's subject comes out of rung 3's evidence.
   const deviceTimer = stopwatch();
-  const deviceStep = narrator?.step('reading the target');
+  const deviceRung = reporter.rung(RUNG_TITLES.device_ready);
+  deviceRung.phase('reading the target');
   const device = await gatherDevice({
     bundleId: wiring.bundleId,
     selector: options.target,
   });
-  deviceStep?.done(device.target ? device.target.name : 'no target');
   const deviceMs = deviceTimer();
 
   try {
     const cio = await cioContext();
     const workspaceTimer = stopwatch();
-    const workspaceStep = narrator?.step('resolving the workspace');
+    const workspaceRung = reporter.rung(RUNG_TITLES.workspace_ready);
+    workspaceRung.phase('resolving the workspace');
     const workspace = await gatherWorkspace({
       cio,
-      provider: 'apns',
+      provider: wiring.provider,
       explicit: options.workspace,
       siteId: device.sdk?.siteId,
       cacheKey: projectPath,
     });
-    workspaceStep?.done(workspace.resolution?.workspace?.id ?? 'unresolved');
-    ladder.adopt(
-      workspaceReady(workspace, wiring.apsEnvironment),
-      workspaceTimer()
-    );
+    const ready = workspaceReady(workspace, wiring.apsEnvironment);
+    ladder.adopt(ready, workspaceTimer());
+    workspaceRung.done(ready);
     if (ladder.halted) {
-      skipRest(ladder, ['device_ready', 'profile_linked']);
+      skipRest(ladder, reporter, ['device_ready', 'profile_linked']);
       return wiring.model.projectName;
     }
 
-    ladder.adopt(deviceReady(device, wiring.bundleId), deviceMs);
+    const deviceRungResult = deviceReady(device, wiring.bundleId);
+    ladder.adopt(deviceRungResult, deviceMs);
+    deviceRung.done(deviceRungResult);
     if (ladder.halted) {
-      skipRest(ladder, ['profile_linked']);
+      skipRest(ladder, reporter, ['profile_linked']);
       return wiring.model.projectName;
     }
 
     const profileTimer = stopwatch();
-    const profileStep = narrator?.step('checking the profile');
+    const profileRung = reporter.rung(RUNG_TITLES.profile_linked);
+    profileRung.phase('checking the profile');
     const profile = await profileLinked({
       cio,
       environmentId: workspace.resolution?.workspace?.id,
@@ -238,12 +269,13 @@ async function climb(
       token: device.sdk?.pushDeviceToken,
       bundleId: wiring.bundleId,
     });
-    profileStep?.done();
     ladder.adopt(profile, profileTimer());
+    profileRung.done(profile);
 
-    await matrix(ladder, options, states, narrator, {
+    await matrix(ladder, options, reporter, states, {
       target: device.target,
       bundleId: wiring.bundleId,
+      provider: wiring.provider,
       environmentId: workspace.resolution?.workspace?.id,
       token: device.sdk?.pushDeviceToken,
       sandbox: wiring.apsEnvironment !== 'production',
@@ -256,9 +288,10 @@ async function climb(
   }
 }
 
-function skipRest(ladder: Ladder, ids: RungId[]): void {
+function skipRest(ladder: Ladder, reporter: Reporter, ids: RungId[]): void {
   for (const id of ids) {
-    ladder.skip(id, RUNG_TITLES[id], 'an earlier rung failed');
+    const rung = ladder.skip(id, RUNG_TITLES[id], 'an earlier rung failed');
+    reporter.rung(RUNG_TITLES[id]).done(rung);
   }
   ladder.setMatrix({
     metric: 'delivered',
@@ -275,14 +308,15 @@ function skipRest(ladder: Ladder, ids: RungId[]): void {
 async function matrix(
   ladder: Ladder,
   options: VerifyPushOptions,
+  reporter: Reporter,
   states: AppState[] | undefined,
-  narrator: Narrator | undefined,
   inputs: {
     target?: Parameters<typeof runDeliveredMatrix>[0]['target'];
     bundleId?: string;
     environmentId?: string;
     token?: string;
     sandbox: boolean;
+    provider: PushProvider;
     processNames?: string[];
   }
 ): Promise<void> {
@@ -325,11 +359,12 @@ async function matrix(
       environmentId: inputs.environmentId,
       token: inputs.token,
       sandbox: inputs.sandbox,
+      provider: inputs.provider,
       processNames: inputs.processNames,
       states,
       dryRun: options.dryRun,
       resend: options.resend,
-      narrator,
+      reporter,
       evidenceDirectory,
     })
   );
@@ -352,7 +387,7 @@ function parseStates(list?: string): AppState[] | undefined {
 
 async function emit(
   built: Report,
-  ladder: Ladder,
+  reporter: Reporter,
   options: VerifyPushOptions
 ): Promise<void> {
   if (options.report) {
@@ -362,13 +397,8 @@ async function emit(
       'utf8'
     );
   }
-  const totalMs =
-    new Date(built.finishedAt).getTime() - new Date(built.startedAt).getTime();
-  process.stdout.write(
-    options.json
-      ? `${JSON.stringify(built, null, 2)}\n`
-      : ladder.render(totalMs)
-  );
+  if (options.json) process.stdout.write(`${JSON.stringify(built, null, 2)}\n`);
+  else reporter.summary(built);
 }
 
 /**
@@ -397,34 +427,39 @@ async function climbAndroid(
   ladder: Ladder,
   projectPath: string,
   options: VerifyPushOptions,
-  states?: AppState[],
-  narrator?: Narrator
+  reporter: Reporter,
+  states?: AppState[]
 ): Promise<string | undefined> {
-  const wiringTimer = stopwatch();
-  const wiringStep = narrator?.step('reading the project');
+  const wiringRung = reporter.rung(RUNG_TITLES.project_wiring);
+  wiringRung.phase('reading the project');
   const wiring = await androidWiring({
     projectPath,
     appModuleName: options.appModule,
   });
-  wiringStep?.done(wiring.model?.appModuleName ?? 'no app module');
-  ladder.adopt(wiring.rung, wiringTimer());
+  wiringRung.done(wiring.rung);
+  ladder.adopt(wiring.rung);
   if (ladder.halted || !wiring.model) {
-    skipRest(ladder, ['workspace_ready', 'device_ready', 'profile_linked']);
+    skipRest(ladder, reporter, [
+      'workspace_ready',
+      'device_ready',
+      'profile_linked',
+    ]);
     return wiring.model?.appModuleName;
   }
 
   const deviceTimer = stopwatch();
-  const deviceStep = narrator?.step('reading the emulator');
+  const deviceRung = reporter.rung(RUNG_TITLES.device_ready);
+  deviceRung.phase('reading the emulator');
   const device = await gatherAndroidDevice({
     packageName: wiring.applicationId,
     selector: options.target,
   });
-  deviceStep?.done(device.target ? device.target.serial : 'no emulator');
   const deviceMs = deviceTimer();
 
   const cio = await cioContext();
   const workspaceTimer = stopwatch();
-  const workspaceStep = narrator?.step('resolving the workspace');
+  const workspaceRung = reporter.rung(RUNG_TITLES.workspace_ready);
+  workspaceRung.phase('resolving the workspace');
   const workspace = await gatherWorkspace({
     cio,
     provider: 'fcm',
@@ -432,21 +467,25 @@ async function climbAndroid(
     siteId: device.sdk?.siteId,
     cacheKey: projectPath,
   });
-  workspaceStep?.done(workspace.resolution?.workspace?.id ?? 'unresolved');
-  ladder.adopt(workspaceReady(workspace), workspaceTimer());
+  const ready = workspaceReady(workspace);
+  ladder.adopt(ready, workspaceTimer());
+  workspaceRung.done(ready);
   if (ladder.halted) {
-    skipRest(ladder, ['device_ready', 'profile_linked']);
+    skipRest(ladder, reporter, ['device_ready', 'profile_linked']);
     return wiring.model.appModuleName;
   }
 
-  ladder.adopt(androidDeviceReady(device, wiring.applicationId), deviceMs);
+  const deviceRungResult = androidDeviceReady(device, wiring.applicationId);
+  ladder.adopt(deviceRungResult, deviceMs);
+  deviceRung.done(deviceRungResult);
   if (ladder.halted) {
-    skipRest(ladder, ['profile_linked']);
+    skipRest(ladder, reporter, ['profile_linked']);
     return wiring.model.appModuleName;
   }
 
   const profileTimer = stopwatch();
-  const profileStep = narrator?.step('checking the profile');
+  const profileRung = reporter.rung(RUNG_TITLES.profile_linked);
+  profileRung.phase('checking the profile');
   const profile = await profileLinked({
     cio,
     environmentId: workspace.resolution?.workspace?.id,
@@ -455,10 +494,10 @@ async function climbAndroid(
     token: device.sdk?.deviceToken,
     bundleId: wiring.applicationId,
   });
-  profileStep?.done();
   ladder.adopt(profile, profileTimer());
+  profileRung.done(profile);
 
-  await androidMatrix(ladder, options, states, narrator, {
+  await androidMatrix(ladder, options, reporter, states, {
     serial: device.target?.serial,
     packageName: wiring.applicationId,
     environmentId: workspace.resolution?.workspace?.id,
@@ -471,8 +510,8 @@ async function climbAndroid(
 async function androidMatrix(
   ladder: Ladder,
   options: VerifyPushOptions,
+  reporter: Reporter,
   states: AppState[] | undefined,
-  narrator: Narrator | undefined,
   inputs: {
     serial?: string;
     packageName?: string;
@@ -512,7 +551,7 @@ async function androidMatrix(
       token: inputs.token,
       states,
       dryRun: options.dryRun,
-      narrator,
+      reporter,
       evidenceDirectory: evidenceDirectoryFor(options),
     })
   );

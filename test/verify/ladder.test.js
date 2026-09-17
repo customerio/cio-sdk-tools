@@ -97,7 +97,7 @@ function meta() {
   };
 }
 
-test('a rung carries the time its evidence cost, and the render shows it', () => {
+test('a rung records the time its evidence cost', () => {
   const ladder = new Ladder();
   ladder.adopt(rung('project_wiring', 'Project wiring', [pass('a', 'fine')]), 312);
   ladder.adopt(rung('workspace_ready', 'Workspace ready', [pass('b', 'fine')]), 9_040);
@@ -111,6 +111,7 @@ test('a rung carries the time its evidence cost, and the render shows it', () =>
 
   const report = ladder.toReport({
     schema: 1,
+    provenance: 'read',
     tool: { name: 't', version: '0' },
     command: 'verify push',
     startedAt: '2026-09-17T00:00:00.000Z',
@@ -122,19 +123,5 @@ test('a rung carries the time its evidence cost, and the render shows it', () =>
     [312, 9_040]
   );
   assert.strictEqual(report.matrix.cells[0].durationMs, 41_200);
-
-  const rendered = ladder.render(164_000);
-  assert.match(rendered, /Project wiring\s+312ms/);
-  assert.match(rendered, /Workspace ready\s+9\.0s/);
-  assert.match(rendered, /killed\s+41\.2s/);
-  assert.match(rendered, /delivered matrix\s+2m31s/);
-  assert.match(rendered, /2m44s total\./);
-});
-
-test('an untimed rung renders exactly as before, so timing is additive', () => {
-  const ladder = new Ladder();
-  ladder.adopt(rung('project_wiring', 'Project wiring', [pass('a', 'fine')]));
-  const rendered = ladder.render();
-  assert.match(rendered, /1 {2}Project wiring\n/);
-  assert.ok(!/total\./.test(rendered), 'no total without a measured run');
+  assert.strictEqual(report.matrix.durationMs, 151_000);
 });

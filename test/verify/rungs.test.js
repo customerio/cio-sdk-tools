@@ -246,3 +246,13 @@ test('the profile rung skips, never fails, when its inputs are missing', async (
     assert.match(rung.skipped, expected);
   }
 });
+
+test('the push transport comes from the linked SDK product, not an assumption', () => {
+  const { providerFrom } = require('../../dist/verify/rungs/project_wiring');
+  // An iOS app delivering push over Firebase needs an FCM credential; assuming APNs
+  // convicted a correctly wired app with workspace.apns_credential_missing.
+  assert.strictEqual(providerFrom(['CioDataPipelines', 'CioMessagingPushFCM']), 'fcm');
+  assert.strictEqual(providerFrom(['CioMessagingPushAPN']), 'apns');
+  assert.strictEqual(providerFrom(['CioMessagingPushAPN', 'CioMessagingPushFCM']), 'apns');
+  assert.strictEqual(providerFrom([]), 'apns');
+});
