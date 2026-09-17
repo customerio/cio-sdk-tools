@@ -1,4 +1,5 @@
 import { packageStopped } from '../android/device';
+import { Narrator } from '../narrate';
 import { MatrixCell, MatrixSection, Verdict } from '../types';
 import {
   ANDROID_MARKERS,
@@ -12,6 +13,7 @@ import { ALL_STATES, AppState } from './states';
 
 export interface AndroidMatrixOptions {
   dryRun?: boolean;
+  narrator?: Narrator;
   serial: string;
   packageName: string;
   environmentId: string;
@@ -71,6 +73,9 @@ async function runCell(
 ): Promise<MatrixCell> {
   const evidence: string[] = [];
 
+  const step = options.narrator?.step(
+    `${state}: sending and following the push`
+  );
   const staged = await setAndroidState(
     options.serial,
     options.packageName,
@@ -100,6 +105,7 @@ async function runCell(
   });
 
   if (sent.wouldSend) {
+    step?.done('dry run');
     return {
       state,
       verdict: 'skip',
@@ -113,6 +119,7 @@ async function runCell(
   if (!sent.accepted) {
     // `FCM_UNREGISTERED` belongs in the report verbatim: it means the token is invalid,
     // and the usual cause is a token scraped from logcat, which truncates long lines.
+    step?.done('send rejected');
     return {
       state,
       verdict: 'fail',
@@ -183,6 +190,8 @@ async function runCell(
   } else {
     evidence.push(`no log capture: ${capture.unavailableReason}`);
   }
+
+  step?.done(tracked ? 'counted' : 'no metric');
 
   return {
     state,

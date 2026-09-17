@@ -2,8 +2,9 @@ import { Command } from 'commander';
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { cioContext } from './cio/cli';
+import { cioContext, setActiveProfile } from './cio/cli';
 import { Ladder } from './ladder';
+import { Narrator, createNarrator } from './narrate';
 import { runDeliveredMatrix } from './matrix';
 import { runAndroidDeliveredMatrix } from './matrix/android';
 import { ALL_STATES, AppState } from './matrix/states';
@@ -16,7 +17,8 @@ import { deviceReady, gatherDevice } from './rungs/device_ready';
 import { profileLinked } from './rungs/profile_linked';
 import { projectWiring } from './rungs/project_wiring';
 import { gatherWorkspace, workspaceReady } from './rungs/workspace_ready';
-import { EXIT, Report, RungId } from './types';
+import { ERROR_CODES, ErrorCode, printError } from './errors';
+import { Report, RungId } from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson = require('../../package.json');
@@ -30,8 +32,11 @@ type VerifyPushOptions = {
   workspace?: string;
   platform?: string;
   appModule?: string;
+  profile?: string;
   send: boolean;
   dryRun: boolean;
+  resend: boolean;
+  quiet: boolean;
   states?: string;
   evidence?: string;
 };
@@ -83,6 +88,10 @@ const pushCommand = new Command('push')
     'workspace (environment) id, skipping auto-selection'
   )
   .option(
+    '--profile <name>',
+    'cio CLI credential profile to read (defaults to its current_profile)'
+  )
+  .option(
     '--send',
     'send real pushes and follow them to the delivered metric',
     false
@@ -96,6 +105,11 @@ const pushCommand = new Command('push')
     'with --send, do everything except the send itself',
     false
   )
+  .option(
+    '--no-resend',
+    'never send a second push when the first does not arrive'
+  )
+  .option('-q, --quiet', 'suppress progress narration', false)
   .option('--evidence <dir>', 'directory to write captured logs into')
   .action(async (pathArg: string, options: VerifyPushOptions) => {
     process.exitCode = await verifyPush(pathArg, options);
@@ -107,24 +121,28 @@ async function verifyPush(
   pathArg: string,
   options: VerifyPushOptions
 ): Promise<number> {
+  // Set once, before any credential is read.
+  setActiveProfile(options.profile);
+
   const root = path.resolve(process.cwd(), pathArg);
   const detected = await detectPlatform(root, options.platform);
   if ('error' in detected)
-    return toolError(options, detected.error, EXIT.badInput);
+    return toolError(options, detected.error, ERROR_CODES.validation);
 
   let states: AppState[] | undefined;
   try {
     states = parseStates(options.states);
   } catch (error) {
-    return toolError(options, (error as Error).message, EXIT.badInput);
+    return toolError(options, (error as Error).message, ERROR_CODES.validation);
   }
 
+  const narrator = createNarrator({ json: options.json, quiet: options.quiet });
   const startedAt = new Date().toISOString();
   const ladder = new Ladder();
   const projectName =
     detected.platform === 'android'
-      ? await climbAndroid(ladder, detected.path, options, states)
-      : await climb(ladder, detected.path, options, states);
+      ? await climbAndroid(ladder, detected.path, options, states, narrator)
+      : await climb(ladder, detected.path, options, states, narrator);
 
   const built = ladder.toReport({
     schema: 1,
@@ -152,7 +170,8 @@ async function climb(
   ladder: Ladder,
   projectPath: string,
   options: VerifyPushOptions,
-  states?: AppState[]
+  states?: AppState[],
+  narrator?: Narrator
 ): Promise<string | undefined> {
   const wiring = await projectWiring({
     projectPath,
@@ -169,13 +188,16 @@ async function climb(
   // The device is read before the workspace rung is evaluated, though it is reported after
   // it: the siteId the SDK stored on the device is the only thing tying this build to a
   // workspace, so rung 2's subject comes out of rung 3's evidence.
+  const deviceStep = narrator?.step('reading the target');
   const device = await gatherDevice({
     bundleId: wiring.bundleId,
     selector: options.target,
   });
+  deviceStep?.done(device.target ? device.target.name : 'no target');
 
   try {
     const cio = await cioContext();
+    const workspaceStep = narrator?.step('resolving the workspace');
     const workspace = await gatherWorkspace({
       cio,
       provider: 'apns',
@@ -183,6 +205,7 @@ async function climb(
       siteId: device.sdk?.siteId,
       cacheKey: projectPath,
     });
+    workspaceStep?.done(workspace.resolution?.workspace?.id ?? 'unresolved');
     ladder.adopt(workspaceReady(workspace, wiring.apsEnvironment));
     if (ladder.halted) {
       skipRest(ladder, ['device_ready', 'profile_linked']);
@@ -206,7 +229,7 @@ async function climb(
       })
     );
 
-    await matrix(ladder, options, states, {
+    await matrix(ladder, options, states, narrator, {
       target: device.target,
       bundleId: wiring.bundleId,
       environmentId: workspace.resolution?.workspace?.id,
@@ -241,6 +264,7 @@ async function matrix(
   ladder: Ladder,
   options: VerifyPushOptions,
   states: AppState[] | undefined,
+  narrator: Narrator | undefined,
   inputs: {
     target?: Parameters<typeof runDeliveredMatrix>[0]['target'];
     bundleId?: string;
@@ -292,6 +316,8 @@ async function matrix(
       processNames: inputs.processNames,
       states,
       dryRun: options.dryRun,
+      resend: options.resend,
+      narrator,
       evidenceDirectory,
     })
   );
@@ -329,24 +355,18 @@ async function emit(
   );
 }
 
-/** Report a failure of the tool itself, which is never a verdict about the integration. */
+/**
+ * A failure of the tool itself, which is never a verdict about the integration — written to
+ * stderr in the `cio` CLI's envelope so one consumer can read both tools.
+ */
 function toolError(
   options: VerifyPushOptions,
   message: string,
-  code: number = EXIT.toolError
+  code: ErrorCode = ERROR_CODES.general
 ): number {
-  if (options.json) {
-    process.stdout.write(
-      `${JSON.stringify(
-        { schema: 1, error: message, exitCode: code },
-        null,
-        2
-      )}\n`
-    );
-  } else {
-    process.stderr.write(`${message}\n`);
-  }
-  return code;
+  const exitCode = printError(code, message);
+  if (!options.json) process.stderr.write(`${message}\n`);
+  return exitCode;
 }
 
 /**
@@ -361,7 +381,8 @@ async function climbAndroid(
   ladder: Ladder,
   projectPath: string,
   options: VerifyPushOptions,
-  states?: AppState[]
+  states?: AppState[],
+  narrator?: Narrator
 ): Promise<string | undefined> {
   const wiring = await androidWiring({
     projectPath,
@@ -373,12 +394,15 @@ async function climbAndroid(
     return wiring.model?.appModuleName;
   }
 
+  const deviceStep = narrator?.step('reading the emulator');
   const device = await gatherAndroidDevice({
     packageName: wiring.applicationId,
     selector: options.target,
   });
+  deviceStep?.done(device.target ? device.target.serial : 'no emulator');
 
   const cio = await cioContext();
+  const workspaceStep = narrator?.step('resolving the workspace');
   const workspace = await gatherWorkspace({
     cio,
     provider: 'fcm',
@@ -386,6 +410,7 @@ async function climbAndroid(
     siteId: device.sdk?.siteId,
     cacheKey: projectPath,
   });
+  workspaceStep?.done(workspace.resolution?.workspace?.id ?? 'unresolved');
   ladder.adopt(workspaceReady(workspace));
   if (ladder.halted) {
     skipRest(ladder, ['device_ready', 'profile_linked']);
@@ -409,7 +434,7 @@ async function climbAndroid(
     })
   );
 
-  await androidMatrix(ladder, options, states, {
+  await androidMatrix(ladder, options, states, narrator, {
     serial: device.target?.serial,
     packageName: wiring.applicationId,
     environmentId: workspace.resolution?.workspace?.id,
@@ -423,6 +448,7 @@ async function androidMatrix(
   ladder: Ladder,
   options: VerifyPushOptions,
   states: AppState[] | undefined,
+  narrator: Narrator | undefined,
   inputs: {
     serial?: string;
     packageName?: string;
@@ -462,6 +488,7 @@ async function androidMatrix(
       token: inputs.token,
       states,
       dryRun: options.dryRun,
+      narrator,
       evidenceDirectory: evidenceDirectoryFor(options),
     })
   );

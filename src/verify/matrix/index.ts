@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { run } from '../exec';
 import { Target } from '../ios/device';
+import { Narrator } from '../narrate';
 import { MatrixCell, MatrixSection, Verdict } from '../types';
 import {
   LogCapture,
@@ -17,6 +18,13 @@ import { ALL_STATES, AppState, setAppState } from './states';
 export interface MatrixOptions {
   /** Exercise every step except the send itself. */
   dryRun?: boolean;
+  /**
+   * Re-send once when nothing arrives. On by default because a delayed push is common and
+   * a false "never arrived" is expensive; off when duplicate sends are unacceptable, which
+   * is the stance `cio`'s own send path takes by never retrying a POST implicitly.
+   */
+  resend?: boolean;
+  narrator?: Narrator;
   target: Target;
   bundleId: string;
   environmentId: string;
@@ -88,6 +96,9 @@ async function runCell(
 ): Promise<MatrixCell> {
   const evidence: string[] = [];
 
+  const step = options.narrator?.step(
+    `${state}: sending and following the push`
+  );
   const staged = await setAppState(
     options.target,
     options.bundleId,
@@ -113,6 +124,7 @@ async function runCell(
   });
 
   if (sent.wouldSend) {
+    step?.done('dry run');
     return {
       state,
       verdict: 'skip',
@@ -125,6 +137,7 @@ async function runCell(
   }
 
   if (!sent.accepted) {
+    step?.done('send rejected');
     return {
       state,
       verdict: 'fail',
@@ -160,7 +173,11 @@ async function runCell(
   // Nothing arrived and the extension never woke: on a simulator that is as often APNs
   // being slow as it is a real failure, and the tool has no business calling a delayed
   // push a broken one. One re-send, said out loud in the evidence, settles which it was.
-  if (arrived === false && !ranInExtension(since())) {
+  if (
+    options.resend !== false &&
+    arrived === false &&
+    !ranInExtension(since())
+  ) {
     const again = await sendVerifyPush({
       dryRun: options.dryRun,
       environmentId: options.environmentId,
@@ -213,6 +230,8 @@ async function runCell(
   } else {
     evidence.push(`no log capture: ${capture.unavailableReason}`);
   }
+
+  step?.done(accepted ? 'counted' : 'no metric');
 
   return {
     state,
