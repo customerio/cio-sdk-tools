@@ -53,7 +53,6 @@ const ARRIVAL_TIMEOUT_MS = 45_000;
  * arriving at a verdict it could have reached in seconds.
  */
 const RETRY_ARRIVAL_TIMEOUT_MS = 12_000;
-const RETRY_SEQUENCE_TIMEOUT_MS = 12_000;
 /** Confirming a condition an earlier cell already proved. */
 const CONFIRMING_TIMEOUT_MS = 10_000;
 
@@ -225,18 +224,26 @@ async function runCellBody(
     ? CONFIRMING_TIMEOUT_MS
     : options.cellTimeoutMs ?? 60_000;
 
-  // Wait for the *end* of the sequence. `delivered` fires part way through, so stopping
-  // there truncates the capture and loses the rich-push outcome entirely.
-  handle?.phase('waiting for the extension to finish');
-  const finished = capture.available
-    ? await waitFor(
-        () =>
-          since().some((line) => NSE_MARKERS.completion.test(line.message)) &&
-          since().some((line) => NSE_MARKERS.accepted.test(line.message)),
-        timeout
-      )
-    : false;
+  /**
+   * Wait for the *end* of the sequence, never the middle: `delivered` fires part way
+   * through, so stopping there truncates the capture and loses the rich-push outcome.
+   */
+  const awaitSequence = async (budget: number): Promise<boolean> => {
+    if (!capture.available) return false;
+    handle?.phase('waiting for the extension to finish');
+    return waitFor(
+      () =>
+        since().some((line) => NSE_MARKERS.completion.test(line.message)) &&
+        since().some((line) => NSE_MARKERS.accepted.test(line.message)),
+      budget
+    );
+  };
 
+  // Arrival comes first, because it is the precondition for everything the extension
+  // does: waiting a minute for an extension to finish handling a push that never landed
+  // is a minute spent proving nothing, three times per run. Where arrival cannot be read
+  // at all — every physical device — the old order stands, since there is nothing to gate
+  // the wait on.
   handle?.phase('waiting for the push to arrive');
   let arrived = await waitForArrival(
     options.target,
@@ -249,6 +256,8 @@ async function runCellBody(
       'an earlier cell established that nothing arrives, so this one confirmed it rather than waiting again'
     );
   }
+
+  let finished = arrived === false ? false : await awaitSequence(timeout);
 
   // Nothing arrived and the extension never woke: on a simulator that is as often APNs
   // being slow as it is a real failure, and the tool has no business calling a delayed
@@ -275,18 +284,16 @@ async function runCellBody(
         : `re-send rejected: ${again.error ?? 'unknown error'}`
     );
     if (again.accepted) {
-      await waitFor(
-        () =>
-          since().some((line) => NSE_MARKERS.completion.test(line.message)) &&
-          since().some((line) => NSE_MARKERS.accepted.test(line.message)),
-        RETRY_SEQUENCE_TIMEOUT_MS
-      );
       arrived = await waitForArrival(
         options.target,
         before,
         evidence,
         RETRY_ARRIVAL_TIMEOUT_MS
       );
+      // It arrived on the second attempt: give the extension the full budget, because a
+      // slow delivery is exactly the case where patience is the difference between a
+      // right answer and a wrong one.
+      if (arrived !== false) finished = await awaitSequence(timeout);
     }
   }
 
