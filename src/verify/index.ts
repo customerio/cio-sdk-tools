@@ -1034,19 +1034,21 @@ async function climbAndroid(
   ladder.adopt(profile, profileTimer());
   profileRung.done(profile);
 
-  await androidOpened(ladder, options, reporter, asker, {
-    serial: device.target?.serial,
-    packageName,
-    environmentId: workspace.resolution?.workspace?.id,
-    token: device.sdk?.deviceToken,
-  });
-
   const androidFreshness = freshness({
     installedAt: device.installedAt,
     observed,
   });
 
   await androidMatrix(ladder, options, reporter, selection.states, {
+    serial: device.target?.serial,
+    packageName,
+    environmentId: workspace.resolution?.workspace?.id,
+    token: device.sdk?.deviceToken,
+  });
+
+  // Taps come last: the unattended cells should be done before anyone is asked for
+  // anything, which is also the order iOS runs in.
+  await androidOpened(ladder, options, reporter, asker, {
     serial: device.target?.serial,
     packageName,
     environmentId: workspace.resolution?.workspace?.id,

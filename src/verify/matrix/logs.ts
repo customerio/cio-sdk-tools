@@ -19,6 +19,16 @@ export interface LogCapture {
   /** How the lines are being read, for the report's evidence. */
   how?: string;
   lines: LogLine[];
+  /**
+   * A point in the stream, as an absolute count of lines ever seen.
+   *
+   * Never use `lines.length` for this. The retained window drops the oldest lines when it
+   * overflows, which silently shifts every saved index — a cell on a physical Android
+   * device read the wrong slice of its own capture and reported a tap it had recorded as
+   * never seen. `mark()` and `since()` account for what was dropped.
+   */
+  mark(): number;
+  since(mark: number): LogLine[];
   /** File the lines are appended to as they arrive. */
   evidencePath?: string;
   stop(): Promise<void>;
@@ -30,6 +40,8 @@ const SDK_PREDICATE =
 const NOT_CAPTURING: LogCapture = {
   available: false,
   lines: [],
+  mark: () => 0,
+  since: () => [],
   stop: async () => undefined,
 };
 
@@ -208,6 +220,8 @@ async function streamProcess(
   const child: ChildProcess = spawn(command, args);
   track(child);
   const lines: LogLine[] = [];
+  /** How many lines the retention window has discarded, so a mark stays meaningful. */
+  let dropped = 0;
   let buffer = '';
   let stderr = '';
   let exited: number | null | undefined;
@@ -229,7 +243,10 @@ async function streamProcess(
       for (const line of parse(part)) {
         lines.push(line);
         // Disk holds everything; memory holds the recent window a cell reads back.
-        if (lines.length > MAX_RETAINED_LINES) lines.splice(0, 10_000);
+        if (lines.length > MAX_RETAINED_LINES) {
+          lines.splice(0, 10_000);
+          dropped += 10_000;
+        }
         // Written as it arrives: buffered evidence is lost on interrupt, and losing a
         // confirmed result to a Ctrl-C has already happened once.
         sink?.write(`${line.at} ${line.process}: ${line.message}\n`);
@@ -248,6 +265,8 @@ async function streamProcess(
       unavailableReason: `${command} exited immediately (${exited}): ${
         stderr.trim().split('\n')[0] || 'no output'
       }`,
+      mark: () => 0,
+      since: () => [],
       stop: async () => undefined,
     };
   }
@@ -256,6 +275,8 @@ async function streamProcess(
     available: true,
     how,
     lines,
+    mark: () => dropped + lines.length,
+    since: (mark: number) => lines.slice(Math.max(0, mark - dropped)),
     evidencePath,
     stop: async () => {
       child.kill();

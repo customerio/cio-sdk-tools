@@ -168,7 +168,7 @@ async function runCellBody(
   evidence.push(`state via ${staged.how}`);
   if (staged.error) evidence.push(`state warning: ${staged.error}`);
 
-  const mark = capture.lines.length;
+  const mark = capture.mark();
   const sinceMs = Date.now() - 1_000;
 
   const title = `cio verify · ${state} · ${new Date()
@@ -215,7 +215,7 @@ async function runCellBody(
       : 'sent (this route returns no delivery id, so the log supplies it)'
   );
 
-  const since = () => capture.lines.slice(mark);
+  const since = () => capture.since(mark);
   const confirming = known.nothingArrives === true;
   const timeout = confirming
     ? CONFIRMING_TIMEOUT_MS

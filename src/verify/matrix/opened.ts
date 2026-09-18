@@ -129,7 +129,7 @@ async function runOpenedCell(
   );
   evidence.push(`state via ${staged.how}`);
 
-  const mark = capture.lines.length;
+  const mark = capture.mark();
   const sinceMs = Date.now() - 1_000;
   const title = `cio verify · tap me · ${state}`;
   handle?.phase('sending');
@@ -229,7 +229,7 @@ async function runOpenedCell(
   handle?.phase('reading what the SDK did with the tap');
   await sleep(AFTER_TAP_MS);
 
-  const lines = capture.lines.slice(mark).map((line) => line.message);
+  const lines = capture.since(mark).map((line) => line.message);
   const seen = (marker: RegExp) => lines.some((line) => marker.test(line));
   const deliveryId = lines
     .map((line) => OPENED_MARKERS.tracked.exec(line)?.[1])

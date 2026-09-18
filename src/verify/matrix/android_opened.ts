@@ -113,7 +113,7 @@ async function runCell(
   );
   evidence.push(`state via ${staged.how}`);
 
-  const mark = capture.lines.length;
+  const mark = capture.mark();
   const title = `cio verify · tap me · ${state}`;
   handle?.phase('sending');
   const sent = await sendVerifyPush({
@@ -140,7 +140,7 @@ async function runCell(
   }
   evidence.push(`sent with link ${options.link}`);
 
-  const since = () => capture.lines.slice(mark).map((line) => line.message);
+  const since = () => capture.since(mark).map((line) => line.message);
   const seen = (marker: RegExp) => since().some((line) => marker.test(line));
 
   // Nobody is asked to tap a notification that has not appeared.

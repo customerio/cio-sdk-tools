@@ -260,3 +260,44 @@ test('the handoff markers match the SDK’s two success phrasings', () => {
   assert.ok(!ANDROID_MARKERS.handoffDelivered.test(already));
   assert.ok(!ANDROID_MARKERS.handoffAlreadyDelivered.test(success));
 });
+
+test('a mark survives the retention window dropping lines', () => {
+  const { parseLogcat } = require('../../dist/verify/matrix/android_logs');
+  // The bug this pins: a cell saved `lines.length`, the window later dropped the oldest
+  // 10,000 lines, and every saved index silently pointed somewhere else. On an S24 that
+  // made a cell read the wrong slice and report a tap it had actually recorded.
+  const lines = [];
+  let dropped = 0;
+  const capture = {
+    lines,
+    mark: () => dropped + lines.length,
+    since: (mark) => lines.slice(Math.max(0, mark - dropped)),
+  };
+  const push = (message) => {
+    lines.push({ at: '00:00', process: '[CIO]', message });
+    if (lines.length > 5) {
+      lines.splice(0, 3);
+      dropped += 3;
+    }
+  };
+
+  push('before the cell');
+  const mark = capture.mark();
+  for (let i = 0; i < 8; i += 1) push(`in the cell ${i}`);
+
+  const seen = capture.since(mark).map((line) => line.message);
+  assert.ok(!seen.includes('before the cell'), 'it read earlier lines');
+  assert.ok(seen.includes('in the cell 7'), 'it lost the newest line');
+  // The window has dropped twice by now, so a raw `slice(mark)` would be wrong.
+  assert.ok(dropped > 0, 'the window never rolled, so this proves nothing');
+  assert.notDeepStrictEqual(seen, lines.slice(mark).map((l) => l.message));
+
+  // The parser still keys the tag the in-memory filter relies on. Note the input is
+  // logcat's own `-v time` shape, not the evidence file's — the file is re-rendered as
+  // "<at> <tag>: <message>", which is what made this assertion wrong the first time.
+  const parsed = parseLogcat(
+    '09-18 22:45:46.368 D/[CIO]( 1234): [Push] Tracking push message opened'
+  );
+  assert.strictEqual(parsed.process, '[CIO]');
+  assert.ok(parsed.process.includes('CIO'));
+});

@@ -111,7 +111,7 @@ async function runCellBody(
     evidence.push('package is in the stopped state before the send');
   }
 
-  const mark = capture.lines.length;
+  const mark = capture.mark();
   handle?.phase('sending');
   const sent = await sendVerifyPush({
     dryRun: options.dryRun,
@@ -155,7 +155,7 @@ async function runCellBody(
     'sent (this route returns no delivery id, so the log supplies it)'
   );
 
-  const since = () => capture.lines.slice(mark);
+  const since = () => capture.since(mark);
   const seen = (marker: RegExp) =>
     since().some((line) => marker.test(line.message));
   const timeout = options.cellTimeoutMs ?? 45_000;
