@@ -394,6 +394,15 @@ export function judge(observed: {
   if (!observed.available) {
     return { verdict: 'skip' };
   }
+  // Arrival is read from the notification store, which is independent of the log capture,
+  // so a definite "nothing arrived" outranks a silent log. Without this the run reports
+  // three inconclusive cells while holding positive evidence that the push never landed
+  // and that the target itself is healthy.
+  if (observed.arrived === false) {
+    return observed.localProbe === 'absent'
+      ? { verdict: 'skip', cause: 'device.notifications_wedged' }
+      : { verdict: 'fail', cause: 'runtime.push_never_arrived' };
+  }
   // The app itself says nothing at all: that points at the capture, not at the push.
   // Accusing the extension here is how a broken log filter got reported three times as
   // the invisible failure.
@@ -404,13 +413,9 @@ export function judge(observed: {
   // on the process first is how a log-parser bug turned three successful deliveries into
   // three accusations of the invisible failure.
   if (!observed.accepted) {
+    // Arrival has already been ruled on above, so reaching here means the push did arrive
+    // (or arrival could not be read) and the extension still never woke.
     if (!observed.extensionRan) {
-      if (observed.arrived === false) {
-        // A target that will not deliver a locally injected push cannot convict anything.
-        return observed.localProbe === 'absent'
-          ? { verdict: 'skip', cause: 'device.notifications_wedged' }
-          : { verdict: 'fail', cause: 'runtime.push_never_arrived' };
-      }
       return { verdict: 'fail', cause: 'runtime.nse_did_not_run' };
     }
     // Ran but never tried: the extension exists and never forwarded the request. That is a

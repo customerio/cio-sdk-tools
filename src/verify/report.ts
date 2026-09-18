@@ -348,7 +348,9 @@ function cellSummary(cell: MatrixCell): string {
     case 'warn':
       return cell.cause ?? 'counted, with a caveat';
     default:
-      return 'not sent';
+      // A skip is a dry run only when nothing named it; the rest are inconclusive cells
+      // that did send, and labelling those "not sent" was simply wrong.
+      return cell.cause ?? 'not sent';
   }
 }
 

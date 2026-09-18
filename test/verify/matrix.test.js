@@ -265,3 +265,38 @@ test('a target that will not deliver a local push convicts nothing', () => {
     cause: 'runtime.push_never_arrived',
   });
 });
+
+test('a definite no-arrival outranks a silent log, because the store is independent of it', () => {
+  // The store said nothing new and the target passed its local probe: the push did not
+  // land, and reporting that as "no evidence" while holding this evidence is wrong.
+  assert.deepStrictEqual(
+    judge({
+      available: true,
+      arrived: false,
+      extensionRan: false,
+      tracked: false,
+      accepted: false,
+      sawLines: false,
+      loggedIds: [],
+      freshIds: [],
+      localProbe: 'landed',
+    }),
+    { verdict: 'fail', cause: 'runtime.push_never_arrived' }
+  );
+
+  // Arrival unknown (a physical device has no store to read) keeps the old reading: a
+  // silent log is the capture's problem, not the extension's.
+  assert.deepStrictEqual(
+    judge({
+      available: true,
+      arrived: undefined,
+      extensionRan: false,
+      tracked: false,
+      accepted: false,
+      sawLines: false,
+      loggedIds: [],
+      freshIds: [],
+    }),
+    { verdict: 'skip', cause: 'runtime.no_evidence' }
+  );
+});
