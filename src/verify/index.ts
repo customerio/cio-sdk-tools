@@ -117,7 +117,7 @@ const pushCommand = new Command('push')
   )
   .option(
     '--opened',
-    'also verify the opened metric and the deep link — needs one tap per app state, so it never runs unattended',
+    'also verify the opened metric and the deep link — needs one tap per app state, so it never runs unattended (implies --send)',
     false
   )
   .option(
@@ -205,6 +205,11 @@ async function verifyPush(
   } catch (error) {
     return toolError(options, (error as Error).message, ERROR_CODES.validation);
   }
+
+  // `--opened` sends its own pushes, so a run that asks for it is a sending run. Without
+  // this the delivered matrix stayed skipped and dragged a run that verified two taps
+  // down to "nothing was proven".
+  if (options.opened) options.send = true;
 
   const level = levelFrom(options);
   const reporter = createReporter({ level });

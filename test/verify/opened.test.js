@@ -114,3 +114,38 @@ test('titles are read out of the archived store, which grep cannot see into', ()
   // notification our push arriving, and sent someone looking for a banner nobody sent.
   assert.ok(!titles.includes('cio verify · tap me · background'));
 });
+
+test('every cell closes its handle, or the result never reaches the screen', async () => {
+  const { runOpenedMatrix } = require('../../dist/verify/matrix/opened');
+  const closed = [];
+  const reporter = {
+    level: 'human',
+    start: () => {},
+    rung: () => ({ phase: () => {}, done: () => {} }),
+    matrix: () => {},
+    cell: (state) => ({
+      phase: () => {},
+      done: (cell) => closed.push(`${state}:${cell.verdict}`),
+    }),
+    note: () => {},
+    pause: () => {},
+    resume: () => {},
+    summary: () => {},
+  };
+
+  // Non-interactive short-circuits before any cell runs, which is the one case where
+  // nothing should be closed.
+  const section = await runOpenedMatrix({
+    target: { udid: 'x', name: 'x', kind: 'simulator', state: 'Booted' },
+    bundleId: 'io.example',
+    environmentId: '1',
+    token: 't',
+    sandbox: true,
+    provider: 'apns',
+    link: 'example://x',
+    asker: { interactive: false, select: async () => undefined, confirm: async () => false },
+    reporter,
+  });
+  assert.match(section.skipped, /needs a real tap/);
+  assert.deepStrictEqual(closed, []);
+});

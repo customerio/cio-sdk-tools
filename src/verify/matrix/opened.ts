@@ -93,6 +93,9 @@ export async function runOpenedMatrix(
       const cellTimer = stopwatch();
       const cell = await runOpenedCell(state, options, capture, handle);
       cell.durationMs = cellTimer();
+      // Closing the handle is what prints the result. Without it the cells ran, the
+      // taps were read correctly, and the run said nothing about either.
+      handle?.done(cell);
       section.cells.push(cell);
       await sleep(4_000);
     }
