@@ -501,7 +501,7 @@ async function waitForArrival(
  * Diffed rather than matched on purpose — the store's format is undocumented and a match
  * would break the day it changes, while a diff only needs it to keep changing.
  */
-async function deliveredNotificationBlobs(
+export async function deliveredNotificationBlobs(
   target: Target
 ): Promise<Set<string> | undefined> {
   if (target.kind !== 'simulator') return undefined;

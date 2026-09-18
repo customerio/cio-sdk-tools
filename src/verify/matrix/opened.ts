@@ -1,4 +1,8 @@
+import * as path from 'path';
 import { stopwatch } from '../clock';
+import { run } from '../exec';
+import { deliveredNotificationBlobs } from './index';
+import { probeLocalDelivery } from './probe';
 import { Target } from '../ios/device';
 import { Asker } from '../prompt';
 import { CellHandle, Reporter } from '../report';
@@ -58,6 +62,8 @@ export interface OpenedOptions {
 }
 
 const TAP_TIMEOUT_MS = 180_000;
+/** Matches the delivered matrix: long enough that a slow simulator is not a failure. */
+const ARRIVAL_TIMEOUT_MS = 45_000;
 const AFTER_TAP_MS = 6_000;
 
 export async function runOpenedMatrix(
@@ -121,6 +127,7 @@ async function runOpenedCell(
   evidence.push(`state via ${staged.how}`);
 
   const mark = capture.lines.length;
+  const blobsBefore = await deliveredNotificationBlobs(options.target);
   handle?.phase('sending');
   const sent = await sendVerifyPush({
     environmentId: options.environmentId,
@@ -145,6 +152,47 @@ async function runOpenedCell(
     };
   }
   evidence.push(`sent with link ${options.link}`);
+
+  // Wait for the notification to land before asking anyone to tap it.
+  //
+  // Prompting straight after the send was wrong twice over: it asked for a tap while the
+  // banner was still in flight, so by the time a person read the prompt and looked, the
+  // banner had auto-dismissed and the screen was idle — and when the push never arrived
+  // at all it asked for something impossible, then waited three minutes for it. Waiting
+  // for arrival first puts the question on screen while the banner is live.
+  handle?.phase('waiting for the notification to land');
+  const arrived = await waitForNotification(options.target, blobsBefore);
+  if (arrived === false) {
+    const probe = await probeLocalDelivery({
+      target: options.target,
+      bundleId: options.bundleId,
+      blobsBefore,
+      readBlobs: deliveredNotificationBlobs,
+    });
+    return {
+      state,
+      verdict: probe.result === 'absent' ? 'skip' : 'fail',
+      cause:
+        probe.result === 'absent'
+          ? 'device.notifications_wedged'
+          : 'runtime.push_never_arrived',
+      evidence: [
+        ...evidence,
+        'nothing arrived, so nobody was asked to tap it',
+        probe.evidence,
+      ],
+    };
+  }
+  if (arrived) evidence.push('notification landed');
+
+  // A screenshot here is the cheapest record of what was actually on screen when the tap
+  // was asked for, and on a simulator it costs nothing.
+  const shot = await screenshot(
+    options.target,
+    options.evidenceDirectory,
+    state
+  );
+  if (shot) evidence.push(`screen at the prompt: ${shot}`);
 
   // The one place this tool waits on a person. Said plainly, because a prompt nobody
   // understands is answered by pressing Enter without doing the thing.
@@ -251,6 +299,39 @@ export function judgeOpened(observed: {
     return { verdict: 'warn', cause: 'runtime.deep_link_absent' };
   }
   return { verdict: 'pass' };
+}
+
+/** Undefined on a physical device, where there is no store to compare. */
+async function waitForNotification(
+  target: Target,
+  before: Set<string> | undefined
+): Promise<boolean | undefined> {
+  if (!before) return undefined;
+  const deadline = Date.now() + ARRIVAL_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const after = await deliveredNotificationBlobs(target);
+    if ([...(after ?? [])].some((blob) => !before.has(blob))) return true;
+    await sleep(900);
+  }
+  return false;
+}
+
+/** Best effort: skipped silently wherever it is unavailable. */
+async function screenshot(
+  target: Target,
+  directory: string | undefined,
+  state: AppState
+): Promise<string | undefined> {
+  if (!directory || target.kind !== 'simulator') return undefined;
+  const file = path.join(directory, `opened-${state}.png`);
+  const { code } = await run('xcrun', [
+    'simctl',
+    'io',
+    target.udid,
+    'screenshot',
+    file,
+  ]);
+  return code === 0 ? file : undefined;
 }
 
 function sleep(ms: number): Promise<void> {
