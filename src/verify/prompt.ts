@@ -25,6 +25,14 @@ export interface Choice<T> {
 export interface Asker {
   readonly interactive: boolean;
   /**
+   * Wait for a person to do something and say they did. Returns false when nobody
+   * answered — a tap nobody confirmed must never read as a tap that happened.
+   */
+  confirm(
+    instruction: string,
+    options?: { timeoutMs?: number }
+  ): Promise<boolean>;
+  /**
    * `flag` is the non-interactive escape hatch, named in the error and in the hint, so a
    * session that had to be answered by hand can be turned into a CI job by copying it.
    */
@@ -67,6 +75,18 @@ export function createAsker(options: {
 
   return {
     interactive,
+
+    async confirm(
+      instruction: string,
+      confirmOptions: { timeoutMs?: number } = {}
+    ): Promise<boolean> {
+      if (!interactive) return false;
+      output.write(`\n${chalk.bold(instruction)}\n`);
+      output.write(chalk.dim('  press Enter when done, or ctrl-c to stop '));
+      const answer = await reader?.next(confirmOptions.timeoutMs ?? timeoutMs);
+      output.write('\n');
+      return answer !== undefined;
+    },
 
     async select<T>(
       question: string,

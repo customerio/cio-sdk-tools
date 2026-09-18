@@ -99,7 +99,7 @@ test('the extension is identified by process, not by message text', () => {
 
 test('one failing cell fails the run, and the others still report', () => {
   const ladder = new Ladder();
-  ladder.setMatrix({
+  ladder.addMatrix({
     metric: 'delivered',
     cells: [
       { state: 'killed', verdict: 'pass', evidence: [] },
@@ -119,7 +119,7 @@ test('an unsent matrix keeps the verdict inconclusive even when preflight passed
     title: 'Project wiring',
     checks: [{ id: 'a', verdict: 'pass', label: 'fine' }],
   });
-  ladder.setMatrix({ metric: 'delivered', cells: [], skipped: 'no push was sent' });
+  ladder.addMatrix({ metric: 'delivered', cells: [], skipped: 'no push was sent' });
   assert.strictEqual(ladder.verdict, 'skip');
   assert.strictEqual(ladder.exitCode, 21);
 });
@@ -131,7 +131,7 @@ test('all cells passing with a clean climb is the only way to exit zero', () => 
     title: 'Project wiring',
     checks: [{ id: 'a', verdict: 'pass', label: 'fine' }],
   });
-  ladder.setMatrix({
+  ladder.addMatrix({
     metric: 'delivered',
     cells: [
       { state: 'killed', verdict: 'pass', evidence: [] },

@@ -36,7 +36,7 @@ export interface Reporter {
   /** The run's opening block: what is being verified, and against what. */
   start(subject: string, facts?: [string, string][]): void;
   rung(title: string): RungHandle;
-  matrix(how?: string): void;
+  matrix(how?: string, metric?: string): void;
   cell(state: string): CellHandle;
   /** A fact worth recording but not worth a line in the roll-up. */
   note(text: string): void;
@@ -198,9 +198,9 @@ export function createReporter(options: {
       };
     },
 
-    matrix(how?: string) {
+    matrix(how?: string, metric = 'delivered') {
       line(
-        `${chalk.bold('  delivered matrix')}${
+        `${chalk.bold(`  ${metric} matrix`)}${
           how ? chalk.dim(`   (${how})`) : ''
         }`
       );
@@ -256,6 +256,16 @@ export function createReporter(options: {
         body.push('');
       }
 
+      // A section that never ran never streamed a line, so it says so here. Without this
+      // the reason a matrix was skipped — "pass --send", "opened needs a real tap" —
+      // vanished from the output entirely, leaving only "nothing was proven".
+      for (const section of report.matrices ?? []) {
+        if (!section.skipped) continue;
+        body.push(`  ${chalk.bold(`${section.metric} matrix`)}`);
+        body.push(`     ${chalk.dim(section.skipped)}`);
+        body.push('');
+      }
+
       for (const note of report.advice ?? []) {
         body.push(`  ${chalk.dim('fyi')}  ${chalk.dim(note)}`);
         body.push('');
@@ -276,8 +286,19 @@ export function createReporter(options: {
         body.push(chalk.red('  a real push was sent and was not counted.'));
       } else if (report.verdict === 'skip') {
         body.push(chalk.yellow('  nothing was proven. skipped is not passed.'));
-      } else if (report.matrix && !report.matrix.skipped) {
-        body.push(chalk.green('  push works, and the delivery was counted.'));
+      } else if ((report.matrices ?? []).some((section) => !section.skipped)) {
+        // Name what was actually proven: counting a delivery and registering a tap are
+        // different claims, and a run that did both should say so.
+        const proven = (report.matrices ?? [])
+          .filter((section) => !section.skipped)
+          .map((section) => section.metric);
+        body.push(
+          chalk.green(
+            proven.includes('opened')
+              ? `  push works — ${proven.join(' and ')} both counted.`
+              : '  push works, and the delivery was counted.'
+          )
+        );
       } else {
         body.push(chalk.green('  preflight passed.'));
       }
@@ -286,7 +307,9 @@ export function createReporter(options: {
         new Date(report.finishedAt).getTime() -
         new Date(report.startedAt).getTime();
       const facts = [formatMs(totalMs), provenanceOf(report)];
-      const evidencePath = report.matrix?.logs?.evidencePath;
+      const evidencePath = (report.matrices ?? []).find(
+        (section) => section.logs?.evidencePath
+      )?.logs?.evidencePath;
       if (evidencePath) facts.push(`evidence ${evidencePath}`);
       body.push(chalk.dim(`  ${facts.join(' · ')}`));
       if (level === 'human' && report.causes.length === 0) {

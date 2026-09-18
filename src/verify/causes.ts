@@ -360,6 +360,57 @@ export const CAUSES: Record<string, CauseDefinition> = {
     remedy:
       'Even a locally injected push did not display. Restart the target — `xcrun simctl shutdown <udid> && xcrun simctl boot <udid>` — and run again. A simulator in this state accepts sends and silently drops every one of them, which reads exactly like a broken integration.',
   },
+  'runtime.opened_not_tracked': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary: 'The notification was tapped and the SDK never reported the open.',
+    remedy:
+      'The click reached the SDK but no `opened` metric followed. Check that the app forwards notification responses to the SDK — on iOS that is `MessagingPush.shared.userNotificationCenter(_:didReceive:withCompletionHandler:)`, or the automatic swizzling being left enabled — and that the push carried a delivery id.',
+  },
+  'runtime.opened_without_delivery_id': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary: 'The tap reached the SDK, but the message carried no delivery id.',
+    remedy:
+      'The SDK logged a click with an empty deliveryId, so it cannot attribute the open to anything. This is a payload problem rather than an app one: verify the push was sent by Customer.io and not rebuilt by an intermediary.',
+  },
+  'runtime.tap_not_ours': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary:
+      'The SDK saw the tap and decided the notification was not a Customer.io one.',
+    remedy:
+      'The SDK logged "Clicked non CIO push message". Either another notification was tapped, or the payload lost its `CIO` block on the way — an intermediary that rebuilds the notification does exactly this.',
+  },
+  'runtime.tap_not_seen': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary: 'Nothing about a tap reached the SDK, so nothing was proven.',
+    remedy:
+      'The tap did not arrive: the banner may have gone before it was tapped, or a different notification was tapped. Run the cell again and tap the notification whose title the run printed.',
+  },
+  'runtime.tap_not_confirmed': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary: 'Nobody confirmed the tap, so this cell proved nothing.',
+    remedy:
+      'The run waited for a tap and moved on. `opened` cannot be verified without one — there is no way to synthesise a notification tap — so run it again when you can tap.',
+  },
+  'runtime.deep_link_not_handled': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary: 'The open was counted, and the deep link went nowhere.',
+    remedy:
+      'The SDK tried the link and nothing claimed it. Check the URL against what the app actually routes — a scheme the app declares but whose host it does not handle fails exactly this way — and check the `deepLinkCallback` returns true once it has navigated.',
+  },
+  'runtime.deep_link_absent': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      'The open was counted, but the push carried no deep link to follow.',
+    remedy:
+      'Nothing is wrong with the open. If the link was expected, remember that `is_rich: true` gates the entire CIO payload block: without it the link never reaches the device.',
+  },
   'runtime.push_never_arrived': {
     stage: 'delivered_matrix',
     severity: 'blocker',

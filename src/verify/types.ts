@@ -81,7 +81,12 @@ export interface MatrixCell {
  * app state hiding a pass in another is exactly the bug worth catching.
  */
 export interface MatrixSection {
-  metric: 'delivered';
+  /**
+   * `delivered` runs unattended; `opened` cannot, because only a real tap produces it —
+   * there is no supported way to synthesise one, and `simctl openurl` invokes the URL
+   * directly without ever entering the SDK's click path.
+   */
+  metric: 'delivered' | 'opened';
   cells: MatrixCell[];
   /** Set when no cell ran at all. */
   skipped?: string;
@@ -112,8 +117,10 @@ export interface Report {
   finishedAt: string;
   project: { path: string; framework: string; name?: string };
   rungs: Rung[];
-  /** Absent unless a real push was sent. */
-  matrix?: MatrixSection;
+  /**
+   * One section per metric, in the order they ran. Absent until a real push is sent.
+   */
+  matrices?: MatrixSection[];
   /**
    * How the facts were obtained. `read` means they were recovered from storage and the
    * server after the fact, so the moment they were written is unknown; `observed` means

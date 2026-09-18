@@ -164,11 +164,13 @@ test('the closing line carries the total, the provenance and the evidence path',
     reporterOn('human', out).summary(
       report({
         provenance,
-        matrix: {
-          metric: 'delivered',
-          cells: [],
-          logs: { evidencePath: '/tmp/ev.log' },
-        },
+        matrices: [
+          {
+            metric: 'delivered',
+            cells: [],
+            logs: { evidencePath: '/tmp/ev.log' },
+          },
+        ],
       })
     );
     const text = out.text();
@@ -224,4 +226,31 @@ test('a handle times what it wraps, but never overwrites a measured duration', a
 test('padding counts what a terminal draws, not what chalk adds', () => {
   assert.strictEqual(visibleLength('plain'), 5);
   assert.strictEqual(visibleLength('[32m✔[39m ok'), 4);
+});
+
+test('a matrix that never ran still says why', () => {
+  const out = sink();
+  reporterOn('human', out).summary(
+    report({
+      verdict: 'skip',
+      exitCode: 21,
+      matrices: [
+        {
+          metric: 'delivered',
+          cells: [],
+          skipped: 'no push was sent — pass --send',
+        },
+        {
+          metric: 'opened',
+          cells: [],
+          skipped: 'opened needs a real tap, and this run cannot ask for one',
+        },
+      ],
+    })
+  );
+  const text = out.text();
+  // Streaming output only prints sections that ran, so a skipped one has to be reported
+  // in the summary or its reason disappears.
+  assert.match(text, /delivered matrix\n\s+no push was sent — pass --send/);
+  assert.match(text, /opened matrix\n\s+opened needs a real tap/);
 });

@@ -20,7 +20,7 @@ import {
  */
 export class Ladder {
   private readonly rungs: Rung[] = [];
-  private matrix?: MatrixSection;
+  private readonly matrices: MatrixSection[] = [];
   private stopped = false;
 
   /** Start a rung. Returns it so checks can be pushed as they are learned. */
@@ -67,8 +67,9 @@ export class Ladder {
   }
 
   /** The runtime matrix, which runs after the climb and never halts it. */
-  setMatrix(section: MatrixSection): void {
-    this.matrix = section;
+  /** Sections accumulate: `delivered` runs unattended, `opened` needs a person. */
+  addMatrix(section: MatrixSection): void {
+    this.matrices.push(section);
   }
 
   static verdictOfMatrix(section: MatrixSection): Verdict {
@@ -84,7 +85,9 @@ export class Ladder {
 
   get verdict(): Verdict {
     const verdicts = this.rungs.map((r) => Ladder.verdictOf(r));
-    if (this.matrix) verdicts.push(Ladder.verdictOfMatrix(this.matrix));
+    for (const section of this.matrices) {
+      verdicts.push(Ladder.verdictOfMatrix(section));
+    }
     if (verdicts.includes('fail')) return 'fail';
     if (verdicts.includes('skip')) return 'skip';
     if (verdicts.includes('warn')) return 'warn';
@@ -105,7 +108,7 @@ export class Ladder {
         out.push(resolveCause(check.cause, check.evidence ?? []));
       }
     }
-    for (const cell of this.matrix?.cells ?? []) {
+    for (const cell of this.matrices.flatMap((section) => section.cells)) {
       if (!cell.cause) continue;
       if (cell.verdict !== 'fail' && cell.verdict !== 'warn') continue;
       out.push(resolveCause(cell.cause, cell.evidence));
@@ -130,7 +133,7 @@ export class Ladder {
     return {
       ...meta,
       rungs: this.rungs,
-      matrix: this.matrix,
+      matrices: this.matrices.length > 0 ? this.matrices : undefined,
       verdict: this.verdict,
       causes: this.causes(),
       exitCode: this.exitCode,

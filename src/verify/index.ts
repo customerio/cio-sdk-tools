@@ -32,6 +32,7 @@ import {
 import { AndroidProjectModel, loadAndroidProject } from './android/project';
 import { XcodeProjectModel, loadProject } from './ios/xcode';
 import { runDeliveredMatrix } from './matrix';
+import { runOpenedMatrix } from './matrix/opened';
 import { runAndroidDeliveredMatrix } from './matrix/android';
 import { ALL_STATES, AppState } from './matrix/states';
 import { packageInstalled, readAndroidSdkState } from './android/device';
@@ -68,6 +69,8 @@ type VerifyPushOptions = {
   package?: string;
   nonInteractive: boolean;
   observe: boolean;
+  opened: boolean;
+  link?: string;
   states?: string;
   evidence?: string;
 };
@@ -111,6 +114,15 @@ const pushCommand = new Command('push')
     '--non-interactive',
     'never prompt; every choice must come from a flag',
     false
+  )
+  .option(
+    '--opened',
+    'also verify the opened metric and the deep link — needs one tap per app state, so it never runs unattended',
+    false
+  )
+  .option(
+    '--link <url>',
+    'deep link to send with the tap test (must be a URL the app routes)'
   )
   .option(
     '--observe',
@@ -443,6 +455,16 @@ async function climb(
       sandbox: wiring.apsEnvironment !== 'production',
       processNames: wiring.processNames,
     });
+    await openedMatrix(ladder, options, reporter, asker, {
+      target: device.target,
+      bundleId: wiring.bundleId,
+      environmentId: workspace.resolution?.workspace?.id,
+      token: device.sdk?.pushDeviceToken,
+      sandbox: wiring.apsEnvironment !== 'production',
+      provider: wiring.provider,
+      processNames: wiring.processNames,
+    });
+
     return {
       projectName: wiring.model.projectName,
       observed,
@@ -660,7 +682,7 @@ function skipRest(ladder: Ladder, reporter: Reporter, ids: RungId[]): void {
     const rung = ladder.skip(id, RUNG_TITLES[id], 'an earlier rung failed');
     reporter.rung(RUNG_TITLES[id]).done(rung);
   }
-  ladder.setMatrix({
+  ladder.addMatrix({
     metric: 'delivered',
     cells: [],
     skipped: 'preflight did not pass, so no push was sent',
@@ -688,7 +710,7 @@ async function matrix(
   }
 ): Promise<void> {
   if (!options.send) {
-    ladder.setMatrix({
+    ladder.addMatrix({
       metric: 'delivered',
       cells: [],
       skipped:
@@ -703,7 +725,7 @@ async function matrix(
     !inputs.environmentId ||
     !inputs.token
   ) {
-    ladder.setMatrix({
+    ladder.addMatrix({
       metric: 'delivered',
       cells: [],
       skipped:
@@ -719,7 +741,7 @@ async function matrix(
       `cio-verify-${new Date().toISOString().slice(0, 19)}`
     );
 
-  ladder.setMatrix(
+  ladder.addMatrix(
     await runDeliveredMatrix({
       target: inputs.target,
       bundleId: inputs.bundleId,
@@ -733,6 +755,71 @@ async function matrix(
       resend: options.resend,
       reporter,
       evidenceDirectory,
+    })
+  );
+}
+
+/**
+ * The opened matrix, which only ever runs when asked and when someone can answer.
+ *
+ * Kept separate from the delivered matrix rather than folded in as more cells, because it
+ * is a different kind of run: unattended verification is the product, and this is the part
+ * that cannot be.
+ */
+async function openedMatrix(
+  ladder: Ladder,
+  options: VerifyPushOptions,
+  reporter: Reporter,
+  asker: Asker,
+  inputs: {
+    target?: IosTarget;
+    bundleId?: string;
+    environmentId?: string;
+    token?: string;
+    sandbox: boolean;
+    provider: PushProvider;
+    processNames?: string[];
+  }
+): Promise<void> {
+  if (!options.opened) return;
+  if (
+    !inputs.target ||
+    !inputs.bundleId ||
+    !inputs.environmentId ||
+    !inputs.token
+  ) {
+    ladder.addMatrix({
+      metric: 'opened',
+      cells: [],
+      skipped:
+        'a target, a workspace and a registered token are all needed to send',
+    });
+    return;
+  }
+  if (!options.link) {
+    ladder.addMatrix({
+      metric: 'opened',
+      cells: [],
+      skipped:
+        'pass --link <url> with a URL this app routes, so the deep link half can be judged',
+    });
+    return;
+  }
+
+  ladder.addMatrix(
+    await runOpenedMatrix({
+      target: inputs.target,
+      bundleId: inputs.bundleId,
+      environmentId: inputs.environmentId,
+      token: inputs.token,
+      sandbox: inputs.sandbox,
+      provider: inputs.provider,
+      link: options.link,
+      states: options.states ? parseStates(options.states) : undefined,
+      processNames: inputs.processNames,
+      evidenceDirectory: options.evidence,
+      asker,
+      reporter,
     })
   );
 }
@@ -920,7 +1007,7 @@ async function androidMatrix(
   }
 ): Promise<void> {
   if (!options.send) {
-    ladder.setMatrix({
+    ladder.addMatrix({
       metric: 'delivered',
       cells: [],
       skipped:
@@ -934,7 +1021,7 @@ async function androidMatrix(
     !inputs.environmentId ||
     !inputs.token
   ) {
-    ladder.setMatrix({
+    ladder.addMatrix({
       metric: 'delivered',
       cells: [],
       skipped:
@@ -943,7 +1030,7 @@ async function androidMatrix(
     return;
   }
 
-  ladder.setMatrix(
+  ladder.addMatrix(
     await runAndroidDeliveredMatrix({
       serial: inputs.serial,
       packageName: inputs.packageName,

@@ -101,7 +101,7 @@ test('a rung records the time its evidence cost', () => {
   const ladder = new Ladder();
   ladder.adopt(rung('project_wiring', 'Project wiring', [pass('a', 'fine')]), 312);
   ladder.adopt(rung('workspace_ready', 'Workspace ready', [pass('b', 'fine')]), 9_040);
-  ladder.setMatrix({
+  ladder.addMatrix({
     metric: 'delivered',
     cells: [
       { state: 'killed', verdict: 'pass', evidence: ['sent'], durationMs: 41_200 },
@@ -122,6 +122,6 @@ test('a rung records the time its evidence cost', () => {
     report.rungs.map((r) => r.durationMs),
     [312, 9_040]
   );
-  assert.strictEqual(report.matrix.cells[0].durationMs, 41_200);
-  assert.strictEqual(report.matrix.durationMs, 151_000);
+  assert.strictEqual(report.matrices[0].cells[0].durationMs, 41_200);
+  assert.strictEqual(report.matrices[0].durationMs, 151_000);
 });
