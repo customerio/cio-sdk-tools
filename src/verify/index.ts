@@ -33,6 +33,7 @@ import { AndroidProjectModel, loadAndroidProject } from './android/project';
 import { XcodeProjectModel, loadProject } from './ios/xcode';
 import { runDeliveredMatrix } from './matrix';
 import { runOpenedMatrix } from './matrix/opened';
+import { runAndroidOpenedMatrix } from './matrix/android_opened';
 import { runAndroidDeliveredMatrix } from './matrix/android';
 import { ALL_STATES, AppState } from './matrix/states';
 import { packageInstalled, readAndroidSdkState } from './android/device';
@@ -764,6 +765,59 @@ async function matrix(
   );
 }
 
+/** The Android half of the opened matrix: same causes, Android's own sentences. */
+async function androidOpened(
+  ladder: Ladder,
+  options: VerifyPushOptions,
+  reporter: Reporter,
+  asker: Asker,
+  inputs: {
+    serial?: string;
+    packageName?: string;
+    environmentId?: string;
+    token?: string;
+  }
+): Promise<void> {
+  if (!options.opened) return;
+  if (
+    !inputs.serial ||
+    !inputs.packageName ||
+    !inputs.environmentId ||
+    !inputs.token
+  ) {
+    ladder.addMatrix({
+      metric: 'opened',
+      cells: [],
+      skipped:
+        'a target, a workspace and a registered token are all needed to send',
+    });
+    return;
+  }
+  if (!options.link) {
+    ladder.addMatrix({
+      metric: 'opened',
+      cells: [],
+      skipped:
+        'pass --link <url> with a URL this app routes, so the deep link half can be judged',
+    });
+    return;
+  }
+
+  ladder.addMatrix(
+    await runAndroidOpenedMatrix({
+      serial: inputs.serial,
+      packageName: inputs.packageName,
+      environmentId: inputs.environmentId,
+      token: inputs.token,
+      link: options.link,
+      states: options.states ? parseStates(options.states) : undefined,
+      evidenceDirectory: options.evidence,
+      asker,
+      reporter,
+    })
+  );
+}
+
 /**
  * The opened matrix, which only ever runs when asked and when someone can answer.
  *
@@ -979,6 +1033,13 @@ async function climbAndroid(
   });
   ladder.adopt(profile, profileTimer());
   profileRung.done(profile);
+
+  await androidOpened(ladder, options, reporter, asker, {
+    serial: device.target?.serial,
+    packageName,
+    environmentId: workspace.resolution?.workspace?.id,
+    token: device.sdk?.deviceToken,
+  });
 
   const androidFreshness = freshness({
     installedAt: device.installedAt,

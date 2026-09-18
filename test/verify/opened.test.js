@@ -149,3 +149,65 @@ test('every cell closes its handle, or the result never reaches the screen', asy
   assert.match(section.skipped, /needs a real tap/);
   assert.deepStrictEqual(closed, []);
 });
+
+// --- Android parity -------------------------------------------------------
+
+const {
+  ANDROID_OPENED_MARKERS,
+} = require('../../dist/verify/matrix/android_opened');
+
+test('the Android markers match that SDK sentence for sentence', () => {
+  // From customerio-android PushNotificationLogger.kt. The wording differs from iOS —
+  // the metric line carries the parsed payload, not a bare delivery id — which is why
+  // the markers are per platform while the judgement is shared.
+  const payload =
+    'CustomerIOParsedPushPayload(deliveryId=dgS_ugc, deviceToken=cjst)';
+  assert.ok(
+    ANDROID_OPENED_MARKERS.tracked.test(
+      `Tracking push message opened with payload: ${payload}`
+    )
+  );
+  assert.ok(
+    ANDROID_OPENED_MARKERS.skippedNoId.test(
+      'Skipping opened metric for notification without a delivery id/token (locally started, not delivered by Customer.io): x'
+    )
+  );
+  const handling = ANDROID_OPENED_MARKERS.linkHandling.exec(
+    `Handling push notification deep link with payload: ${payload} - pushClickBehavior: RESET_TASK_STACK`
+  );
+  assert.strictEqual(handling[1], 'RESET_TASK_STACK');
+
+  // Android has two outcomes iOS does not, because it can hand the URL to another app
+  // or fall back to the launcher.
+  for (const line of [
+    'Deep link handled by host app callback implementation',
+    'Deep link handled by internal host app navigation',
+    'Deep link handled by external app',
+    'Deep link handled by opening default host app',
+  ]) {
+    assert.ok(ANDROID_OPENED_MARKERS.linkHandled.test(line), line);
+  }
+  assert.ok(
+    !ANDROID_OPENED_MARKERS.linkHandled.test('Deep link was not handled')
+  );
+  assert.ok(ANDROID_OPENED_MARKERS.linkUnhandled.test('Deep link was not handled'));
+});
+
+test('both platforms reach the same verdict through the same judge', () => {
+  const { judgeOpened } = require('../../dist/verify/matrix/opened');
+  // Android logs no separate "clicked" line, so the caller derives it — the point is that
+  // one cause vocabulary covers both, which is what the plugin will key on.
+  assert.deepStrictEqual(
+    judgeOpened({
+      available: true,
+      clicked: true,
+      tracked: true,
+      foreign: false,
+      emptyId: false,
+      linkAttempted: true,
+      linkHandled: true,
+      linkUnhandled: false,
+    }),
+    { verdict: 'pass' }
+  );
+});
