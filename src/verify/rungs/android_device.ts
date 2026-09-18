@@ -73,8 +73,8 @@ export function androidDeviceReady(
   if (!facts.target) {
     if (facts.selector) {
       rung.checks.push(
-        fail('target_available', 'Emulator is usable', 'device.not_available', [
-          `--target ${facts.selector} matched no running emulator`,
+        fail('target_available', 'Target is usable', 'device.not_available', [
+          `--target ${facts.selector} matched no connected device or running emulator`,
           ...facts.usable.map((t) => `available: ${describeAndroidTarget(t)}`),
         ])
       );
@@ -82,10 +82,10 @@ export function androidDeviceReady(
     }
     rung.skipped =
       facts.usable.length > 1
-        ? `several emulators are running; pass --target to choose one (${facts.usable
+        ? `several targets are available; pass --target to choose one (${facts.usable
             .map((t) => t.serial)
             .join(', ')})`
-        : 'no running emulator (this iteration verifies Android on an emulator only)';
+        : 'no connected device and no running emulator';
     return rung;
   }
 
@@ -156,7 +156,7 @@ function networkCheck(facts: AndroidDeviceFacts): Check | undefined {
       'device.dns_unresolved',
       [
         'the network route is up but fcm.googleapis.com does not resolve',
-        'an emulator in this state answers pings and receives nothing',
+        'a target in this state answers pings and receives nothing',
       ]
     );
   }

@@ -199,12 +199,41 @@ test('a missing token and a denied permission are separate failures', () => {
   assert.ok(causes(noToken).includes('device.token_unregistered'));
 });
 
-test('a physical Android device is out of scope and skips rather than being used', () => {
-  const phone = { serial: 'R58M1234', isEmulator: false, state: 'device' };
+test('a physical Android device is a valid target, and so is an emulator', () => {
+  const { selectAndroidTarget } = require('../../dist/verify/android/device');
+  const phone = {
+    serial: 'RFCXB0LZRLD',
+    model: 'SM-S921B',
+    isEmulator: false,
+    state: 'device',
+  };
+  const emulator = {
+    serial: 'emulator-5554',
+    isEmulator: true,
+    state: 'device',
+  };
+  const offline = { serial: 'R58M1234', isEmulator: false, state: 'offline' };
+
+  // Both are offered; the target prompt is what stops a run picking whichever phone
+  // happens to be plugged in, and a phone is where Doze and OEM process-killing live.
+  const both = selectAndroidTarget([phone, emulator, offline]);
+  assert.deepStrictEqual(
+    both.usable.map((t) => t.serial),
+    ['RFCXB0LZRLD', 'emulator-5554']
+  );
+  assert.strictEqual(both.target, undefined, 'it chose one of two without being asked');
+  assert.strictEqual(
+    selectAndroidTarget([phone, emulator], 'RFCXB0LZRLD').target?.serial,
+    'RFCXB0LZRLD'
+  );
+  // An unreachable device is never a target.
+  assert.deepStrictEqual(selectAndroidTarget([offline]).usable, []);
+});
+
+test('nothing connected says exactly that', () => {
   const rung = androidDeviceReady({ usable: [], installed: false }, 'io.example.app');
   assert.strictEqual(Ladder.verdictOf(rung), 'skip');
-  assert.match(rung.skipped, /emulator only/);
-  assert.strictEqual(phone.isEmulator, false);
+  assert.match(rung.skipped, /no connected device and no running emulator/);
 });
 
 test('the handoff worker is the acceptance signal, and its absence is not a failure', () => {

@@ -53,9 +53,11 @@ export function selectAndroidTarget(
   targets: AndroidTarget[],
   selector?: string
 ): { target?: AndroidTarget; usable: AndroidTarget[] } {
-  // Emulator only for this iteration, and being explicit about that beats silently
-  // verifying against whichever phone happens to be plugged in.
-  const usable = targets.filter((t) => t.state === 'device' && t.isEmulator);
+  // Emulators and phones alike. The earlier emulator-only filter existed so a run could
+  // not silently pick whichever phone was plugged in — the target prompt now covers that,
+  // and a physical device is where the failures this tool cares about actually happen
+  // (Doze, battery optimisation, an OEM killing the process).
+  const usable = targets.filter((t) => t.state === 'device');
   if (selector) {
     return {
       target: usable.find((t) => t.serial === selector || t.model === selector),

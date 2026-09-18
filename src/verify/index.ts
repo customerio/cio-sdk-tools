@@ -932,7 +932,7 @@ async function climbAndroid(
 
   const deviceTimer = stopwatch();
   const deviceRung = reporter.rung(RUNG_TITLES.device_ready);
-  deviceRung.phase('reading the emulator');
+  deviceRung.phase('reading the target');
   const device = await gatherAndroidDevice({
     packageName,
     selector: selection.targetSelector,
