@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { run } from '../exec';
 import { Target } from '../ios/device';
+import { waitForTitle } from './notifications';
 
 /**
  * Did the push fail to arrive, or does nothing arrive on this target at all?
@@ -34,9 +35,6 @@ const POLL_MS = 700;
 export async function probeLocalDelivery(options: {
   target: Target;
   bundleId: string;
-  /** Snapshot of the delivered-notification blobs taken before the probe. */
-  blobsBefore?: Set<string>;
-  readBlobs: (target: Target) => Promise<Set<string> | undefined>;
 }): Promise<Probe> {
   // A physical device has no local-injection route, so the question cannot be asked there.
   if (options.target.kind !== 'simulator') {
@@ -47,7 +45,8 @@ export async function probeLocalDelivery(options: {
     };
   }
 
-  const before = options.blobsBefore ?? new Set<string>();
+  const sinceMs = Date.now() - 1_000;
+  const title = `cio verify · local probe · ${Date.now()}`;
   const payload = path.join(os.tmpdir(), `cio-verify-probe-${Date.now()}.apns`);
   // `mutable-content` so the extension is exercised too: a probe that both displays and
   // wakes the extension proves everything except the network.
@@ -57,7 +56,7 @@ export async function probeLocalDelivery(options: {
       'Simulator Target Bundle': options.bundleId,
       'aps': {
         'alert': {
-          title: 'cio verify · local probe',
+          title,
           body: 'Injected locally to test this target, not sent over APNs.',
         },
         'mutable-content': 1,
@@ -81,18 +80,19 @@ export async function probeLocalDelivery(options: {
       };
     }
 
-    const deadline = Date.now() + LANDING_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      await sleep(POLL_MS);
-      const after = await options.readBlobs(options.target);
-      const fresh = [...(after ?? [])].filter((blob) => !before.has(blob));
-      if (fresh.length > 0) {
-        return {
-          result: 'landed',
-          evidence:
-            'a locally injected push did display, so the app and extension are reachable — the delivery path is the suspect, not the integration',
-        };
-      }
+    const landed = await waitForTitle({
+      target: options.target,
+      title,
+      timeoutMs: LANDING_TIMEOUT_MS,
+      sinceMs,
+      intervalMs: POLL_MS,
+    });
+    if (landed) {
+      return {
+        result: 'landed',
+        evidence:
+          'a locally injected push did display, so the app and extension are reachable — the delivery path is the suspect, not the integration',
+      };
     }
 
     return {
@@ -103,8 +103,4 @@ export async function probeLocalDelivery(options: {
   } finally {
     await fs.rm(payload, { force: true }).catch(() => undefined);
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

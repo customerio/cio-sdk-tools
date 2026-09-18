@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { stopwatch } from '../clock';
 import { run } from '../exec';
-import { deliveredNotificationBlobs } from './index';
+import { waitForTitle } from './notifications';
 import { probeLocalDelivery } from './probe';
 import { Target } from '../ios/device';
 import { Asker } from '../prompt';
@@ -127,7 +127,8 @@ async function runOpenedCell(
   evidence.push(`state via ${staged.how}`);
 
   const mark = capture.lines.length;
-  const blobsBefore = await deliveredNotificationBlobs(options.target);
+  const sinceMs = Date.now() - 1_000;
+  const title = `cio verify · tap me · ${state}`;
   handle?.phase('sending');
   const sent = await sendVerifyPush({
     environmentId: options.environmentId,
@@ -135,7 +136,7 @@ async function runOpenedCell(
     sandbox: options.sandbox,
     platform: 'ios',
     provider: options.provider,
-    title: `cio verify · tap me · ${state}`,
+    title,
     body: 'Tap this notification to verify the opened metric.',
     link: options.link,
   });
@@ -161,13 +162,16 @@ async function runOpenedCell(
   // at all it asked for something impossible, then waited three minutes for it. Waiting
   // for arrival first puts the question on screen while the banner is live.
   handle?.phase('waiting for the notification to land');
-  const arrived = await waitForNotification(options.target, blobsBefore);
+  const arrived = await waitForTitle({
+    target: options.target,
+    title,
+    timeoutMs: ARRIVAL_TIMEOUT_MS,
+    sinceMs,
+  });
   if (arrived === false) {
     const probe = await probeLocalDelivery({
       target: options.target,
       bundleId: options.bundleId,
-      blobsBefore,
-      readBlobs: deliveredNotificationBlobs,
     });
     return {
       state,
@@ -201,7 +205,7 @@ async function runOpenedCell(
   options.reporter?.pause();
   const tapped = await options.asker.confirm(
     [
-      `Tap the "cio verify · tap me · ${state}" notification on ${options.target.name}.`,
+      `Tap the "${title}" notification on ${options.target.name}.`,
       'If the banner has gone, swipe down from the top edge to find it in Notification Centre.',
       'The app may not visibly change — the verdict comes from the log, not the screen.',
     ].join('\n  '),
@@ -299,21 +303,6 @@ export function judgeOpened(observed: {
     return { verdict: 'warn', cause: 'runtime.deep_link_absent' };
   }
   return { verdict: 'pass' };
-}
-
-/** Undefined on a physical device, where there is no store to compare. */
-async function waitForNotification(
-  target: Target,
-  before: Set<string> | undefined
-): Promise<boolean | undefined> {
-  if (!before) return undefined;
-  const deadline = Date.now() + ARRIVAL_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const after = await deliveredNotificationBlobs(target);
-    if ([...(after ?? [])].some((blob) => !before.has(blob))) return true;
-    await sleep(900);
-  }
-  return false;
 }
 
 /** Best effort: skipped silently wherever it is unavailable. */

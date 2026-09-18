@@ -90,3 +90,27 @@ test('the markers match the SDK sentences verbatim', () => {
 test('foreground is not offered by default — there is no banner to tap', () => {
   assert.deepStrictEqual(OPENED_STATES, ['killed', 'background']);
 });
+
+// --- arrival by title ----------------------------------------------------
+
+const { titlesFrom } = require('../../dist/verify/matrix/notifications');
+
+test('titles are read out of the archived store, which grep cannot see into', () => {
+  // Shape of real `plutil -p` output over a DeliveredNotifications.plist: an
+  // NSKeyedArchiver object table, which is why the raw file is not greppable.
+  const printed = `{
+  "$archiver" => "NSKeyedArchiver"
+  "$objects" => [
+    0 => "$null"
+    12 => "cio verify · tap me · killed"
+    13 => "io.customer.ios-sample.apn-spm.APN-UIKit"
+    14 => "Tap this notification to verify the opened metric."
+  ]
+}`;
+  const titles = titlesFrom(printed);
+  assert.ok(titles.includes('cio verify · tap me · killed'));
+  assert.ok(titles.includes('io.customer.ios-sample.apn-spm.APN-UIKit'));
+  // An exact title is the whole point: counting entries called an unrelated system
+  // notification our push arriving, and sent someone looking for a banner nobody sent.
+  assert.ok(!titles.includes('cio verify · tap me · background'));
+});

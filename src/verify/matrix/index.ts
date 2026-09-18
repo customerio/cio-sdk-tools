@@ -1,7 +1,3 @@
-import { promises as fs } from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-import { run } from '../exec';
 import { Target } from '../ios/device';
 import { MatrixCell, MatrixSection, Verdict } from '../types';
 import {
@@ -16,6 +12,7 @@ import { ALL_STATES, AppState, setAppState } from './states';
 import { stopwatch } from '../clock';
 import { CellHandle, Reporter } from '../report';
 import { ProbeResult, probeLocalDelivery } from './probe';
+import { waitForTitle } from './notifications';
 import { PushProvider } from '../cio/push';
 
 export interface MatrixOptions {
@@ -172,7 +169,7 @@ async function runCellBody(
   if (staged.error) evidence.push(`state warning: ${staged.error}`);
 
   const mark = capture.lines.length;
-  const before = await deliveredNotificationBlobs(options.target);
+  const sinceMs = Date.now() - 1_000;
 
   const title = `cio verify · ${state} · ${new Date()
     .toISOString()
@@ -247,7 +244,8 @@ async function runCellBody(
   handle?.phase('waiting for the push to arrive');
   let arrived = await waitForArrival(
     options.target,
-    before,
+    title,
+    sinceMs,
     evidence,
     confirming ? CONFIRMING_TIMEOUT_MS : ARRIVAL_TIMEOUT_MS
   );
@@ -286,7 +284,8 @@ async function runCellBody(
     if (again.accepted) {
       arrived = await waitForArrival(
         options.target,
-        before,
+        title,
+        sinceMs,
         evidence,
         RETRY_ARRIVAL_TIMEOUT_MS
       );
@@ -306,8 +305,6 @@ async function runCellBody(
       const probe = await probeLocalDelivery({
         target: options.target,
         bundleId: options.bundleId,
-        blobsBefore: before,
-        readBlobs: deliveredNotificationBlobs,
       });
       localProbe = probe.result;
       known.localProbe = probe.result;
@@ -456,75 +453,27 @@ async function waitFor(
   return predicate();
 }
 
-/** The filesystem variant: the notification store has to be re-read to be re-checked. */
-async function waitForAsync(
-  predicate: () => Promise<boolean>,
-  timeoutMs: number,
-  intervalMs = 700
-): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await predicate()) return true;
-    await sleep(intervalMs);
-  }
-  return predicate();
-}
-
+/**
+ * Did the push this cell sent arrive?
+ *
+ * By title, never by counting. The first version diffed a fingerprint of every app's
+ * notification store, so any unrelated system notification read as our push arriving —
+ * a false positive in the one check that must not have one, and it sent a person looking
+ * for a banner that was never sent to them.
+ */
 async function waitForArrival(
   target: Target,
-  before: Set<string> | undefined,
+  title: string,
+  sinceMs: number,
   evidence: string[],
   timeoutMs = ARRIVAL_TIMEOUT_MS
 ): Promise<boolean | undefined> {
-  if (!before) return undefined;
-  let newBlobs: string[] = [];
-  await waitForAsync(async () => {
-    const after = await deliveredNotificationBlobs(target);
-    newBlobs = [...(after ?? [])].filter((blob) => !before.has(blob));
-    return newBlobs.length > 0;
-  }, timeoutMs);
-  if (newBlobs.length > 0) {
-    evidence.push(
-      `arrived: ${newBlobs.length} new entries in the notification store`
-    );
-    return true;
-  }
-  evidence.push('nothing new in the notification store');
-  return false;
-}
-
-/**
- * Arrival, independent of the SDK: the simulator keeps delivered notifications in a plist
- * whose payload blobs can be diffed across a send. On a phone there is no equivalent to
- * read, so arrival there is whatever the log says.
- *
- * Diffed rather than matched on purpose — the store's format is undocumented and a match
- * would break the day it changes, while a diff only needs it to keep changing.
- */
-export async function deliveredNotificationBlobs(
-  target: Target
-): Promise<Set<string> | undefined> {
-  if (target.kind !== 'simulator') return undefined;
-
-  const root = path.join(
-    os.homedir(),
-    'Library/Developer/CoreSimulator/Devices',
-    target.udid,
-    'data/Library/UserNotifications'
+  const arrived = await waitForTitle({ target, title, sinceMs, timeoutMs });
+  if (arrived === undefined) return undefined;
+  evidence.push(
+    arrived
+      ? 'arrived: the notification is in the delivered store'
+      : 'nothing with this title reached the notification store'
   );
-  const directories = await fs.readdir(root).catch(() => undefined);
-  if (!directories) return new Set();
-
-  const blobs = new Set<string>();
-  for (const directory of directories) {
-    const file = path.join(root, directory, 'DeliveredNotifications.plist');
-    const { stdout, code } = await run('strings', [file], 30_000);
-    if (code !== 0) continue;
-    // base64url, because delivery ids carry `_` and `-`; a charset without them reports no
-    // correlation when the correlation is perfect.
-    for (const match of stdout.matchAll(/[A-Za-z0-9+/_-]{22,}={0,2}/g)) {
-      blobs.add(match[0]);
-    }
-  }
-  return blobs;
+  return arrived;
 }
