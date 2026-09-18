@@ -228,3 +228,40 @@ test('an interrupted run cannot leave a log stream attached', () => {
   process.emit('exit', 0);
   assert.deepStrictEqual(killed, ['SIGKILL']);
 });
+
+test('a target that will not deliver a local push convicts nothing', () => {
+  const nothingArrived = {
+    available: true,
+    arrived: false,
+    extensionRan: false,
+    tracked: false,
+    accepted: false,
+    sawLines: true,
+    loggedIds: [],
+    freshIds: [],
+  };
+
+  // The old behaviour, kept for a target that is demonstrably healthy: the push is the
+  // thing that failed.
+  assert.deepStrictEqual(judge({ ...nothingArrived, localProbe: 'landed' }), {
+    verdict: 'fail',
+    cause: 'runtime.push_never_arrived',
+  });
+
+  // A stuck target is not evidence about the integration — it is the absence of evidence,
+  // so the cell is inconclusive rather than a conviction.
+  assert.deepStrictEqual(judge({ ...nothingArrived, localProbe: 'absent' }), {
+    verdict: 'skip',
+    cause: 'device.notifications_wedged',
+  });
+
+  // No probe available (a physical device) leaves the verdict where it was.
+  assert.deepStrictEqual(
+    judge({ ...nothingArrived, localProbe: 'unavailable' }),
+    { verdict: 'fail', cause: 'runtime.push_never_arrived' }
+  );
+  assert.deepStrictEqual(judge(nothingArrived), {
+    verdict: 'fail',
+    cause: 'runtime.push_never_arrived',
+  });
+});

@@ -15,6 +15,7 @@ import { sendVerifyPush } from './send';
 import { ALL_STATES, AppState, setAppState } from './states';
 import { stopwatch } from '../clock';
 import { CellHandle, Reporter } from '../report';
+import { ProbeResult, probeLocalDelivery } from './probe';
 import { PushProvider } from '../cio/push';
 
 export interface MatrixOptions {
@@ -43,6 +44,18 @@ export interface MatrixOptions {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** First attempt: long enough that a slow simulator is not called a failure. */
+const ARRIVAL_TIMEOUT_MS = 45_000;
+/**
+ * The re-send is a "maybe it was just slow" check, not a fresh attempt, so it gets a
+ * fraction of the budget. Two full windows per dead cell is how one run spent 8m37s
+ * arriving at a verdict it could have reached in seconds.
+ */
+const RETRY_ARRIVAL_TIMEOUT_MS = 12_000;
+const RETRY_SEQUENCE_TIMEOUT_MS = 12_000;
+/** Confirming a condition an earlier cell already proved. */
+const CONFIRMING_TIMEOUT_MS = 10_000;
 
 /**
  * The delivered matrix: one real push per app state, followed to the metric.
@@ -81,9 +94,13 @@ export async function runDeliveredMatrix(
     if (capture.available) await sleep(2_500);
 
     const seenIds = new Set<string>();
+    // Established once, then trusted: a target that would not deliver a locally injected
+    // push in one cell is not going to deliver one in the next, and re-proving it costs a
+    // full arrival window every time.
+    const known: RunState = {};
     for (const state of states) {
       const cellTimer = stopwatch();
-      const cell = await runCell(state, options, capture, seenIds);
+      const cell = await runCell(state, options, capture, seenIds, known);
       cell.durationMs = cellTimer();
       section.cells.push(cell);
       // Sustained sends to one token appear to throttle; a pause between cells costs
@@ -102,14 +119,35 @@ export async function runDeliveredMatrix(
  * One handle per cell, closed on every return path. The body reports phases; only this
  * wrapper closes the line, so a cell can never finish without saying how it went.
  */
+/** What one cell learned that the rest of the run should not have to learn again. */
+interface RunState {
+  /** Set once a local-injection probe has answered for this target. */
+  localProbe?: ProbeResult;
+  /**
+   * Set when a cell established that an accepted send reaches nothing at all. The later
+   * cells still run — a failure in one app state hiding a pass in another is the bug this
+   * matrix exists for — but they are confirming a known condition, not waiting for a first
+   * answer, so they get seconds rather than two full windows each.
+   */
+  nothingArrives?: boolean;
+}
+
 async function runCell(
   state: AppState,
   options: MatrixOptions,
   capture: LogCapture,
-  seenIds: Set<string>
+  seenIds: Set<string>,
+  known: RunState
 ): Promise<MatrixCell> {
   const handle = options.reporter?.cell(state);
-  const cell = await runCellBody(state, options, capture, seenIds, handle);
+  const cell = await runCellBody(
+    state,
+    options,
+    capture,
+    seenIds,
+    handle,
+    known
+  );
   handle?.done(cell);
   return cell;
 }
@@ -119,7 +157,8 @@ async function runCellBody(
   options: MatrixOptions,
   capture: LogCapture,
   seenIds: Set<string>,
-  handle?: CellHandle
+  handle: CellHandle | undefined,
+  known: RunState
 ): Promise<MatrixCell> {
   const evidence: string[] = [];
 
@@ -181,7 +220,10 @@ async function runCellBody(
   );
 
   const since = () => capture.lines.slice(mark);
-  const timeout = options.cellTimeoutMs ?? 60_000;
+  const confirming = known.nothingArrives === true;
+  const timeout = confirming
+    ? CONFIRMING_TIMEOUT_MS
+    : options.cellTimeoutMs ?? 60_000;
 
   // Wait for the *end* of the sequence. `delivered` fires part way through, so stopping
   // there truncates the capture and loses the rich-push outcome entirely.
@@ -196,7 +238,17 @@ async function runCellBody(
     : false;
 
   handle?.phase('waiting for the push to arrive');
-  let arrived = await waitForArrival(options.target, before, evidence);
+  let arrived = await waitForArrival(
+    options.target,
+    before,
+    evidence,
+    confirming ? CONFIRMING_TIMEOUT_MS : ARRIVAL_TIMEOUT_MS
+  );
+  if (confirming) {
+    evidence.push(
+      'an earlier cell established that nothing arrives, so this one confirmed it rather than waiting again'
+    );
+  }
 
   // Nothing arrived and the extension never woke: on a simulator that is as often APNs
   // being slow as it is a real failure, and the tool has no business calling a delayed
@@ -204,7 +256,9 @@ async function runCellBody(
   if (
     options.resend !== false &&
     arrived === false &&
-    !ranInExtension(since())
+    !ranInExtension(since()) &&
+    known.localProbe !== 'absent' &&
+    !confirming
   ) {
     handle?.phase('nothing arrived — sending once more');
     const again = await sendVerifyPush({
@@ -225,10 +279,43 @@ async function runCellBody(
         () =>
           since().some((line) => NSE_MARKERS.completion.test(line.message)) &&
           since().some((line) => NSE_MARKERS.accepted.test(line.message)),
-        timeout
+        RETRY_SEQUENCE_TIMEOUT_MS
       );
-      arrived = await waitForArrival(options.target, before, evidence);
+      arrived = await waitForArrival(
+        options.target,
+        before,
+        evidence,
+        RETRY_ARRIVAL_TIMEOUT_MS
+      );
     }
+  }
+
+  // Nothing arrived: before blaming the integration, find out whether this target is
+  // delivering anything at all.
+  let localProbe = known.localProbe;
+  if (arrived === false && !ranInExtension(since())) {
+    if (localProbe === undefined) {
+      handle?.phase('nothing arrived — testing the target itself');
+      const probe = await probeLocalDelivery({
+        target: options.target,
+        bundleId: options.bundleId,
+        blobsBefore: before,
+        readBlobs: deliveredNotificationBlobs,
+      });
+      localProbe = probe.result;
+      known.localProbe = probe.result;
+      evidence.push(probe.evidence);
+    } else {
+      evidence.push(
+        localProbe === 'absent'
+          ? 'this target already failed a local-injection check in an earlier cell'
+          : 'this target passed a local-injection check in an earlier cell'
+      );
+    }
+  }
+
+  if (arrived === false && !ranInExtension(since())) {
+    known.nothingArrives = true;
   }
 
   const lines = since();
@@ -264,6 +351,7 @@ async function runCellBody(
     state,
     deliveryId: sent.deliveryId,
     ...judge({
+      localProbe,
       available: capture.available,
       arrived,
       extensionRan,
@@ -296,6 +384,12 @@ export function judge(observed: {
   sentId?: string;
   loggedIds: string[];
   freshIds: string[];
+  /**
+   * Only consulted when nothing arrived: `absent` means a locally injected push did not
+   * display either, so the target is not delivering anything and the integration has not
+   * been proven wrong — it has not been tested.
+   */
+  localProbe?: ProbeResult;
 }): { verdict: Verdict; cause?: string } {
   if (!observed.available) {
     return { verdict: 'skip' };
@@ -311,9 +405,13 @@ export function judge(observed: {
   // three accusations of the invisible failure.
   if (!observed.accepted) {
     if (!observed.extensionRan) {
-      return observed.arrived === false
-        ? { verdict: 'fail', cause: 'runtime.push_never_arrived' }
-        : { verdict: 'fail', cause: 'runtime.nse_did_not_run' };
+      if (observed.arrived === false) {
+        // A target that will not deliver a locally injected push cannot convict anything.
+        return observed.localProbe === 'absent'
+          ? { verdict: 'skip', cause: 'device.notifications_wedged' }
+          : { verdict: 'fail', cause: 'runtime.push_never_arrived' };
+      }
+      return { verdict: 'fail', cause: 'runtime.nse_did_not_run' };
     }
     // Ran but never tried: the extension exists and never forwarded the request. That is a
     // different defect from a report that was attempted and did not land, and it is the
@@ -363,7 +461,8 @@ async function waitForAsync(
 async function waitForArrival(
   target: Target,
   before: Set<string> | undefined,
-  evidence: string[]
+  evidence: string[],
+  timeoutMs = ARRIVAL_TIMEOUT_MS
 ): Promise<boolean | undefined> {
   if (!before) return undefined;
   let newBlobs: string[] = [];
@@ -371,7 +470,7 @@ async function waitForArrival(
     const after = await deliveredNotificationBlobs(target);
     newBlobs = [...(after ?? [])].filter((blob) => !before.has(blob));
     return newBlobs.length > 0;
-  }, 45_000);
+  }, timeoutMs);
   if (newBlobs.length > 0) {
     evidence.push(
       `arrived: ${newBlobs.length} new entries in the notification store`

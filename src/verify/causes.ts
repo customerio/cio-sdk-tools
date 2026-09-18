@@ -352,6 +352,14 @@ export const CAUSES: Record<string, CauseDefinition> = {
     remedy:
       'Read the error: it is usually the token, the credential, or a sandbox/production mismatch. Nothing about the SDK is proven either way until a send is accepted.',
   },
+  'device.notifications_wedged': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary:
+      'This target is not delivering notifications at all, so nothing was proven about the integration.',
+    remedy:
+      'Even a locally injected push did not display. Restart the target — `xcrun simctl shutdown <udid> && xcrun simctl boot <udid>` — and run again. A simulator in this state accepts sends and silently drops every one of them, which reads exactly like a broken integration.',
+  },
   'runtime.push_never_arrived': {
     stage: 'delivered_matrix',
     severity: 'blocker',
