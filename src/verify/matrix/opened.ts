@@ -148,12 +148,18 @@ async function runOpenedCell(
 
   // The one place this tool waits on a person. Said plainly, because a prompt nobody
   // understands is answered by pressing Enter without doing the thing.
+  // The spinner has to come down first: it repaints over the question, and a prompt
+  // nobody can read is a prompt nobody answers.
+  options.reporter?.pause();
   const tapped = await options.asker.confirm(
-    `Tap the "${`cio verify · tap me · ${state}`}" notification on ${
-      options.target.name
-    }, then press Enter`,
+    [
+      `Tap the "cio verify · tap me · ${state}" notification on ${options.target.name}.`,
+      'If the banner has gone, swipe down from the top edge to find it in Notification Centre.',
+      'The app may not visibly change — the verdict comes from the log, not the screen.',
+    ].join('\n  '),
     { timeoutMs: options.tapTimeoutMs ?? TAP_TIMEOUT_MS }
   );
+  options.reporter?.resume();
   if (!tapped) {
     return {
       state,

@@ -254,3 +254,29 @@ test('a matrix that never ran still says why', () => {
   assert.match(text, /delivered matrix\n\s+no push was sent — pass --send/);
   assert.match(text, /opened matrix\n\s+opened needs a real tap/);
 });
+
+test('a prompt gets the terminal to itself', () => {
+  const out = sink();
+  // Spinners on: the pause/resume pair is what a question relies on, so it has to work
+  // when there is actually something painting.
+  const reporter = createReporter({
+    level: 'human',
+    out: out.stream,
+    err: out.stream,
+    spinners: false,
+  });
+  const cell = reporter.cell('killed');
+  cell.phase('sending');
+  reporter.pause();
+  out.written.length = 0;
+  // While paused, nothing repaints over whatever is being asked.
+  cell.phase('still sending');
+  assert.strictEqual(
+    out.written.join(''),
+    '',
+    'the reporter wrote over a prompt'
+  );
+  reporter.resume();
+  cell.done({ state: 'killed', verdict: 'pass', evidence: [] });
+  assert.match(out.text(), /killed/);
+});

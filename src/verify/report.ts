@@ -40,6 +40,15 @@ export interface Reporter {
   cell(state: string): CellHandle;
   /** A fact worth recording but not worth a line in the roll-up. */
   note(text: string): void;
+  /**
+   * Take the spinner down while something else owns the terminal.
+   *
+   * A question and a spinner cannot share a screen: the spinner repaints over the prompt,
+   * and the person is left looking at "sending 892ms" wondering whether anything wants an
+   * answer. Anything that asks has to pause first.
+   */
+  pause(): void;
+  resume(): void;
   summary(report: Report): void;
 }
 
@@ -87,6 +96,7 @@ export function createReporter(options: {
   // evaluated, so two handles are open at once by design.
   let spinner: Ora | undefined;
   let spinnerText = '';
+  let paused: string | undefined;
   let timer: NodeJS.Timeout | undefined;
 
   function paint(): void {
@@ -234,6 +244,19 @@ export function createReporter(options: {
 
     note(text: string) {
       if (verbose) line(`  ${chalk.dim(text)}`);
+    },
+
+    pause() {
+      paused = spinnerText;
+      stopSpinner();
+    },
+
+    resume() {
+      if (paused !== undefined) {
+        const text = paused;
+        paused = undefined;
+        setSpinner(text);
+      }
     },
 
     summary(report: Report) {
