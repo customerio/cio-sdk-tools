@@ -108,12 +108,21 @@ export class Ladder {
         out.push(resolveCause(check.cause, check.evidence ?? []));
       }
     }
+    // A skipped cell that names a cause is inconclusive for a known reason — a rate limit,
+    // a wedged simulator — and that cause's remedy is the one thing the reader can act on.
     for (const cell of this.matrices.flatMap((section) => section.cells)) {
       if (!cell.cause) continue;
-      if (cell.verdict !== 'fail' && cell.verdict !== 'warn') continue;
+      if (cell.verdict === 'pass') continue;
       out.push(resolveCause(cell.cause, cell.evidence));
     }
     return out;
+  }
+
+  /** Whether any matrix cell so far carries this cause. */
+  matrixHasCause(code: string): boolean {
+    return this.matrices.some((section) =>
+      section.cells.some((cell) => cell.cause === code)
+    );
   }
 
   get exitCode(): number {

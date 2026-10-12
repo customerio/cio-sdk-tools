@@ -1,0 +1,191 @@
+const test = require('node:test');
+const assert = require('node:assert');
+
+const cli = require('../../dist/verify/cio/cli');
+const {
+  RATE_LIMITED_CAUSE,
+  eachState,
+  isRateLimited,
+  rejectedCell,
+  sendVerifyPush,
+} = require('../../dist/verify/matrix/send');
+const { CAUSES } = require('../../dist/verify/causes');
+const { Ladder } = require('../../dist/verify/ladder');
+const { createReporter } = require('../../dist/verify/report');
+
+const APPLE_429 = 'API error 400: 429 TooManyProviderTokenUpdates';
+
+const sink = () => {
+  const written = [];
+  return {
+    stream: { write: (c) => written.push(String(c)), isTTY: false },
+    text: () => written.join(''),
+  };
+};
+
+const request = {
+  environmentId: '122175',
+  token: 'a1b2c3d4e5f60718293a4b5c6d7e8f90',
+  sandbox: true,
+  title: 't',
+  body: 'b',
+};
+
+// `cioApi` is read off the module object at call time, so replacing it here is enough.
+const withSendResponse = async (response, body) => {
+  const original = cli.cioApi;
+  cli.cioApi = async () => response;
+  try {
+    return await body();
+  } finally {
+    cli.cioApi = original;
+  }
+};
+
+test("Apple's 429 is recognised whether it arrives as an API error or in the errors list", async () => {
+  const asError = await withSendResponse({ ok: false, error: APPLE_429 }, () =>
+    sendVerifyPush(request)
+  );
+  assert.strictEqual(asError.accepted, false);
+  assert.strictEqual(asError.rateLimited, true);
+
+  const asList = await withSendResponse(
+    { ok: true, data: { errors: ['apns: 429 TooManyProviderTokenUpdates'] } },
+    () => sendVerifyPush(request)
+  );
+  assert.strictEqual(asList.rateLimited, true);
+
+  const other = await withSendResponse(
+    { ok: false, error: 'API error 400: BadDeviceToken' },
+    () => sendVerifyPush(request)
+  );
+  assert.strictEqual(other.rateLimited, false);
+});
+
+test('a 429 is matched as a number, never inside a token or an id', () => {
+  assert.strictEqual(isRateLimited('API error 429: slow down'), true);
+  assert.strictEqual(isRateLimited('toomanyprovidertokenupdates'), true);
+  assert.strictEqual(isRateLimited('BadDeviceToken for 80f429ab'), false);
+  assert.strictEqual(isRateLimited(undefined), false);
+});
+
+test('a rate-limited send is inconclusive with its own cause; any other refusal still fails', () => {
+  const limited = rejectedCell(
+    'killed',
+    { accepted: false, error: APPLE_429, rateLimited: true },
+    ['state via simctl']
+  );
+  assert.strictEqual(limited.verdict, 'skip');
+  assert.strictEqual(limited.cause, RATE_LIMITED_CAUSE);
+  assert.deepStrictEqual(limited.evidence, [
+    'state via simctl',
+    `send rejected: ${APPLE_429}`,
+  ]);
+
+  const refused = rejectedCell(
+    'killed',
+    { accepted: false, error: 'BadDeviceToken' },
+    []
+  );
+  assert.strictEqual(refused.verdict, 'fail');
+  assert.strictEqual(refused.cause, 'send.provider_rejected');
+});
+
+test('after the first 429 nothing more is sent, and the rest are skipped rather than failed', async () => {
+  const sent = [];
+  const out = sink();
+  const cells = await eachState(
+    ['killed', 'background', 'foreground'],
+    async (state) => {
+      sent.push(state);
+      return rejectedCell(
+        state,
+        { accepted: false, error: APPLE_429, rateLimited: true },
+        []
+      );
+    },
+    // A pause this long would time the test out: none is taken after a refusal.
+    {
+      pauseMs: 60_000,
+      reporter: createReporter({
+        level: 'human',
+        out: out.stream,
+        err: out.stream,
+        spinners: false,
+      }),
+    }
+  );
+
+  assert.deepStrictEqual(sent, ['killed'], 'it kept sending');
+  assert.deepStrictEqual(
+    cells.map((cell) => [cell.state, cell.verdict, cell.cause]),
+    [
+      ['killed', 'skip', RATE_LIMITED_CAUSE],
+      ['background', 'skip', undefined],
+      ['foreground', 'skip', undefined],
+    ]
+  );
+  assert.match(
+    out.text(),
+    /background\s+not sent — the provider is refusing sends/
+  );
+  assert.match(
+    out.text(),
+    /foreground\s+not sent — the provider is refusing sends/
+  );
+});
+
+test('a 429 mid-run keeps the cells before it', async () => {
+  const cells = await eachState(
+    ['killed', 'background', 'foreground'],
+    async (state) =>
+      state === 'killed'
+        ? { state, verdict: 'pass', evidence: [] }
+        : rejectedCell(
+            state,
+            { accepted: false, error: APPLE_429, rateLimited: true },
+            []
+          ),
+    { pauseMs: 0 }
+  );
+  assert.deepStrictEqual(
+    cells.map((cell) => cell.verdict),
+    ['pass', 'skip', 'skip']
+  );
+});
+
+test('a rate-limited run is inconclusive, and the report carries the cause with its fix once', () => {
+  const ladder = new Ladder();
+  ladder.addMatrix({
+    metric: 'delivered',
+    cells: [
+      rejectedCell(
+        'killed',
+        { accepted: false, error: APPLE_429, rateLimited: true },
+        []
+      ),
+      {
+        state: 'background',
+        verdict: 'skip',
+        summary: 'not sent — the provider is refusing sends',
+        evidence: [],
+      },
+    ],
+  });
+
+  assert.strictEqual(ladder.verdict, 'skip');
+  assert.strictEqual(ladder.exitCode, 21);
+  assert.strictEqual(ladder.matrixHasCause(RATE_LIMITED_CAUSE), true);
+  const causes = ladder.causes();
+  assert.deepStrictEqual(
+    causes.map((cause) => cause.code),
+    [RATE_LIMITED_CAUSE]
+  );
+  assert.match(causes[0].remedy, /20 minutes/);
+  assert.match(causes[0].remedy, /--states killed/);
+});
+
+test('the catalog gained the cause, and only that one', () => {
+  assert.strictEqual(Object.keys(CAUSES).length, 58);
+  assert.strictEqual(CAUSES[RATE_LIMITED_CAUSE].stage, 'delivered_matrix');
+});

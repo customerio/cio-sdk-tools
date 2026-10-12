@@ -352,6 +352,14 @@ export const CAUSES: Record<string, CauseDefinition> = {
     remedy:
       'Read the error: it is usually the token, the credential, or a sandbox/production mismatch. Nothing about the SDK is proven either way until a send is accepted.',
   },
+  'send.provider_rate_limited': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary:
+      'The push provider refused the send as too frequent (429), so nothing was proven and the remaining states were not sent.',
+    remedy:
+      'Apple allows one APNs token change every 20 minutes, and on a workspace with more than one app each test send asks Apple for a new token, so sends close together come back TooManyProviderTokenUpdates. Pushes from campaigns and broadcasts reuse a cached token and are not affected. Wait 20 minutes and run again, or send a single state with --states killed.',
+  },
   'device.notifications_wedged': {
     stage: 'delivered_matrix',
     severity: 'blocker',

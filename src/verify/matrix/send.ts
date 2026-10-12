@@ -1,4 +1,10 @@
 import { cioApi } from '../cio/cli';
+import { stopwatch } from '../clock';
+import { Reporter } from '../report';
+import { MatrixCell } from '../types';
+import { AppState } from './states';
+
+export const RATE_LIMITED_CAUSE = 'send.provider_rate_limited';
 
 export interface SendRequest {
   /** Print the request and send nothing, so the orchestration can be exercised safely. */
@@ -20,6 +26,8 @@ export interface SendResult {
   accepted: boolean;
   deliveryId?: string;
   error?: string;
+  /** Refused for sending too often: every send after it would be refused the same way. */
+  rateLimited?: boolean;
   /** Set on a dry run: the payload that would have gone out, minus the token. */
   wouldSend?: Record<string, unknown>;
 }
@@ -61,10 +69,83 @@ export async function sendVerifyPush(
     { method: 'POST', body: payload }
   );
 
-  if (!res.ok) return { accepted: false, error: res.error };
+  if (!res.ok) {
+    return {
+      accepted: false,
+      error: res.error,
+      rateLimited: isRateLimited(res.error),
+    };
+  }
   const errors = res.data?.errors;
   if (Array.isArray(errors) && errors.length > 0) {
-    return { accepted: false, error: errors.join('; ') };
+    const error = errors.join('; ');
+    return { accepted: false, error, rateLimited: isRateLimited(error) };
   }
   return { accepted: true, deliveryId: res.data?.delivery_id };
 }
+
+/**
+ * Apple allows one APNs auth-token change per 20 minutes, and on a workspace with more than
+ * one app this route asks Apple for a new token on every send, so sends a minute apart come
+ * back `429 TooManyProviderTokenUpdates`. Apple's reason is matched by name, and a bare 429
+ * as well: whoever said it, the fix is the same — stop, wait, send less.
+ */
+export function isRateLimited(error?: string): boolean {
+  if (!error) return false;
+  return /TooManyProviderTokenUpdates/i.test(error) || /\b429\b/.test(error);
+}
+
+/**
+ * The cell for a send that was not accepted. A rate-limited send is inconclusive rather
+ * than a conviction: the provider refused it before looking at the token or the app.
+ */
+export function rejectedCell(
+  state: AppState,
+  sent: SendResult,
+  evidence: string[],
+  label = 'send rejected'
+): MatrixCell {
+  return {
+    state,
+    verdict: sent.rateLimited ? 'skip' : 'fail',
+    cause: sent.rateLimited ? RATE_LIMITED_CAUSE : 'send.provider_rejected',
+    evidence: [...evidence, `${label}: ${sent.error ?? 'unknown error'}`],
+  };
+}
+
+/**
+ * The loop every matrix shares: one cell per state, in order, with a pause between them —
+ * until the provider refuses a send for coming too often. Every later send would be refused
+ * the same way and push the provider's window further out, so the states after it are
+ * recorded as not sent instead of attempted.
+ */
+export async function eachState(
+  states: AppState[],
+  run: (state: AppState) => Promise<MatrixCell>,
+  options: { pauseMs: number; reporter?: Reporter }
+): Promise<MatrixCell[]> {
+  const cells: MatrixCell[] = [];
+  for (const state of states) {
+    if (cells.some((cell) => cell.cause === RATE_LIMITED_CAUSE)) {
+      const skipped: MatrixCell = {
+        state,
+        verdict: 'skip',
+        summary: 'not sent — the provider is refusing sends',
+        evidence: [
+          'an earlier send was rate limited, and another would only extend the wait',
+        ],
+      };
+      options.reporter?.cell(state).done(skipped);
+      cells.push(skipped);
+      continue;
+    }
+    const cellTimer = stopwatch();
+    const cell = await run(state);
+    cell.durationMs = cellTimer();
+    cells.push(cell);
+    if (cell.cause !== RATE_LIMITED_CAUSE) await sleep(options.pauseMs);
+  }
+  return cells;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

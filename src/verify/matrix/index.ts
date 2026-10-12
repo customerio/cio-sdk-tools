@@ -7,7 +7,7 @@ import {
   ranInExtension,
   startCapture,
 } from './logs';
-import { sendVerifyPush } from './send';
+import { eachState, rejectedCell, sendVerifyPush } from './send';
 import { ALL_STATES, AppState, setAppState } from './states';
 import { stopwatch } from '../clock';
 import { CellHandle, Reporter } from '../report';
@@ -94,15 +94,13 @@ export async function runDeliveredMatrix(
     // push in one cell is not going to deliver one in the next, and re-proving it costs a
     // full arrival window every time.
     const known: RunState = {};
-    for (const state of states) {
-      const cellTimer = stopwatch();
-      const cell = await runCell(state, options, capture, seenIds, known);
-      cell.durationMs = cellTimer();
-      section.cells.push(cell);
+    section.cells = await eachState(
+      states,
+      (state) => runCell(state, options, capture, seenIds, known),
       // Sustained sends to one token appear to throttle; a pause between cells costs
       // nothing and removes a whole class of confusing near-misses.
-      await sleep(8_000);
-    }
+      { pauseMs: 8_000, reporter: options.reporter }
+    );
   } finally {
     await capture.stop();
     section.durationMs = sectionTimer();
@@ -198,17 +196,7 @@ async function runCellBody(
     };
   }
 
-  if (!sent.accepted) {
-    return {
-      state,
-      verdict: 'fail',
-      cause: 'send.provider_rejected',
-      evidence: [
-        ...evidence,
-        `send rejected: ${sent.error ?? 'unknown error'}`,
-      ],
-    };
-  }
+  if (!sent.accepted) return rejectedCell(state, sent, evidence);
   evidence.push(
     sent.deliveryId
       ? `sent, delivery ${sent.deliveryId}`
@@ -276,6 +264,9 @@ async function runCellBody(
       title: `${title} (retry)`,
       body: 'Sent by cio-sdk-tools verify push.',
     });
+    if (again.rateLimited) {
+      return rejectedCell(state, again, evidence, 're-send rejected');
+    }
     evidence.push(
       again.accepted
         ? 'nothing arrived on the first send; re-sent once'

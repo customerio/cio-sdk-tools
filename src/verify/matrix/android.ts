@@ -7,7 +7,7 @@ import {
 } from './android_logs';
 import { setAndroidState } from './android_states';
 import { LogCapture } from './logs';
-import { sendVerifyPush } from './send';
+import { eachState, rejectedCell, sendVerifyPush } from './send';
 import { ALL_STATES, AppState } from './states';
 import { stopwatch } from '../clock';
 import { CellHandle, Reporter } from '../report';
@@ -57,13 +57,11 @@ export async function runAndroidDeliveredMatrix(
   try {
     if (capture.available) await sleep(1_500);
     const seenIds = new Set<string>();
-    for (const state of states) {
-      const cellTimer = stopwatch();
-      const cell = await runCell(state, options, capture, seenIds);
-      cell.durationMs = cellTimer();
-      section.cells.push(cell);
-      await sleep(5_000);
-    }
+    section.cells = await eachState(
+      states,
+      (state) => runCell(state, options, capture, seenIds),
+      { pauseMs: 5_000, reporter: options.reporter }
+    );
   } finally {
     await capture.stop();
     section.durationMs = sectionTimer();
@@ -141,15 +139,7 @@ async function runCellBody(
   if (!sent.accepted) {
     // `FCM_UNREGISTERED` belongs in the report verbatim: it means the token is invalid,
     // and the usual cause is a token scraped from logcat, which truncates long lines.
-    return {
-      state,
-      verdict: 'fail',
-      cause: 'send.provider_rejected',
-      evidence: [
-        ...evidence,
-        `send rejected: ${sent.error ?? 'unknown error'}`,
-      ],
-    };
+    return rejectedCell(state, sent, evidence);
   }
   evidence.push(
     'sent (this route returns no delivery id, so the log supplies it)'

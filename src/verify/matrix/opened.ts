@@ -8,7 +8,7 @@ import { Asker } from '../prompt';
 import { CellHandle, Reporter } from '../report';
 import { MatrixCell, MatrixSection, Verdict } from '../types';
 import { LogCapture, startCapture } from './logs';
-import { sendVerifyPush } from './send';
+import { eachState, rejectedCell, sendVerifyPush } from './send';
 import { AppState, setAppState } from './states';
 
 /**
@@ -88,17 +88,18 @@ export async function runOpenedMatrix(
 
   try {
     if (capture.available) await sleep(2_500);
-    for (const state of states) {
-      const handle = options.reporter?.cell(state);
-      const cellTimer = stopwatch();
-      const cell = await runOpenedCell(state, options, capture, handle);
-      cell.durationMs = cellTimer();
-      // Closing the handle is what prints the result. Without it the cells ran, the
-      // taps were read correctly, and the run said nothing about either.
-      handle?.done(cell);
-      section.cells.push(cell);
-      await sleep(4_000);
-    }
+    section.cells = await eachState(
+      states,
+      async (state) => {
+        const handle = options.reporter?.cell(state);
+        const cell = await runOpenedCell(state, options, capture, handle);
+        // Closing the handle is what prints the result. Without it the cells ran, the
+        // taps were read correctly, and the run said nothing about either.
+        handle?.done(cell);
+        return cell;
+      },
+      { pauseMs: 4_000, reporter: options.reporter }
+    );
   } finally {
     await capture.stop();
     section.durationMs = sectionTimer();
@@ -144,17 +145,7 @@ async function runOpenedCell(
     link: options.link,
   });
 
-  if (!sent.accepted) {
-    return {
-      state,
-      verdict: 'fail',
-      cause: 'send.provider_rejected',
-      evidence: [
-        ...evidence,
-        `send rejected: ${sent.error ?? 'unknown error'}`,
-      ],
-    };
-  }
+  if (!sent.accepted) return rejectedCell(state, sent, evidence);
   evidence.push(`sent with link ${options.link}`);
 
   // Wait for the notification to land before asking anyone to tap it.

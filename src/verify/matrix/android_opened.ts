@@ -6,7 +6,7 @@ import { MatrixCell, MatrixSection } from '../types';
 import { LogCapture } from './logs';
 import { ANDROID_MARKERS, startAndroidCapture } from './android_logs';
 import { OPENED_STATES, judgeOpened } from './opened';
-import { sendVerifyPush } from './send';
+import { eachState, rejectedCell, sendVerifyPush } from './send';
 import { AppState } from './states';
 import { setAndroidState } from './android_states';
 
@@ -75,15 +75,16 @@ export async function runAndroidOpenedMatrix(
 
   try {
     if (capture.available) await sleep(1_500);
-    for (const state of states) {
-      const handle = options.reporter?.cell(state);
-      const cellTimer = stopwatch();
-      const cell = await runCell(state, options, capture, handle);
-      cell.durationMs = cellTimer();
-      handle?.done(cell);
-      section.cells.push(cell);
-      await sleep(4_000);
-    }
+    section.cells = await eachState(
+      states,
+      async (state) => {
+        const handle = options.reporter?.cell(state);
+        const cell = await runCell(state, options, capture, handle);
+        handle?.done(cell);
+        return cell;
+      },
+      { pauseMs: 4_000, reporter: options.reporter }
+    );
   } finally {
     await capture.stop();
     section.durationMs = sectionTimer();
@@ -127,17 +128,7 @@ async function runCell(
     link: options.link,
   });
 
-  if (!sent.accepted) {
-    return {
-      state,
-      verdict: 'fail',
-      cause: 'send.provider_rejected',
-      evidence: [
-        ...evidence,
-        `send rejected: ${sent.error ?? 'unknown error'}`,
-      ],
-    };
-  }
+  if (!sent.accepted) return rejectedCell(state, sent, evidence);
   evidence.push(`sent with link ${options.link}`);
 
   const since = () => capture.since(mark).map((line) => line.message);
