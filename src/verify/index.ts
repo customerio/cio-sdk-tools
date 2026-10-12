@@ -101,8 +101,14 @@ export const verifyCommand = new Command('verify').description(
 );
 
 const pushCommand = new Command('push')
-  .description('Verify the iOS push integration (APNs)')
-  .argument('[path]', 'path to the iOS project directory or .xcodeproj', '.')
+  .description(
+    'Verify an iOS or Android push integration, then send real pushes and follow each one until the SDK reports it'
+  )
+  .argument(
+    '[path]',
+    'path to the project: an .xcodeproj, a Gradle app module, or a directory holding one',
+    '.'
+  )
   .option('--json', 'emit the machine-readable report on stdout', false)
   .option('--report <path>', 'write the machine-readable report to a file')
   .option(
