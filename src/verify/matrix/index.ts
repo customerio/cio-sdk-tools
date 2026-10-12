@@ -7,7 +7,7 @@ import {
   ranInExtension,
   startCapture,
 } from './logs';
-import { eachState, rejectedCell, sendVerifyPush } from './send';
+import { SendRequest, eachState, rejectedCell, sendVerifyPush } from './send';
 import { ALL_STATES, AppState, setAppState } from './states';
 import { stopwatch } from '../clock';
 import { CellHandle, Reporter } from '../report';
@@ -110,6 +110,31 @@ export async function runDeliveredMatrix(
 }
 
 /**
+ * One push of the delivered matrix. The first send and the re-send both come from here:
+ * built separately, the re-send left out the provider and went over APNs for an app that
+ * receives push through Firebase, so the one retry meant to tell slow from broken could
+ * not succeed.
+ */
+export function deliveredRequest(
+  options: Pick<
+    MatrixOptions,
+    'dryRun' | 'environmentId' | 'token' | 'sandbox' | 'provider'
+  >,
+  title: string
+): SendRequest {
+  return {
+    dryRun: options.dryRun,
+    environmentId: options.environmentId,
+    token: options.token,
+    sandbox: options.sandbox,
+    platform: 'ios',
+    provider: options.provider,
+    title,
+    body: 'Sent by cio-sdk-tools verify push.',
+  };
+}
+
+/**
  * One handle per cell, closed on every return path. The body reports phases; only this
  * wrapper closes the line, so a cell can never finish without saying how it went.
  */
@@ -173,16 +198,7 @@ async function runCellBody(
     .toISOString()
     .slice(11, 19)}`;
   handle?.phase('sending');
-  const sent = await sendVerifyPush({
-    dryRun: options.dryRun,
-    environmentId: options.environmentId,
-    token: options.token,
-    sandbox: options.sandbox,
-    platform: 'ios',
-    provider: options.provider,
-    title,
-    body: 'Sent by cio-sdk-tools verify push.',
-  });
+  const sent = await sendVerifyPush(deliveredRequest(options, title));
 
   if (sent.wouldSend) {
     return {
@@ -256,14 +272,9 @@ async function runCellBody(
     !confirming
   ) {
     handle?.phase('nothing arrived — sending once more');
-    const again = await sendVerifyPush({
-      dryRun: options.dryRun,
-      environmentId: options.environmentId,
-      token: options.token,
-      sandbox: options.sandbox,
-      title: `${title} (retry)`,
-      body: 'Sent by cio-sdk-tools verify push.',
-    });
+    const again = await sendVerifyPush(
+      deliveredRequest(options, `${title} (retry)`)
+    );
     if (again.rateLimited) {
       return rejectedCell(state, again, evidence, 're-send rejected');
     }
