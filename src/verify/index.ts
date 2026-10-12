@@ -34,7 +34,7 @@ import { AndroidProjectModel, loadAndroidProject } from './android/project';
 import { XcodeProjectModel, loadProject } from './ios/xcode';
 import { runDeliveredMatrix } from './matrix';
 import { RATE_LIMITED_CAUSE } from './matrix/send';
-import { OPENED_STATES, runOpenedMatrix } from './matrix/opened';
+import { runOpenedMatrix } from './matrix/opened';
 import { runAndroidOpenedMatrix } from './matrix/android_opened';
 import { runAndroidDeliveredMatrix } from './matrix/android';
 import { ALL_STATES, AppState } from './matrix/states';
@@ -43,7 +43,11 @@ import {
   packageInstalled,
   readAndroidSdkState,
 } from './android/device';
-import { consentToSend, refusalWithoutConsent } from './consent';
+import {
+  consentToSend,
+  openedStatesToSend,
+  refusalWithoutConsent,
+} from './consent';
 import {
   androidDeviceReady,
   gatherAndroidDevice,
@@ -1169,12 +1173,12 @@ async function askToSend(
       login: inputs.login,
       token: inputs.token,
       delivered: inputs.delivered ?? ALL_STATES,
-      // The same defaults the opened matrices fall back to, which skip themselves
-      // without a --link.
-      opened:
-        options.opened && options.link
-          ? parseStates(options.states) ?? OPENED_STATES
-          : [],
+      opened: openedStatesToSend({
+        opened: options.opened,
+        link: options.link,
+        interactive: asker.interactive,
+        states: parseStates(options.states),
+      }),
       retries: inputs.retries,
     },
     yes: options.yes,

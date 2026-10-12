@@ -5,6 +5,7 @@ const { PassThrough } = require('node:stream');
 const { createAsker } = require('../../dist/verify/prompt');
 const {
   consentToSend,
+  openedStatesToSend,
   refusalWithoutConsent,
 } = require('../../dist/verify/consent');
 const { Ladder } = require('../../dist/verify/ladder');
@@ -287,4 +288,23 @@ test('declining sends nothing and skips every section that would have sent', asy
     /the send was not confirmed, so nothing was sent/
   );
   assert.match(summary.text(), /nothing was proven/);
+});
+
+test('the count only includes tap-test pushes that will actually be sent', () => {
+  const asked = {
+    opened: true,
+    link: 'apn-uikit://settings',
+    interactive: true,
+  };
+  assert.deepStrictEqual(openedStatesToSend(asked), ['killed', 'background']);
+  assert.deepStrictEqual(openedStatesToSend({ ...asked, states: ['killed'] }), [
+    'killed',
+  ]);
+  assert.deepStrictEqual(
+    openedStatesToSend({ ...asked, interactive: false }),
+    [],
+    'nobody can tap, so the opened matrix skips itself and sends nothing'
+  );
+  assert.deepStrictEqual(openedStatesToSend({ ...asked, link: undefined }), []);
+  assert.deepStrictEqual(openedStatesToSend({ ...asked, opened: false }), []);
 });

@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { Ladder } from './ladder';
+import { OPENED_STATES } from './matrix/opened';
 import { AppState } from './matrix/states';
 import { Asker } from './prompt';
 import { Reporter, factLines } from './report';
@@ -32,6 +33,21 @@ export interface SendPlan {
   opened: AppState[];
   /** True when a delivered cell sends once more if nothing arrives. */
   retries: boolean;
+}
+
+/**
+ * The tap-test states that will actually be sent. None without `--opened` or a `--link`,
+ * and none when nobody can tap, because the opened matrices skip themselves then — a
+ * count that included them would promise pushes the run never sends.
+ */
+export function openedStatesToSend(options: {
+  opened: boolean;
+  link?: string;
+  interactive: boolean;
+  states?: AppState[];
+}): AppState[] {
+  if (!options.opened || !options.link || !options.interactive) return [];
+  return options.states ?? OPENED_STATES;
 }
 
 /** First sends only: a re-send happens only when the first push never arrived. */
