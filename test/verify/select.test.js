@@ -123,15 +123,40 @@ test('one workspace needs no question', async () => {
   assert.strictEqual(resolution.workspace.id, '122175');
 });
 
-test('a --workspace nobody can read is caught here, not three rungs later as a 404', async () => {
-  withEnvironments([{ id: '122175', name: 'Native' }]);
+test('a --workspace nobody can read ends the run with the ones it could be', async () => {
+  withEnvironments([{ id: '122175', name: 'Native' }, { id: '94996' }]);
+  await assert.rejects(
+    () =>
+      resolveWorkspace({
+        accountId: '1',
+        explicit: '999',
+        asker: createAsker({ interactive: true, input: new PassThrough() }),
+      }),
+    (error) => {
+      assert.ok(error instanceof MissingInput);
+      assert.match(
+        error.message,
+        /workspace 999 is not one this login can read — pass --workspace <id>/
+      );
+      assert.strictEqual(error.flag, '--workspace <id>');
+      assert.deepStrictEqual(error.candidates, ['122175  Native', '94996']);
+      return true;
+    }
+  );
+});
+
+test('a --workspace that cannot be checked at all still skips, as a logged-out cio does', async () => {
+  withEnvironments([]);
   const resolution = await resolveWorkspace({
     accountId: '1',
     explicit: '999',
     asker: createAsker({ interactive: false }),
   });
   assert.strictEqual(resolution.how, 'unresolved');
-  assert.match(resolution.unresolvedReason, /999 is not one this login can read/);
+  assert.match(
+    resolution.unresolvedReason,
+    /no workspaces this login can read/
+  );
 });
 
 test('an explicit workspace keeps the name, so the report reads like a workspace', async () => {
@@ -233,7 +258,12 @@ test('the sweep says which workspace actually holds the device', async () => {
 
 test('an identity found without the token is reported as the weaker finding', () => {
   const hits = [
-    { workspace: { id: '68200', name: 'Testing' }, cioId: 'c', hasToken: false, devices: 2 },
+    {
+      workspace: { id: '68200', name: 'Testing' },
+      cioId: 'c',
+      hasToken: false,
+      devices: 2,
+    },
   ];
   assert.deepStrictEqual(describeHits(hits), [
     'this identity is in Testing (68200) · 2 devices',

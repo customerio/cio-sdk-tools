@@ -49,7 +49,10 @@ export interface Asker {
   ): Promise<T>;
 }
 
-/** Thrown when the answer cannot be obtained: no terminal, --json, or nobody home. */
+/**
+ * Thrown when the answer cannot be obtained — no terminal, --json, nobody home — or when a
+ * flag gave one that is not among the choices. Either way the run ends naming the flag.
+ */
 export class MissingInput extends Error {
   constructor(
     message: string,

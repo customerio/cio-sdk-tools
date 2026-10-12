@@ -1,4 +1,4 @@
-import { Asker } from '../prompt';
+import { Asker, MissingInput } from '../prompt';
 import { cioApi } from './cli';
 
 export interface Workspace {
@@ -76,17 +76,24 @@ export async function resolveWorkspace(options: {
   }
 
   if (options.explicit) {
-    // A typo in --workspace would otherwise surface as a 404 three rungs later.
+    // A typo in --workspace would otherwise surface as a 404 three rungs later — or, as
+    // a skipped rung, as a run that carries on and proves nothing. It is a bad argument,
+    // so it ends the run the way a missing one does, with the workspaces it could be.
     const known = environments.find(
       (environment) => environment.id === options.explicit
     );
-    return known
-      ? { workspace: known, how: 'explicit', candidates: environments }
-      : {
-          how: 'unresolved',
-          candidates: environments,
-          unresolvedReason: `workspace ${options.explicit} is not one this login can read`,
-        };
+    if (!known) {
+      throw new MissingInput(
+        `workspace ${options.explicit} is not one this login can read — pass --workspace <id>`,
+        '--workspace <id>',
+        environments.map((environment) =>
+          environment.name
+            ? `${environment.id}  ${environment.name}`
+            : environment.id
+        )
+      );
+    }
+    return { workspace: known, how: 'explicit', candidates: environments };
   }
 
   if (environments.length === 1) {
