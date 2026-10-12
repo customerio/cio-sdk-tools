@@ -56,6 +56,25 @@ export async function listEnvironments(
 }
 
 /**
+ * A failure to reach Customer.io at all, cut to the part that says why — "connect:
+ * operation not permitted", "no such host" — or nothing when the error is something else.
+ * Sending someone to `cio auth status` over a network outage is the wrong fix.
+ */
+export function networkFailure(error: string): string | undefined {
+  if (
+    !/dial tcp|no such host|i\/o timeout|TLS handshake|connection refused|network is unreachable|Client\.Timeout|deadline exceeded/i.test(
+      error
+    )
+  ) {
+    return undefined;
+  }
+  return (
+    /dial tcp[^:]*(?::\d+)?: (.+)$/.exec(error)?.[1] ??
+    error.split(': ').slice(-2).join(': ')
+  );
+}
+
+/**
  * Which workspace should this app be talking to?
  *
  * Asked, never inferred. The previous version swept the account's environments for the
@@ -80,10 +99,13 @@ export async function resolveWorkspace(options: {
 
   const listed = await listEnvironments(options.accountId);
   if (listed.error) {
+    const unreachable = networkFailure(listed.error);
     return {
       how: 'unresolved',
       candidates: [],
-      unresolvedReason: `could not list this login's workspaces (${listed.error}) — check \`cio auth status\``,
+      unresolvedReason: unreachable
+        ? `could not reach Customer.io (${unreachable}) — check the network connection`
+        : `could not list this login's workspaces (${listed.error}) — check \`cio auth status\``,
     };
   }
   const environments = listed.environments;

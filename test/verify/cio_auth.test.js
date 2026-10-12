@@ -172,3 +172,34 @@ test('a status the tool cannot read leaves the config file to answer', () => {
     tokenSource: undefined,
   });
 });
+
+const { networkFailure } = require('../../dist/verify/cio/workspace');
+
+test('a network failure says to check the connection, not the login', async () => {
+  const offline =
+    'http request: Get "https://us.fly.customer.io/v1/accounts/1/environments": dial tcp 34.36.210.73:443: connect: operation not permitted';
+  assert.strictEqual(
+    networkFailure(offline),
+    'connect: operation not permitted'
+  );
+  assert.strictEqual(
+    networkFailure('dial tcp: lookup us.fly.customer.io: no such host'),
+    'lookup us.fly.customer.io: no such host'
+  );
+  assert.strictEqual(networkFailure('API error 403: forbidden'), undefined);
+
+  const original = cli.cioApi;
+  cli.cioApi = async () => ({ ok: false, error: offline });
+  try {
+    const resolution = await resolveWorkspace({
+      accountId: '1',
+      asker: createAsker({ interactive: false }),
+    });
+    assert.strictEqual(
+      resolution.unresolvedReason,
+      'could not reach Customer.io (connect: operation not permitted) — check the network connection'
+    );
+  } finally {
+    cli.cioApi = original;
+  }
+});

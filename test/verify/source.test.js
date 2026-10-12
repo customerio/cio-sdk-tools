@@ -87,7 +87,9 @@ enum Setup {
 test('a declaration is not a call site', () => {
   // `setUp()` is only ever declared here; nothing calls it, so nothing is proven.
   assert.strictEqual(
-    resolveRunsAtLaunch('func setUp()', ['func setUp() {\n  CustomerIO.initialize(\n}']),
+    resolveRunsAtLaunch('func setUp()', [
+      'func setUp() {\n  CustomerIO.initialize(\n}',
+    ]),
     'unknown'
   );
 });
@@ -104,11 +106,17 @@ func later() {
 });
 
 test('forwarding is found for both SDK entry points and a stored instance', () => {
-  const sharedApn = 'import CioMessagingPushAPN\nMessagingPushAPN.shared.didReceive(request, withContentHandler: handler)';
-  const shared = 'import CioMessagingPush\nMessagingPush.shared.didReceive(request, withContentHandler: handler)';
-  const stored = 'import CioMessagingPush\nmessagingPush.didReceive(request, withContentHandler: handler)';
+  const sharedApn =
+    'import CioMessagingPushAPN\nMessagingPushAPN.shared.didReceive(request, withContentHandler: handler)';
+  const shared =
+    'import CioMessagingPush\nMessagingPush.shared.didReceive(request, withContentHandler: handler)';
+  const stored =
+    'import CioMessagingPush\nmessagingPush.didReceive(request, withContentHandler: handler)';
   for (const text of [shared, sharedApn, stored]) {
-    assert.strictEqual(forwardsToSdk([file('NotificationService.swift', text)]).forwards, true);
+    assert.strictEqual(
+      forwardsToSdk([file('NotificationService.swift', text)]).forwards,
+      true
+    );
   }
 });
 
@@ -136,4 +144,22 @@ MessagingPushAPN.initializeForExtension(
   const signals = analyzeSources([file('NotificationService.swift', text)]);
   assert.deepStrictEqual(signals.appGroupIds, ['group.io.customer.sample']);
   assert.strictEqual(signals.logLevel, 'debug');
+});
+
+const { simctlError } = require('../../dist/verify/ios/device');
+
+test("a missing app container is said plainly, not as simctl's header line", () => {
+  const notInstalled =
+    'An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=2):\nThe operation couldn’t be completed. No such file or directory\nNo such file or directory\n';
+  assert.strictEqual(
+    simctlError(notInstalled),
+    'simctl has no app with this bundle id on this simulator'
+  );
+  assert.strictEqual(
+    simctlError(
+      'An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=405):\nUnable to lookup in current state: Shutdown\n'
+    ),
+    'Unable to lookup in current state: Shutdown'
+  );
+  assert.strictEqual(simctlError(''), undefined);
 });

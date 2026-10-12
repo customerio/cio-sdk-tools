@@ -33,7 +33,7 @@ import {
 import { AndroidProjectModel, loadAndroidProject } from './android/project';
 import { XcodeProjectModel, loadProject } from './ios/xcode';
 import { runDeliveredMatrix } from './matrix';
-import { RATE_LIMITED_CAUSE } from './matrix/send';
+import { RATE_LIMITED_CAUSE, whyNoSend } from './matrix/send';
 import { openedSkipReason, runOpenedMatrix } from './matrix/opened';
 import { runAndroidOpenedMatrix } from './matrix/android_opened';
 import { runAndroidDeliveredMatrix } from './matrix/android';
@@ -318,7 +318,7 @@ async function verifyPush(
     `${path.basename(detected.path, path.extname(detected.path))} ${chalk.dim(
       `· ${detected.platform === 'android' ? 'Android' : 'iOS'}`
     )}`,
-    selectionFacts(selection)
+    selectionFacts(selection, { dryRun: options.dryRun })
   );
 
   const climbed =
@@ -508,6 +508,7 @@ async function climb(
         bundleId: wiring.bundleId,
         provider: wiring.provider,
         environmentId: workspace.resolution?.workspace?.id,
+        workspaceReason: workspace.resolution?.unresolvedReason ?? cio.reason,
         token: device.sdk?.pushDeviceToken,
         sandbox: wiring.apsEnvironment !== 'production',
         processNames: wiring.processNames,
@@ -516,6 +517,7 @@ async function climb(
         target: device.target,
         bundleId: wiring.bundleId,
         environmentId: workspace.resolution?.workspace?.id,
+        workspaceReason: workspace.resolution?.unresolvedReason ?? cio.reason,
         token: device.sdk?.pushDeviceToken,
         sandbox: wiring.apsEnvironment !== 'production',
         provider: wiring.provider,
@@ -762,6 +764,7 @@ async function matrix(
     target?: Parameters<typeof runDeliveredMatrix>[0]['target'];
     bundleId?: string;
     environmentId?: string;
+    workspaceReason?: string;
     token?: string;
     sandbox: boolean;
     provider: PushProvider;
@@ -788,7 +791,13 @@ async function matrix(
       metric: 'delivered',
       cells: [],
       skipped:
-        'a target, a workspace and a registered token are all needed to send',
+        whyNoSend({
+          target: inputs.target,
+          app: inputs.bundleId,
+          workspaceId: inputs.environmentId,
+          workspaceReason: inputs.workspaceReason,
+          token: inputs.token,
+        }) ?? 'no push was sent',
     });
     return;
   }
@@ -839,6 +848,7 @@ async function androidOpened(
     serial?: string;
     packageName?: string;
     environmentId?: string;
+    workspaceReason?: string;
     token?: string;
   }
 ): Promise<void> {
@@ -854,7 +864,13 @@ async function androidOpened(
       metric: 'opened',
       cells: [],
       skipped:
-        'a target, a workspace and a registered token are all needed to send',
+        whyNoSend({
+          target: inputs.serial,
+          app: inputs.packageName,
+          workspaceId: inputs.environmentId,
+          workspaceReason: inputs.workspaceReason,
+          token: inputs.token,
+        }) ?? 'no push was sent',
     });
     return;
   }
@@ -899,6 +915,7 @@ async function openedMatrix(
     target?: IosTarget;
     bundleId?: string;
     environmentId?: string;
+    workspaceReason?: string;
     token?: string;
     sandbox: boolean;
     provider: PushProvider;
@@ -917,7 +934,13 @@ async function openedMatrix(
       metric: 'opened',
       cells: [],
       skipped:
-        'a target, a workspace and a registered token are all needed to send',
+        whyNoSend({
+          target: inputs.target,
+          app: inputs.bundleId,
+          workspaceId: inputs.environmentId,
+          workspaceReason: inputs.workspaceReason,
+          token: inputs.token,
+        }) ?? 'no push was sent',
     });
     return;
   }
@@ -1122,6 +1145,7 @@ async function climbAndroid(
       serial: device.target?.serial,
       packageName,
       environmentId: workspace.resolution?.workspace?.id,
+      workspaceReason: workspace.resolution?.unresolvedReason ?? cio.reason,
       token: device.sdk?.deviceToken,
     });
 
@@ -1131,6 +1155,7 @@ async function climbAndroid(
       serial: device.target?.serial,
       packageName,
       environmentId: workspace.resolution?.workspace?.id,
+      workspaceReason: workspace.resolution?.unresolvedReason ?? cio.reason,
       token: device.sdk?.deviceToken,
     });
   }
@@ -1204,6 +1229,7 @@ async function androidMatrix(
     serial?: string;
     packageName?: string;
     environmentId?: string;
+    workspaceReason?: string;
     token?: string;
   }
 ): Promise<void> {
@@ -1226,7 +1252,13 @@ async function androidMatrix(
       metric: 'delivered',
       cells: [],
       skipped:
-        'an emulator, a workspace and a registered token are all needed to send',
+        whyNoSend({
+          target: inputs.serial,
+          app: inputs.packageName,
+          workspaceId: inputs.environmentId,
+          workspaceReason: inputs.workspaceReason,
+          token: inputs.token,
+        }) ?? 'no push was sent',
     });
     return;
   }

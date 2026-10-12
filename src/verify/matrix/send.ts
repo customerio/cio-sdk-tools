@@ -85,6 +85,35 @@ export async function sendVerifyPush(
 }
 
 /**
+ * Why no push can be sent, naming each missing piece and, for the workspace, why it is
+ * missing. "A target, a workspace and a registered token are all needed" left the reader
+ * to work out which one was absent, when the run usually already knew — `cio` not
+ * installed, say. `undefined` means everything a send needs is there.
+ */
+export function whyNoSend(inputs: {
+  target?: unknown;
+  app?: string;
+  workspaceId?: string;
+  workspaceReason?: string;
+  token?: string;
+}): string | undefined {
+  const missing: string[] = [];
+  if (!inputs.target) missing.push('no target');
+  if (!inputs.app) missing.push('no app id');
+  if (!inputs.workspaceId) {
+    missing.push(
+      inputs.workspaceReason
+        ? `no workspace (${inputs.workspaceReason})`
+        : 'no workspace'
+    );
+  }
+  if (!inputs.token) missing.push('no push token registered on the target');
+  return missing.length > 0
+    ? `no push was sent: ${missing.join('; ')}`
+    : undefined;
+}
+
+/**
  * Apple allows one APNs auth-token change per 20 minutes, and on a workspace with more than
  * one app this route asks Apple for a new token on every send, so sends a minute apart come
  * back `429 TooManyProviderTokenUpdates`. Apple's reason is matched by name, and a bare 429

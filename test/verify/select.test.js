@@ -295,3 +295,37 @@ test('a workspace holding the device outranks one holding only the name', async 
   });
   assert.strictEqual(hits[0].workspace.id, '122175');
 });
+
+const { selectionFacts } = require('../../dist/verify/select');
+
+test('the facts name a picked target and say when a run is a dry run', () => {
+  const selection = {
+    resolution: {
+      how: 'explicit',
+      candidates: [],
+      workspace: { id: '122175', name: 'Native' },
+    },
+    appTargetName: 'APN UIKit',
+    targetSelector: 'BAC485BA',
+    targetName: 'cio-verify-poc',
+    states: ['killed', 'background', 'foreground'],
+  };
+  const facts = Object.fromEntries(selectionFacts(selection));
+  assert.strictEqual(facts.target, 'cio-verify-poc (BAC485BA)');
+  assert.strictEqual(
+    facts.sending,
+    '3 pushes · killed, background, foreground'
+  );
+
+  const dry = Object.fromEntries(selectionFacts(selection, { dryRun: true }));
+  assert.strictEqual(dry.sending, undefined, 'a dry run claimed to be sending');
+  assert.strictEqual(
+    dry['dry run'],
+    '3 pushes · killed, background, foreground · nothing will be sent'
+  );
+
+  const typed = Object.fromEntries(
+    selectionFacts({ ...selection, targetName: undefined })
+  );
+  assert.strictEqual(typed.target, 'BAC485BA', 'a --target is shown as typed');
+});

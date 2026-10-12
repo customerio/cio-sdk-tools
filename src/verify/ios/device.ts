@@ -158,6 +158,24 @@ export async function locateApp(
     : locateDeviceApp(target, bundleId);
 }
 
+/**
+ * The useful line of a failed `simctl` command. Its first line is always the same header —
+ * "An error was encountered processing the command (domain=…, code=…):" — and the reason
+ * comes after it. A missing app container is POSIX error 2, which only ever means the app
+ * is not installed, so it is said plainly.
+ */
+export function simctlError(stderr: string): string | undefined {
+  const lines = stderr
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return undefined;
+  if (/NSPOSIXErrorDomain, code=2\b/.test(lines[0])) {
+    return 'simctl has no app with this bundle id on this simulator';
+  }
+  return lines[lines.length - 1];
+}
+
 async function locateSimulatorApp(
   target: Target,
   bundleId: string
@@ -168,7 +186,7 @@ async function locateSimulatorApp(
     60_000
   );
   if (code !== 0) {
-    return { installed: false, error: stderr.trim().split('\n')[0] };
+    return { installed: false, error: simctlError(stderr) };
   }
 
   const bundle = await run(

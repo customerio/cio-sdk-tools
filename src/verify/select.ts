@@ -33,6 +33,8 @@ export interface Selection {
   packageName?: string;
   variant?: BuildVariant;
   targetSelector?: string;
+  /** Set when the target was picked from the list, so the facts can name it. */
+  targetName?: string;
   states?: AppState[];
 }
 
@@ -67,10 +69,12 @@ export async function selectForIos(
         { flag: '--app-target <name>' }
       );
 
+  const target = await chooseIosTarget(input);
   return {
     resolution,
     appTargetName,
-    targetSelector: await chooseIosTarget(input),
+    targetSelector: target.selector,
+    targetName: target.name,
     states: await chooseStates(input),
   };
 }
@@ -104,12 +108,14 @@ export async function selectForAndroid(
   }
   packageName = packageName ?? variant?.applicationId;
 
+  const target = await chooseAndroidTarget(input);
   return {
     resolution,
     appModuleName: input.appModule ?? input.model?.appModuleName,
     packageName,
     variant,
-    targetSelector: await chooseAndroidTarget(input),
+    targetSelector: target.selector,
+    targetName: target.name,
     states: await chooseStates(input),
   };
 }
@@ -140,36 +146,38 @@ async function chooseWorkspace(
  */
 async function chooseIosTarget(
   input: SelectInput
-): Promise<string | undefined> {
-  if (input.target) return input.target;
+): Promise<{ selector?: string; name?: string }> {
+  if (input.target) return { selector: input.target };
   const usable = (await listTargets()).filter(isUsable);
-  if (usable.length === 0) return undefined;
-  return input.asker.select(
+  if (usable.length === 0) return {};
+  const picked = await input.asker.select(
     'Which target should be verified?',
     usable.map((target) => ({
-      value: target.udid,
+      value: target,
       label: describeTarget(target),
       hint: target.udid,
     })),
     { flag: '--target <name|udid>' }
   );
+  return { selector: picked.udid, name: picked.name };
 }
 
 async function chooseAndroidTarget(
   input: SelectInput
-): Promise<string | undefined> {
-  if (input.target) return input.target;
+): Promise<{ selector?: string; name?: string }> {
+  if (input.target) return { selector: input.target };
   const targets = await listAndroidTargets();
-  if (targets.length === 0) return undefined;
-  return input.asker.select(
+  if (targets.length === 0) return {};
+  const picked = await input.asker.select(
     'Which target should be verified?',
     targets.map((target: AndroidTarget) => ({
-      value: target.serial,
+      value: target,
       label: describeAndroidTarget(target),
       hint: target.serial,
     })),
     { flag: '--target <serial>' }
   );
+  return { selector: picked.serial, name: picked.model };
 }
 
 /** Only asked when something is actually going to be sent. */
@@ -202,14 +210,24 @@ async function chooseStates(
  * Printed as a block rather than a sentence because it is the record of consent: these are
  * the workspace the pushes will land in and the device they will be sent to.
  */
-export function selectionFacts(selection: Selection): [string, string][] {
+export function selectionFacts(
+  selection: Selection,
+  options: { dryRun?: boolean } = {}
+): [string, string][] {
   const workspace = selection.resolution.workspace;
   const facts: [string, string][] = [];
   const app = selection.packageName ?? selection.appTargetName;
   if (app) facts.push(['app', app]);
   if (selection.variant) facts.push(['variant', selection.variant.variantName]);
-  if (selection.targetSelector)
-    facts.push(['target', selection.targetSelector]);
+  if (selection.targetSelector) {
+    // Named the way the workspace is: a udid alone is not something a person recognises.
+    facts.push([
+      'target',
+      selection.targetName
+        ? `${selection.targetName} (${selection.targetSelector})`
+        : selection.targetSelector,
+    ]);
+  }
   if (workspace) {
     facts.push([
       'workspace',
@@ -217,12 +235,14 @@ export function selectionFacts(selection: Selection): [string, string][] {
     ]);
   }
   if (selection.states) {
-    facts.push([
-      'sending',
-      `${selection.states.length} push${
-        selection.states.length === 1 ? '' : 'es'
-      } · ${selection.states.join(', ')}`,
-    ]);
+    const count = `${selection.states.length} push${
+      selection.states.length === 1 ? '' : 'es'
+    } · ${selection.states.join(', ')}`;
+    facts.push(
+      options.dryRun
+        ? ['dry run', `${count} · nothing will be sent`]
+        : ['sending', count]
+    );
   }
   return facts;
 }

@@ -189,3 +189,26 @@ test('the catalog gained the cause, and only that one', () => {
   assert.strictEqual(Object.keys(CAUSES).length, 58);
   assert.strictEqual(CAUSES[RATE_LIMITED_CAUSE].stage, 'delivered_matrix');
 });
+
+const { whyNoSend } = require('../../dist/verify/matrix/send');
+
+test('a send that cannot happen names what is missing, and why the workspace is', () => {
+  assert.strictEqual(
+    whyNoSend({
+      target: { udid: 'x' },
+      app: 'io.example',
+      workspaceReason:
+        'the cio CLI is not installed — install it with `npm install -g @customerio/cli`, then run `cio auth login`',
+      token: 'abc',
+    }),
+    'no push was sent: no workspace (the cio CLI is not installed — install it with `npm install -g @customerio/cli`, then run `cio auth login`)'
+  );
+  assert.strictEqual(
+    whyNoSend({ app: 'io.example', workspaceId: '122175' }),
+    'no push was sent: no target; no push token registered on the target'
+  );
+  assert.strictEqual(
+    whyNoSend({ target: 'x', app: 'a', workspaceId: '1', token: 't' }),
+    undefined
+  );
+});
