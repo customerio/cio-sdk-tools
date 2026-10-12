@@ -43,6 +43,24 @@ export const OPENED_MARKERS = {
 /** Only the states where a banner exists to tap. */
 export const OPENED_STATES: AppState[] = ['killed', 'background'];
 
+/**
+ * Why the tap test does not run though it was asked for, if it does not. A dry run comes
+ * first: it skips the consent question because it sends nothing, so a tap test that went
+ * ahead would send real pushes nobody agreed to. A provider that refused the delivered
+ * sends as too frequent will refuse these too.
+ */
+export function openedSkipReason(options: {
+  dryRun: boolean;
+  rateLimited: boolean;
+}): string | undefined {
+  if (options.dryRun)
+    return 'a dry run sends nothing, so there is nothing to tap';
+  if (options.rateLimited) {
+    return 'the provider was refusing sends, so no tap test was sent';
+  }
+  return undefined;
+}
+
 export interface OpenedOptions {
   target: Target;
   bundleId: string;

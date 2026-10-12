@@ -34,7 +34,7 @@ import { AndroidProjectModel, loadAndroidProject } from './android/project';
 import { XcodeProjectModel, loadProject } from './ios/xcode';
 import { runDeliveredMatrix } from './matrix';
 import { RATE_LIMITED_CAUSE } from './matrix/send';
-import { runOpenedMatrix } from './matrix/opened';
+import { openedSkipReason, runOpenedMatrix } from './matrix/opened';
 import { runAndroidOpenedMatrix } from './matrix/android_opened';
 import { runAndroidDeliveredMatrix } from './matrix/android';
 import { ALL_STATES, AppState } from './matrix/states';
@@ -812,14 +812,14 @@ async function matrix(
   );
 }
 
-/** A provider that refused the delivered sends as too frequent will refuse the taps' too. */
-function skipOpenedWhenRateLimited(ladder: Ladder): boolean {
-  if (!ladder.matrixHasCause(RATE_LIMITED_CAUSE)) return false;
-  ladder.addMatrix({
-    metric: 'opened',
-    cells: [],
-    skipped: 'the provider was refusing sends, so no tap test was sent',
+/** Records the opened section as skipped when it must not run; see `openedSkipReason`. */
+function skipOpened(ladder: Ladder, options: VerifyPushOptions): boolean {
+  const skipped = openedSkipReason({
+    dryRun: options.dryRun,
+    rateLimited: ladder.matrixHasCause(RATE_LIMITED_CAUSE),
   });
+  if (!skipped) return false;
+  ladder.addMatrix({ metric: 'opened', cells: [], skipped });
   return true;
 }
 
@@ -837,7 +837,7 @@ async function androidOpened(
   }
 ): Promise<void> {
   if (!options.opened) return;
-  if (skipOpenedWhenRateLimited(ladder)) return;
+  if (skipOpened(ladder, options)) return;
   if (
     !inputs.serial ||
     !inputs.packageName ||
@@ -900,7 +900,7 @@ async function openedMatrix(
   }
 ): Promise<void> {
   if (!options.opened) return;
-  if (skipOpenedWhenRateLimited(ladder)) return;
+  if (skipOpened(ladder, options)) return;
   if (
     !inputs.target ||
     !inputs.bundleId ||

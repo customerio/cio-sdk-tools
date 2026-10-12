@@ -28,10 +28,10 @@ test('an open that is counted but routes nowhere is a real defect', () => {
     { verdict: 'fail', cause: 'runtime.deep_link_not_handled' }
   );
   // Attempted and silent counts the same: nothing claimed the URL.
-  assert.deepStrictEqual(
-    judgeOpened({ ...tapped, linkHandled: false }),
-    { verdict: 'fail', cause: 'runtime.deep_link_not_handled' }
-  );
+  assert.deepStrictEqual(judgeOpened({ ...tapped, linkHandled: false }), {
+    verdict: 'fail',
+    cause: 'runtime.deep_link_not_handled',
+  });
 });
 
 test('a push with no link is a warning, because the open itself is fine', () => {
@@ -143,7 +143,11 @@ test('every cell closes its handle, or the result never reaches the screen', asy
     sandbox: true,
     provider: 'apns',
     link: 'example://x',
-    asker: { interactive: false, select: async () => undefined, confirm: async () => false },
+    asker: {
+      interactive: false,
+      select: async () => undefined,
+      confirm: async () => false,
+    },
     reporter,
   });
   assert.match(section.skipped, /needs a real tap/);
@@ -190,7 +194,9 @@ test('the Android markers match that SDK sentence for sentence', () => {
   assert.ok(
     !ANDROID_OPENED_MARKERS.linkHandled.test('Deep link was not handled')
   );
-  assert.ok(ANDROID_OPENED_MARKERS.linkUnhandled.test('Deep link was not handled'));
+  assert.ok(
+    ANDROID_OPENED_MARKERS.linkUnhandled.test('Deep link was not handled')
+  );
 });
 
 test('both platforms reach the same verdict through the same judge', () => {
@@ -209,5 +215,22 @@ test('both platforms reach the same verdict through the same judge', () => {
       linkUnhandled: false,
     }),
     { verdict: 'pass' }
+  );
+});
+
+const { openedSkipReason } = require('../../dist/verify/matrix/opened');
+
+test('a dry run never runs the tap test, because it skipped the consent question', () => {
+  assert.match(
+    openedSkipReason({ dryRun: true, rateLimited: false }),
+    /a dry run sends nothing/
+  );
+  assert.match(
+    openedSkipReason({ dryRun: false, rateLimited: true }),
+    /provider was refusing sends/
+  );
+  assert.strictEqual(
+    openedSkipReason({ dryRun: false, rateLimited: false }),
+    undefined
   );
 });
