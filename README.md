@@ -111,6 +111,96 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
 
 </details>
 
+<details>
+   <summary>verify push: Prove that push works end to end, and name the step that breaks when it doesn't</summary>
+
+   ## What It Does
+
+   `verify push` checks an iOS or Android app's push setup, then sends real pushes and follows each one until the SDK reports it delivered and, with a tap, opened. When something breaks, it names the step and the fix. It catches the failure a dashboard doesn't show: the push displays, but delivered and opened stay at zero.
+
+   1. **Preflight** (every run): project wiring, workspace, device, and profile, in that order. The first failure stops the run.
+   2. **Real pushes** (with `--send`): one push per app state (killed, background, foreground), each followed until the SDK reports it delivered.
+   3. **Opened** (with `--opened`): a tap test in the killed and background states, including the deep link.
+
+   A pass means the SDK reported the metric and Customer.io accepted the request. Test sends have no stored delivery behind them, so the tool does not read metrics back from your workspace.
+
+   ### Requirements
+
+   - Node.js 20 or later.
+   - The [Customer.io CLI](https://www.npmjs.com/package/@customerio/cli), logged in: `npm install -g @customerio/cli`, then `cio auth login`.
+   - iOS: macOS with Xcode, and a booted simulator or a connected device. Reading a physical iPhone's logs also needs `idevicesyslog` (`brew install libimobiledevice`).
+   - Android: `adb` (on your `PATH` or in the Android SDK) and a running emulator or connected device.
+   - The app built and run on that target, with a logged-in user, so the SDK has registered a token.
+
+   ## Usage
+
+   Preflight only. Nothing is sent. The tool asks which workspace and target to use, and which app when the project builds several:
+
+   ```bash
+   npx cio-sdk-tools@latest verify push /path/to/project
+   ```
+
+   Send real pushes and follow them to delivered:
+
+   ```bash
+   npx cio-sdk-tools@latest verify push /path/to/project --send
+   ```
+
+   Before the first push, the tool shows the target, app, workspace, `cio` login, token prefix, and push count, then asks `Send 3 real pushes? (y/N)`. The default is no.
+
+   Also verify opened and a deep link. This needs a tap per state, so it only runs in a terminal:
+
+   ```bash
+   npx cio-sdk-tools@latest verify push /path/to/project --opened --link myapp://some/screen
+   ```
+
+   Use a URL your app actually routes. Any other URL makes the SDK log "Deep link was not handled", which reads as a failure.
+
+   ### In CI or a script
+
+   Every question has a flag. A run that can't ask (`--non-interactive`, `--json`, or no terminal) exits with code 2 and names the flag it needs. Real pushes also need `--yes`:
+
+   ```bash
+   npx cio-sdk-tools@latest verify push /path/to/project --non-interactive --send --yes \
+     --workspace WORKSPACE_ID --target SIMULATOR_NAME_UDID_OR_SERIAL
+   ```
+
+   `--json` prints only the report on stdout, with errors on stderr. `--report FILE` also writes the report to a file. `--dry-run` does everything except send.
+
+   ### Exit Codes
+
+   | Code | Meaning |
+   |------|---------|
+   | 0 | Everything checked passed. |
+   | 1 | The tool itself failed. |
+   | 2 | A flag is missing or wrong. The message names it. |
+   | 20 | A check failed. The integration is broken, and the report names the cause and the fix. |
+   | 21 | Nothing was proven, because something was skipped (for example, no `--send`). |
+
+   ### Useful Options
+
+   | Option | What it does |
+   |--------|--------------|
+   | `--workspace ID` | The workspace the app should report to. |
+   | `--target NAME\|UDID\|SERIAL` | The simulator, device, or emulator to use. |
+   | `--app-target NAME` / `--package ID` | The iOS app target, or the Android application id, when there are several. |
+   | `--states killed` | Send one push instead of three. |
+   | `--evidence DIR` | Keep the captured logs. |
+   | `--observe` | Watch the install, token, and login happen, instead of reading what they left behind. |
+   | `--verbose` / `--quiet` | Print every check and command, or only the verdict. |
+
+   > **Note**
+   >
+   > On a workspace with more than one app, test sends close together can hit Apple's limit of one token change every 20 minutes (`429 TooManyProviderTokenUpdates`). The tool stops sending and says so. Wait 20 minutes, or send one state with `--states killed`.
+
+   View all options:
+
+   ```bash
+   npx cio-sdk-tools@latest verify push --help
+   ```
+
+</details>
+
 ## Reporting Issues
 Encounter problems or have suggestions? [Create an issue on GitHub](https://github.com/customerio/cio-sdk-tools/issues).
 
