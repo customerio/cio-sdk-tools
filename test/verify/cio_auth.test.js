@@ -134,3 +134,41 @@ test('a bad CIO_TOKEN is named as the culprit, since logging in again would not 
     'the CIO_TOKEN in the environment does not work (token exchange failed: API error 401) — fix or unset it'
   );
 });
+
+const { statusFacts } = cli;
+
+test('the account id and region come from cio auth status, wherever the login lives', () => {
+  // A stored login (cio 0.0.10) and a CI job's CIO_TOKEN report the same fields.
+  assert.deepStrictEqual(
+    statusFacts(
+      JSON.stringify({
+        account_id: '1',
+        region: 'us',
+        token_source: 'config_file',
+        verified: true,
+      })
+    ),
+    { accountId: '1', region: 'us', tokenSource: 'config_file' }
+  );
+  assert.deepStrictEqual(
+    statusFacts(
+      JSON.stringify({
+        account_id: 1,
+        region: 'eu',
+        token_source: 'environment',
+        verified: true,
+      })
+    ),
+    { accountId: '1', region: 'eu', tokenSource: 'environment' }
+  );
+});
+
+test('a status the tool cannot read leaves the config file to answer', () => {
+  assert.strictEqual(statusFacts('Logged in as someone'), undefined);
+  assert.strictEqual(statusFacts('null'), undefined);
+  assert.deepStrictEqual(statusFacts('{"status":"authenticated"}'), {
+    accountId: undefined,
+    region: undefined,
+    tokenSource: undefined,
+  });
+});

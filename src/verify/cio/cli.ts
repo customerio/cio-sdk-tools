@@ -8,8 +8,11 @@ import { isCommandAvailable, run } from '../exec';
  * credentials and implements no auth. Token exchange, refresh and region resolution are all
  * inherited, and a better login flow over there arrives here without a change.
  *
- * `~/.cio/config.json` is read for context only — the account id and region. The tokens in
- * it are deliberately never touched: reading one would mean owning its expiry.
+ * The account id and region come from `cio auth status`, which reports them for whatever
+ * login `cio` is using: a stored profile, `CIO_TOKEN` in a CI job, or a config somewhere
+ * this tool cannot see. `~/.cio/config.json` is read only for its profile names, and for
+ * the account id when an older `cio` prints its status as text. The tokens in it are
+ * deliberately never touched: reading one would mean owning its expiry.
  */
 export interface CioContext {
   available: boolean;
@@ -70,15 +73,47 @@ export async function cioContext(): Promise<CioContext> {
   if (problem)
     return { available: true, authenticated: false, reason: problem };
 
+  const reported = statusFacts(status.stdout);
   const credentials = stored
     ? selectCredentials(stored, resolveProfileName(stored))
     : undefined;
   return {
     available: true,
     authenticated: true,
-    accountId: credentials?.account_id,
-    region: credentials?.region,
-    profile: credentials?.profile,
+    accountId: reported?.accountId ?? credentials?.account_id,
+    region: reported?.region ?? credentials?.region,
+    profile:
+      reported?.tokenSource === 'environment'
+        ? 'CIO_TOKEN'
+        : credentials?.profile ?? requestedProfile(),
+  };
+}
+
+/**
+ * The account id, region and token source `cio auth status` reports as JSON. Reading them
+ * here rather than from the config file is what lets a CI job authenticated by `CIO_TOKEN`,
+ * with no config file at all, resolve a workspace.
+ */
+export function statusFacts(
+  stdout: string
+): { accountId?: string; region?: string; tokenSource?: string } | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== 'object') return undefined;
+  const facts = parsed as Record<string, unknown>;
+  const text = (value: unknown) =>
+    typeof value === 'string' && value !== '' ? value : undefined;
+  return {
+    accountId:
+      typeof facts.account_id === 'number'
+        ? String(facts.account_id)
+        : text(facts.account_id),
+    region: text(facts.region),
+    tokenSource: text(facts.token_source),
   };
 }
 
