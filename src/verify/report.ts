@@ -313,20 +313,24 @@ export function createReporter(options: {
           )
         );
       } else if (report.verdict === 'fail') {
-        body.push(chalk.red('  a real push was sent and was not counted.'));
+        body.push(chalk.red('  a real push was tried and did not pass.'));
       } else if (report.verdict === 'skip') {
         body.push(chalk.yellow('  nothing was proven. skipped is not passed.'));
       } else if ((report.matrices ?? []).some((section) => !section.skipped)) {
-        // Name what was actually proven: counting a delivery and registering a tap are
-        // different claims, and a run that did both should say so.
+        // Name what was actually proven: reporting a delivery and reporting a tap are
+        // different claims, and a run that did both should say so. Proven means the SDK
+        // reported it and Customer.io accepted the request — a test send has no stored
+        // delivery behind it, so nothing here may claim a metric was recorded.
         const proven = (report.matrices ?? [])
           .filter((section) => !section.skipped)
           .map((section) => section.metric);
         body.push(
           chalk.green(
             proven.includes('opened')
-              ? `  push works — ${proven.join(' and ')} both counted.`
-              : '  push works, and the delivery was counted.'
+              ? `  push works: the SDK reported ${proven.join(
+                  ' and '
+                )}, and Customer.io accepted both.`
+              : '  push works: the SDK reported delivery and Customer.io accepted it.'
           )
         );
       } else {
@@ -401,12 +405,14 @@ function summarise(rung: Rung): string {
 function cellSummary(cell: MatrixCell): string {
   if (cell.summary) return cell.summary;
   switch (cell.verdict) {
+    // "reported", never "counted": what a cell proves is that the SDK reported the metric
+    // and Customer.io accepted the request, not that a delivery was stored.
     case 'pass':
-      return 'counted';
+      return 'reported';
     case 'fail':
-      return cell.cause ?? 'not counted';
+      return cell.cause ?? 'not reported';
     case 'warn':
-      return cell.cause ?? 'counted, with a caveat';
+      return cell.cause ?? 'reported, with a caveat';
     default:
       // A skip is a dry run only when nothing named it; the rest are inconclusive cells
       // that did send, and labelling those "not sent" was simply wrong.

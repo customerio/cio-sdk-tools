@@ -156,7 +156,7 @@ const pushCommand = new Command('push')
   )
   .option(
     '--send',
-    'send real pushes and follow them to the delivered metric',
+    'send real pushes and follow each one until the SDK reports it delivered',
     false
   )
   .option(
@@ -767,7 +767,7 @@ async function matrix(
       metric: 'delivered',
       cells: [],
       skipped:
-        'no push was sent — pass --send to send one per app state and follow it to the metric',
+        'no push was sent — pass --send to send one per app state and follow it until the SDK reports it',
     });
     return;
   }
@@ -1206,7 +1206,7 @@ async function androidMatrix(
       metric: 'delivered',
       cells: [],
       skipped:
-        'no push was sent — pass --send to send one per app state and follow it to the metric',
+        'no push was sent — pass --send to send one per app state and follow it until the SDK reports it',
     });
     return;
   }

@@ -407,7 +407,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
   'runtime.deep_link_not_handled': {
     stage: 'delivered_matrix',
     severity: 'blocker',
-    summary: 'The open was counted, and the deep link went nowhere.',
+    summary: 'The SDK reported the open, and the deep link went nowhere.',
     remedy:
       'The SDK tried the link and nothing claimed it. Check the URL against what the app actually routes — a scheme the app declares but whose host it does not handle fails exactly this way — and check the `deepLinkCallback` returns true once it has navigated.',
   },
@@ -415,7 +415,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
     stage: 'delivered_matrix',
     severity: 'warning',
     summary:
-      'The open was counted, but the push carried no deep link to follow.',
+      'The SDK reported the open, but the push carried no deep link to follow.',
     remedy:
       'Nothing is wrong with the open. If the link was expected, remember that `is_rich: true` gates the entire CIO payload block: without it the link never reaches the device.',
   },
@@ -461,7 +461,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
   'runtime.metric_not_tracked': {
     stage: 'delivered_matrix',
     severity: 'blocker',
-    summary: 'The SDK received the push and never counted a delivery for it.',
+    summary: 'The SDK received the push and never reported a delivery for it.',
     remedy:
       'Check that automatic delivery tracking is on and that the message carries a delivery id. The notification still displays, which is what makes this failure invisible.',
   },
@@ -476,7 +476,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
   'runtime.delivery_id_mismatch': {
     stage: 'delivered_matrix',
     severity: 'warning',
-    summary: 'The delivery counted on the device is not the one this run sent.',
+    summary: 'The delivery the SDK reported is not the one this run sent.',
     remedy:
       'Usually an earlier push still in flight, so the cell proves less than it appears to. Re-run with the app quiet, and treat the timing as suspect if it repeats.',
   },

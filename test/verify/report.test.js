@@ -139,7 +139,10 @@ test('quiet prints the verdict and what to do about it, and nothing else', () =>
 
   const text = out.text();
   assert.ok(!text.includes('APN UIKit'), 'the header printed in quiet mode');
-  assert.ok(!text.includes('Device ready'), 'a rung line printed in quiet mode');
+  assert.ok(
+    !text.includes('Device ready'),
+    'a rung line printed in quiet mode'
+  );
   assert.match(text, /The profile has devices, but not this one\./);
   assert.match(text, /Re-identify after the token was issued\./);
   assert.match(text, /stopped at rung 1 — Profile linked\./);
@@ -176,11 +179,38 @@ test('the closing line carries the total, the provenance and the evidence path',
     const text = out.text();
     assert.match(text, expected);
     assert.match(text, /evidence \/tmp\/ev\.log/);
-    assert.match(text, /push works, and the delivery was counted\./);
+    assert.match(
+      text,
+      /push works: the SDK reported delivery and Customer\.io accepted it\./
+    );
   }
 });
 
-test('a cell reports counted without its evidence, and expands when it did not', () => {
+test('the closing line names both metrics when opened ran too, and never says counted', () => {
+  const out = sink();
+  reporterOn('human', out).summary(
+    report({
+      matrices: [
+        { metric: 'delivered', cells: [] },
+        { metric: 'opened', cells: [] },
+      ],
+    })
+  );
+  assert.match(
+    out.text(),
+    /push works: the SDK reported delivered and opened, and Customer\.io accepted both\./
+  );
+  assert.doesNotMatch(out.text(), /counted|recorded/);
+});
+
+test('a failed run says a push was tried, not that a metric went uncounted', () => {
+  const out = sink();
+  reporterOn('human', out).summary(report({ verdict: 'fail' }));
+  assert.match(out.text(), /a real push was tried and did not pass\./);
+  assert.doesNotMatch(out.text(), /counted/);
+});
+
+test('a cell reports "reported" without its evidence, and expands when it did not', () => {
   const out = sink();
   const reporter = reporterOn('human', out);
   const good = reporter.cell('killed');
@@ -200,7 +230,7 @@ test('a cell reports counted without its evidence, and expands when it did not',
   });
 
   const text = out.text();
-  assert.match(text, /killed\s+counted\s+12\.4s/);
+  assert.match(text, /killed\s+reported\s+12\.4s/);
   assert.ok(!text.includes('79 lines'), 'a passing cell printed its evidence');
   assert.match(text, /background\s+runtime\.nse_did_not_forward\s+45\.0s/);
   assert.match(text, /log: 120 lines/);
