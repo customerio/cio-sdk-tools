@@ -33,6 +33,12 @@ export interface Asker {
     options?: { timeoutMs?: number }
   ): Promise<boolean>;
   /**
+   * A yes/no question whose answer defaults to no. Only an explicit yes counts: Enter,
+   * silence, a closed stdin and a run that cannot ask all read as no, because this is the
+   * question asked before something that cannot be taken back.
+   */
+  agree(question: string, context?: string): Promise<boolean>;
+  /**
    * `flag` is the non-interactive escape hatch, named in the error and in the hint, so a
    * session that had to be answered by hand can be turned into a CI job by copying it.
    */
@@ -86,6 +92,24 @@ export function createAsker(options: {
       const answer = await reader?.next(confirmOptions.timeoutMs ?? timeoutMs);
       output.write('\n');
       return answer !== undefined;
+    },
+
+    async agree(question: string, context?: string): Promise<boolean> {
+      if (!interactive) return false;
+      if (context) output.write(`\n${context}`);
+      for (let attempt = 0; attempt < ATTEMPTS; attempt += 1) {
+        output.write(`${chalk.bold(question)} ${chalk.dim('(y/N)')} `);
+        const answer = await reader?.next(timeoutMs);
+        if (answer === undefined) {
+          output.write('\n');
+          return false;
+        }
+        const trimmed = answer.trim().toLowerCase();
+        if (trimmed === 'y' || trimmed === 'yes') return true;
+        if (trimmed === '' || trimmed === 'n' || trimmed === 'no') return false;
+        output.write(chalk.yellow('  answer y or n\n'));
+      }
+      return false;
     },
 
     async select<T>(

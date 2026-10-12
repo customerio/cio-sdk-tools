@@ -35,6 +35,8 @@ export interface Reporter {
   readonly level: Level;
   /** The run's opening block: what is being verified, and against what. */
   start(subject: string, facts?: [string, string][]): void;
+  /** A titled block of facts mid-run, laid out like the opening block. */
+  block(title: string, facts: [string, string][]): void;
   rung(title: string): RungHandle;
   matrix(how?: string, metric?: string): void;
   cell(state: string): CellHandle;
@@ -166,9 +168,14 @@ export function createReporter(options: {
     start(subject: string, facts: [string, string][] = []) {
       line();
       line(`${chalk.bold('verify push')} ${chalk.dim('·')} ${subject}`);
-      for (const [label, value] of facts) {
-        line(`  ${chalk.dim(label.padEnd(9))}  ${value}`);
-      }
+      factLines(facts).forEach((text) => line(text));
+      line();
+    },
+
+    block(title: string, facts: [string, string][]) {
+      line();
+      line(chalk.bold(title));
+      factLines(facts).forEach((text) => line(text));
       line();
     },
 
@@ -346,6 +353,13 @@ export function createReporter(options: {
 
 function write(stream: { write(chunk: string): unknown }, text: string): void {
   stream.write(text);
+}
+
+/** Label-value rows, labels padded so the values line up. */
+export function factLines(facts: [string, string][]): string[] {
+  return facts.map(
+    ([label, value]) => `  ${chalk.dim(label.padEnd(9))}  ${value}`
+  );
 }
 
 /** `read` says the facts came out of storage; `observed` says we watched them happen. */

@@ -19,6 +19,7 @@ import { startAndroidCapture } from './matrix/android_logs';
 import { startCapture } from './matrix/logs';
 import {
   Target as IosTarget,
+  describeTarget,
   listTargets,
   locateApp,
   readSdkState,
@@ -32,11 +33,16 @@ import {
 import { AndroidProjectModel, loadAndroidProject } from './android/project';
 import { XcodeProjectModel, loadProject } from './ios/xcode';
 import { runDeliveredMatrix } from './matrix';
-import { runOpenedMatrix } from './matrix/opened';
+import { OPENED_STATES, runOpenedMatrix } from './matrix/opened';
 import { runAndroidOpenedMatrix } from './matrix/android_opened';
 import { runAndroidDeliveredMatrix } from './matrix/android';
 import { ALL_STATES, AppState } from './matrix/states';
-import { packageInstalled, readAndroidSdkState } from './android/device';
+import {
+  describeAndroidTarget,
+  packageInstalled,
+  readAndroidSdkState,
+} from './android/device';
+import { consentToSend, refusalWithoutConsent } from './consent';
 import {
   androidDeviceReady,
   gatherAndroidDevice,
@@ -47,7 +53,7 @@ import { profileLinked } from './rungs/profile_linked';
 import { projectWiring } from './rungs/project_wiring';
 import { gatherWorkspace, workspaceReady } from './rungs/workspace_ready';
 import { ERROR_CODES, ErrorCode, printError } from './errors';
-import { RUNG_TITLES, Report, RungId } from './types';
+import { Consent, RUNG_TITLES, Report, RungId } from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson = require('../../package.json');
@@ -65,6 +71,7 @@ type VerifyPushOptions = {
   send: boolean;
   dryRun: boolean;
   resend: boolean;
+  yes: boolean;
   quiet: boolean;
   verbose: boolean;
   package?: string;
@@ -161,6 +168,11 @@ const pushCommand = new Command('push')
     'never send a second push when the first does not arrive'
   )
   .option(
+    '-y, --yes',
+    'send real pushes without asking first; required to send when nobody can be asked (--non-interactive, --json, no terminal)',
+    false
+  )
+  .option(
     '-v, --verbose',
     'print every check, every command and every phase (also CIO_VERBOSE=1)',
     false
@@ -224,6 +236,19 @@ async function verifyPush(
       !options.nonInteractive &&
       Boolean(process.stdin.isTTY),
   });
+
+  const refusal = refusalWithoutConsent({
+    send: options.send,
+    opened: options.opened,
+    dryRun: options.dryRun,
+    yes: options.yes,
+    interactive: asker.interactive,
+  });
+  if (refusal) {
+    return toolError(options, refusal, ERROR_CODES.validation, {
+      details: { flag: '--yes' },
+    });
+  }
 
   const cio = await cioContext();
   const startedAt = new Date().toISOString();
@@ -319,6 +344,7 @@ async function verifyPush(
           `${climbed.freshnessNote} — a run that watches a fresh install proves more; see --observe`,
         ]
       : undefined,
+    consent: climbed.consent,
     tool: { name: packageJson.name, version: packageJson.version },
     command: 'verify push',
     startedAt,
@@ -336,6 +362,8 @@ async function verifyPush(
 
 interface ClimbResult {
   projectName?: string;
+  /** Set when a real send was due, whether or not it was allowed. */
+  consent?: Consent;
   /** True when the run watched a fact appear rather than reading it afterwards. */
   observed?: boolean;
   /** Advice, never an assertion: how old the build under test is. */
@@ -452,24 +480,37 @@ async function climb(
     ladder.adopt(profile, profileTimer());
     profileRung.done(profile);
 
-    await matrix(ladder, options, reporter, selection.states, {
-      target: device.target,
-      bundleId: wiring.bundleId,
-      provider: wiring.provider,
-      environmentId: workspace.resolution?.workspace?.id,
+    const consent = await askToSend(ladder, options, reporter, asker, {
+      target:
+        device.target &&
+        `${describeTarget(device.target)} · ${device.target.udid}`,
+      app: wiring.bundleId,
+      workspace: workspace.resolution?.workspace,
+      login: cio.profile,
       token: device.sdk?.pushDeviceToken,
-      sandbox: wiring.apsEnvironment !== 'production',
-      processNames: wiring.processNames,
+      delivered: selection.states,
+      retries: options.resend !== false,
     });
-    await openedMatrix(ladder, options, reporter, asker, {
-      target: device.target,
-      bundleId: wiring.bundleId,
-      environmentId: workspace.resolution?.workspace?.id,
-      token: device.sdk?.pushDeviceToken,
-      sandbox: wiring.apsEnvironment !== 'production',
-      provider: wiring.provider,
-      processNames: wiring.processNames,
-    });
+    if (consent?.granted !== false) {
+      await matrix(ladder, options, reporter, selection.states, {
+        target: device.target,
+        bundleId: wiring.bundleId,
+        provider: wiring.provider,
+        environmentId: workspace.resolution?.workspace?.id,
+        token: device.sdk?.pushDeviceToken,
+        sandbox: wiring.apsEnvironment !== 'production',
+        processNames: wiring.processNames,
+      });
+      await openedMatrix(ladder, options, reporter, asker, {
+        target: device.target,
+        bundleId: wiring.bundleId,
+        environmentId: workspace.resolution?.workspace?.id,
+        token: device.sdk?.pushDeviceToken,
+        sandbox: wiring.apsEnvironment !== 'production',
+        provider: wiring.provider,
+        processNames: wiring.processNames,
+      });
+    }
 
     return {
       projectName: wiring.model.projectName,
@@ -478,6 +519,7 @@ async function climb(
         installedAt: device.freshness?.installedAt,
         observed,
       }).note,
+      consent,
     };
   } finally {
     // Anything pulled off a physical device lives in a temp directory.
@@ -1039,27 +1081,94 @@ async function climbAndroid(
     observed,
   });
 
-  await androidMatrix(ladder, options, reporter, selection.states, {
-    serial: device.target?.serial,
-    packageName,
-    environmentId: workspace.resolution?.workspace?.id,
+  // Android's delivered cells never re-send, so there are no retries to announce.
+  const consent = await askToSend(ladder, options, reporter, asker, {
+    target:
+      device.target &&
+      `${describeAndroidTarget(device.target)} · ${device.target.serial}`,
+    app: packageName,
+    workspace: workspace.resolution?.workspace,
+    login: cio.profile,
     token: device.sdk?.deviceToken,
+    delivered: selection.states,
+    retries: false,
   });
+  if (consent?.granted !== false) {
+    await androidMatrix(ladder, options, reporter, selection.states, {
+      serial: device.target?.serial,
+      packageName,
+      environmentId: workspace.resolution?.workspace?.id,
+      token: device.sdk?.deviceToken,
+    });
 
-  // Taps come last: the unattended cells should be done before anyone is asked for
-  // anything, which is also the order iOS runs in.
-  await androidOpened(ladder, options, reporter, asker, {
-    serial: device.target?.serial,
-    packageName,
-    environmentId: workspace.resolution?.workspace?.id,
-    token: device.sdk?.deviceToken,
-  });
+    // Taps come last: the unattended cells should be done before anyone is asked for
+    // anything, which is also the order iOS runs in.
+    await androidOpened(ladder, options, reporter, asker, {
+      serial: device.target?.serial,
+      packageName,
+      environmentId: workspace.resolution?.workspace?.id,
+      token: device.sdk?.deviceToken,
+    });
+  }
 
   return {
     projectName: wiring.model.appModuleName,
     observed,
     freshnessNote: androidFreshness.note,
+    consent,
   };
+}
+
+/**
+ * The one question before the first real push, asked after preflight because the token it
+ * names only exists once the device has been read. Returns nothing when there is nothing
+ * real to send — no `--send`, a dry run, or an input missing, in which case the matrices
+ * skip themselves with the reason — and a consent whose `granted` gates the matrices
+ * otherwise.
+ */
+async function askToSend(
+  ladder: Ladder,
+  options: VerifyPushOptions,
+  reporter: Reporter,
+  asker: Asker,
+  inputs: {
+    target?: string;
+    app?: string;
+    workspace?: { id: string; name?: string };
+    login?: string;
+    token?: string;
+    delivered?: AppState[];
+    retries: boolean;
+  }
+): Promise<Consent | undefined> {
+  if (!options.send || options.dryRun) return undefined;
+  if (!inputs.target || !inputs.app || !inputs.workspace || !inputs.token) {
+    return undefined;
+  }
+  return consentToSend({
+    plan: {
+      target: inputs.target,
+      app: inputs.app,
+      workspace: `${inputs.workspace.name ?? inputs.workspace.id} (${
+        inputs.workspace.id
+      })`,
+      login: inputs.login,
+      token: inputs.token,
+      delivered: inputs.delivered ?? ALL_STATES,
+      // The same defaults the opened matrices fall back to, which skip themselves
+      // without a --link.
+      opened:
+        options.opened && options.link
+          ? parseStates(options.states) ?? OPENED_STATES
+          : [],
+      retries: inputs.retries,
+    },
+    yes: options.yes,
+    opened: options.opened,
+    asker,
+    reporter,
+    ladder,
+  });
 }
 
 async function androidMatrix(

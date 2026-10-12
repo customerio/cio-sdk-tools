@@ -134,11 +134,24 @@ export interface Report {
    * the install, never an assertion about the integration.
    */
   advice?: string[];
+  /**
+   * Who allowed the real pushes, and how many first sends that covered (a re-send of a
+   * push that never arrived is not counted). Absent when nothing real was due to be sent:
+   * no `--send`, a dry run, or a run that stopped before the send.
+   */
+  consent?: Consent;
   /** `warn` means every assertion passed but something is worth a developer's attention. */
   verdict: Verdict;
   /** The failing and warning checks, in ladder order, resolved against the registry. */
   causes: ReportedCause[];
   exitCode: number;
+}
+
+export interface Consent {
+  granted: boolean;
+  /** `prompt` when a person answered the question, `--yes` when the flag answered it. */
+  by: 'prompt' | '--yes';
+  pushes: number;
 }
 
 /**
