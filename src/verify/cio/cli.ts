@@ -60,20 +60,19 @@ export async function cioContext(): Promise<CioContext> {
     };
   }
 
-  const { code } = await run(
-    'cio',
-    ['auth', 'status', ...profileArgs()],
-    30_000
-  );
-  if (code !== 0) {
-    return {
-      available: true,
-      authenticated: false,
-      reason: 'the cio CLI is not authenticated — run `cio auth login`',
-    };
-  }
+  const stored = await readStoredConfig();
+  const missing = unknownProfile(stored, requestedProfile());
+  if (missing)
+    return { available: true, authenticated: false, reason: missing };
 
-  const credentials = await readCredentials();
+  const status = await run('cio', ['auth', 'status', ...profileArgs()], 30_000);
+  const problem = authStatusProblem(status);
+  if (problem)
+    return { available: true, authenticated: false, reason: problem };
+
+  const credentials = stored
+    ? selectCredentials(stored, resolveProfileName(stored))
+    : undefined;
   return {
     available: true,
     authenticated: true,
@@ -83,9 +82,80 @@ export async function cioContext(): Promise<CioContext> {
   };
 }
 
+/** The profile asked for by name — `--profile` or `CIO_PROFILE` — if any. */
+function requestedProfile(): string | undefined {
+  return activeProfile ?? (process.env.CIO_PROFILE?.trim() || undefined);
+}
+
 function profileArgs(): string[] {
-  const name = activeProfile ?? process.env.CIO_PROFILE?.trim();
+  const name = requestedProfile();
   return name ? ['--profile', name] : [];
+}
+
+/**
+ * A profile asked for by name that the config does not hold. Decided from the config
+ * rather than from `cio`'s exit code, which is 1 for an unknown profile and for a missing
+ * login alike — and "run `cio auth login`" is the wrong fix for a typo.
+ */
+export function unknownProfile(
+  stored: (StoredConfig & Credentials) | undefined,
+  name: string | undefined
+): string | undefined {
+  if (!name || !stored || selectCredentials(stored, name)) return undefined;
+  const names = stored.profiles
+    ? Object.keys(stored.profiles)
+    : [DEFAULT_PROFILE];
+  return `the cio CLI has no profile "${name}" — the profiles here are ${names.join(
+    ', '
+  )}; pass one of them to --profile`;
+}
+
+/**
+ * What `cio auth status` says is wrong with the login, ready to print, or nothing when it
+ * works. Three failures used to read as one "not authenticated", and two of them send
+ * people to the wrong fix:
+ * - a `cio` from before profiles rejects `--profile` as an unknown flag;
+ * - a stored token that no longer exchanges still reports `status: authenticated`, with
+ *   `verified: false` beside it, and `cio auth login` then refuses to start over because
+ *   it believes the user is signed in.
+ */
+export function authStatusProblem(status: {
+  code: number;
+  stdout: string;
+  stderr: string;
+}): string | undefined {
+  const output = `${status.stdout}\n${status.stderr}`;
+  if (/unknown flag: --profile/.test(output)) {
+    return 'this cio CLI has no profiles — drop --profile and CIO_PROFILE, or update it with `npm install -g @customerio/cli`';
+  }
+  if (status.code !== 0) {
+    return 'the cio CLI is not authenticated — run `cio auth login`';
+  }
+
+  let parsed:
+    | { verified?: unknown; verify_error?: unknown; token_source?: unknown }
+    | undefined;
+  try {
+    parsed = JSON.parse(status.stdout);
+  } catch {
+    // An older `cio` printing text: the exit code is all there is to go on.
+    return undefined;
+  }
+  if (parsed?.verified !== false) return undefined;
+  const why =
+    typeof parsed.verify_error === 'string'
+      ? ` (${shortError(parsed.verify_error)})`
+      : '';
+  // Logging in again only replaces the stored token; one from the environment still wins.
+  if (parsed.token_source === 'environment') {
+    return `the CIO_TOKEN in the environment does not work${why} — fix or unset it`;
+  }
+  return `the cio login no longer works${why} — run \`cio auth logout\`, then \`cio auth login\``;
+}
+
+/** An API error without the JSON body `cio` nests in it: the status line is enough. */
+export function shortError(message: string): string {
+  return message.split(/:\s*\{/)[0].trim();
 }
 
 export interface Credentials {
@@ -99,32 +169,29 @@ export interface StoredConfig {
 }
 
 /**
- * Read the account id and region out of `~/.cio/config.json`.
+ * Read `~/.cio/config.json` for its profile names, account id and region.
  *
  * The file holds named profiles — production, staging, one per client — and a flat file
  * from an older CLI is read as the `default` profile, which is how `cio` migrates it. A
  * reader that ignores all this finds no account id on a multi-profile machine and reports
  * the workspace as unresolvable, or worse, reports the wrong account's.
  *
- * Only these two fields are read. The tokens in the same file are deliberately untouched:
- * reading one would mean owning its expiry.
+ * Only those are used. The tokens in the same file are deliberately untouched: using one
+ * would mean owning its expiry.
  */
-async function readCredentials(): Promise<
-  (Credentials & { profile: string }) | undefined
+async function readStoredConfig(): Promise<
+  (StoredConfig & Credentials) | undefined
 > {
   const text = await fs
     .readFile(path.join(os.homedir(), '.cio', 'config.json'), 'utf8')
     .catch(() => undefined);
   if (!text) return undefined;
 
-  let parsed: StoredConfig & Credentials;
   try {
-    parsed = JSON.parse(text) as StoredConfig & Credentials;
+    return JSON.parse(text) as StoredConfig & Credentials;
   } catch {
     return undefined;
   }
-
-  return selectCredentials(parsed, resolveProfileName(parsed));
 }
 
 /**

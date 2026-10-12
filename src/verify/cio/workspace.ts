@@ -1,5 +1,5 @@
 import { Asker, MissingInput } from '../prompt';
-import { cioApi } from './cli';
+import { cioApi, shortError } from './cli';
 
 export interface Workspace {
   id: string;
@@ -22,25 +22,37 @@ export interface WorkspaceResolution {
   unresolvedReason?: string;
 }
 
+/**
+ * The account's workspaces, or why they could not be listed. A failed call is kept apart
+ * from an empty answer: reading a 401 as "no workspaces" sent people looking for a
+ * permission problem when the login itself had stopped working.
+ */
 export async function listEnvironments(
   accountId: string
-): Promise<Workspace[]> {
+): Promise<{ environments: Workspace[]; error?: string }> {
   const res = await cioApi<Record<string, unknown>>(
     '/v1/accounts/{account_id}/environments',
     { account_id: accountId }
   );
-  if (!res.ok || !res.data) return [];
+  if (!res.ok || !res.data) {
+    return {
+      environments: [],
+      error: shortError(res.error ?? 'no answer from the cio CLI'),
+    };
+  }
   const raw =
     (res.data.environments as unknown[]) ?? (res.data.data as unknown[]) ?? [];
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .map((entry) => entry as Record<string, unknown>)
-    .filter((entry) => entry.id !== undefined)
-    .map((entry) => ({
-      id: String(entry.id),
-      name: entry.name as string,
-      identifierType: entry.identifier_type as string,
-    }));
+  if (!Array.isArray(raw)) return { environments: [] };
+  return {
+    environments: raw
+      .map((entry) => entry as Record<string, unknown>)
+      .filter((entry) => entry.id !== undefined)
+      .map((entry) => ({
+        id: String(entry.id),
+        name: entry.name as string,
+        identifierType: entry.identifier_type as string,
+      })),
+  };
 }
 
 /**
@@ -66,7 +78,15 @@ export async function resolveWorkspace(options: {
     };
   }
 
-  const environments = await listEnvironments(options.accountId);
+  const listed = await listEnvironments(options.accountId);
+  if (listed.error) {
+    return {
+      how: 'unresolved',
+      candidates: [],
+      unresolvedReason: `could not list this login's workspaces (${listed.error}) — check \`cio auth status\``,
+    };
+  }
+  const environments = listed.environments;
   if (environments.length === 0) {
     return {
       how: 'unresolved',
