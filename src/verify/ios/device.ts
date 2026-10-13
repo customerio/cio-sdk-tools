@@ -10,17 +10,60 @@ export interface Target {
   name: string;
   udid: string;
   osVersion?: string;
-  /** `booted` for a running simulator, `connected` for a reachable phone. */
-  state: 'booted' | 'connected' | 'shutdown' | 'unavailable';
+  /**
+   * `booted` for a running simulator. For a phone, `connected` while its developer tunnel is
+   * up and `available` when it is paired and reachable but the tunnel is idle — it opens on
+   * the first command, and it idles between uses even on a cable.
+   */
+  state: 'booted' | 'connected' | 'available' | 'shutdown' | 'unavailable';
+  /** How a phone is reached. Logs need USB: libimobiledevice does not read them over Wi-Fi. */
+  transport?: 'usb' | 'wifi';
 }
 
 export function isUsable(target: Target): boolean {
-  return target.state === 'booted' || target.state === 'connected';
+  return ['booted', 'connected', 'available'].includes(target.state);
 }
 
+/** A phone is labelled by how it is reached; its tunnel's momentary state means nothing. */
 export function describeTarget(target: Target): string {
   const version = target.osVersion ? ` iOS ${target.osVersion}` : '';
-  return `${target.name} (${target.kind}${version}, ${target.state})`;
+  const how =
+    target.kind === 'device' && target.transport
+      ? target.transport === 'usb'
+        ? 'USB'
+        : 'Wi-Fi'
+      : target.state;
+  return `${target.name} (${target.kind}${version}, ${how})`;
+}
+
+/**
+ * Whether a phone `devicectl` lists can be used, from its connection properties. The tunnel
+ * state alone said "unavailable" for a phone plugged in by cable whose tunnel had idled, so
+ * it was left out of the picker while `--target` with its udid worked. A paired phone with a
+ * transport is reachable; one without is not there.
+ */
+export function deviceReachability(connection?: {
+  tunnelState?: string;
+  pairingState?: string;
+  transportType?: string;
+}): Pick<Target, 'state' | 'transport'> {
+  const transport =
+    connection?.transportType === 'wired'
+      ? 'usb'
+      : connection?.transportType === 'localNetwork'
+      ? 'wifi'
+      : undefined;
+  if (connection?.tunnelState === 'connected') {
+    return { state: 'connected', transport };
+  }
+  if (
+    connection?.pairingState === 'paired' &&
+    transport &&
+    connection.tunnelState !== 'unavailable'
+  ) {
+    return { state: 'available', transport };
+  }
+  return { state: 'unavailable', transport };
 }
 
 /**
@@ -103,8 +146,7 @@ async function listPhysicalDevices(): Promise<Target[]> {
         name: properties?.name ?? '',
         udid: hardware?.udid ?? '',
         osVersion: properties?.osVersionNumber,
-        state:
-          connection?.tunnelState === 'connected' ? 'connected' : 'unavailable',
+        ...deviceReachability(connection),
       };
     });
   } catch {

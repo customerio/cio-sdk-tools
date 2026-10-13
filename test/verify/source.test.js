@@ -163,3 +163,64 @@ test("a missing app container is said plainly, not as simctl's header line", () 
   );
   assert.strictEqual(simctlError(''), undefined);
 });
+
+const {
+  deviceReachability,
+  describeTarget,
+  isUsable,
+} = require('../../dist/verify/ios/device');
+
+test('a paired phone on a cable is usable even while its tunnel idles', () => {
+  // devicectl, 2026-10-13: an iPhone 15 plugged in by cable, between commands.
+  const cabled = deviceReachability({
+    pairingState: 'paired',
+    transportType: 'wired',
+    tunnelState: 'disconnected',
+  });
+  assert.deepStrictEqual(cabled, { state: 'available', transport: 'usb' });
+  assert.strictEqual(
+    isUsable({ kind: 'device', name: 'x', udid: 'u', ...cabled }),
+    true
+  );
+  assert.strictEqual(
+    describeTarget({
+      kind: 'device',
+      name: 'iPhone',
+      udid: 'u',
+      osVersion: '18.0.1',
+      ...cabled,
+    }),
+    'iPhone (device iOS 18.0.1, USB)'
+  );
+
+  assert.deepStrictEqual(
+    deviceReachability({
+      pairingState: 'paired',
+      transportType: 'localNetwork',
+      tunnelState: 'disconnected',
+    }),
+    { state: 'available', transport: 'wifi' }
+  );
+  assert.deepStrictEqual(
+    deviceReachability({
+      pairingState: 'paired',
+      transportType: 'wired',
+      tunnelState: 'connected',
+    }),
+    { state: 'connected', transport: 'usb' }
+  );
+});
+
+test('a paired phone that is not reachable stays out of the list', () => {
+  // devicectl, the same day: a second iPhone, paired months ago and nowhere near.
+  const away = deviceReachability({
+    pairingState: 'paired',
+    tunnelState: 'unavailable',
+  });
+  assert.strictEqual(away.state, 'unavailable');
+  assert.strictEqual(
+    isUsable({ kind: 'device', name: 'x', udid: 'u', ...away }),
+    false
+  );
+  assert.strictEqual(deviceReachability(undefined).state, 'unavailable');
+});
