@@ -234,3 +234,41 @@ test('a dry run never runs the tap test, because it skipped the consent question
     undefined
   );
 });
+
+const { observeOpened } = require('../../dist/verify/matrix/opened');
+
+test('an open tracked without "Clicked" or "Tracking push message opened" still passes', () => {
+  // Captured from a physical iPhone 15 on 2026-10-13: the build tracked the open and
+  // followed the link, and printed neither of the lines the check used to require.
+  const iphone = [
+    'CombinedCacheEventBusHandler: Posting event TrackMetricEvent(storageId: "AEC89E46-B36F-402D-8117-E73441E74DC8", params: [:], deliveryID: "dgS_ugcABQAAAaEykelzxSgfj-nrCK1jxQ==", event: "opened", deviceToken: "aecc305e54ae")',
+    '[Push] Handling push notification deep link with url: apn-uikit://settings',
+    '[Push] Deep link handled by host app callback implementation',
+    'push metric opened',
+  ];
+  const { observed, deliveryId } = observeOpened(iphone);
+  assert.strictEqual(deliveryId, 'dgS_ugcABQAAAaEykelzxSgfj-nrCK1jxQ==');
+  assert.strictEqual(observed.clicked, true, 'a followed deep link is a click');
+  assert.strictEqual(observed.tracked, true);
+  assert.deepStrictEqual(judgeOpened({ available: true, ...observed }), {
+    verdict: 'pass',
+  });
+});
+
+test('the older wording still reads the same way', () => {
+  const { observed, deliveryId } = observeOpened([
+    'Clicked notification for message: <payload>',
+    'Tracking push message opened with deliveryId: abc123',
+    'Handling push notification deep link with url: app://x',
+    'Deep link handled by system',
+  ]);
+  assert.strictEqual(deliveryId, 'abc123');
+  assert.deepStrictEqual(judgeOpened({ available: true, ...observed }), {
+    verdict: 'pass',
+  });
+  // And nothing at all is still nothing.
+  assert.deepStrictEqual(
+    judgeOpened({ available: true, ...observeOpened(['unrelated']).observed }),
+    { verdict: 'skip', cause: 'runtime.tap_not_seen' }
+  );
+});

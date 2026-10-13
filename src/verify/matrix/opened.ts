@@ -30,6 +30,13 @@ export const OPENED_MARKERS = {
   clicked: /Clicked (?:notification for message|CIO push message)/,
   /** The metric itself, which is the assertion this section makes. */
   tracked: /Tracking push message opened with deliveryId: (\S+)/,
+  /**
+   * The same metric as the event bus posts it. Some builds track the open without the line
+   * above — a physical iPhone running a feature-branch build printed only this and the
+   * DataPipeline line below — so either one counts.
+   */
+  trackedEvent: /TrackMetricEvent\(.*deliveryID: "([^"]+)".*event: "opened"/,
+  metricOpened: /^push metric opened$/,
   /** The SDK saw a click it decided was not ours. */
   foreign: /Clicked non CIO push message/,
   emptyId: /Clicked message with empty deliveryId/,
@@ -239,18 +246,11 @@ async function runOpenedCell(
   await sleep(AFTER_TAP_MS);
 
   const lines = capture.since(mark).map((line) => line.message);
-  const seen = (marker: RegExp) => lines.some((line) => marker.test(line));
-  const deliveryId = lines
-    .map((line) => OPENED_MARKERS.tracked.exec(line)?.[1])
-    .find(Boolean);
+  const { observed, deliveryId } = observeOpened(lines);
 
   if (capture.available) {
     evidence.push(
-      `log: ${lines.length} lines, click seen: ${seen(
-        OPENED_MARKERS.clicked
-      )}, opened tracked: ${seen(
-        OPENED_MARKERS.tracked
-      )}, deep link handled: ${seen(OPENED_MARKERS.linkHandled)}`
+      `log: ${lines.length} lines, click seen: ${observed.clicked}, opened tracked: ${observed.tracked}, deep link handled: ${observed.linkHandled}`
     );
     if (deliveryId) evidence.push(`opened reported for ${deliveryId}`);
   } else {
@@ -260,17 +260,44 @@ async function runOpenedCell(
   return {
     state,
     deliveryId,
-    ...judgeOpened({
-      available: capture.available,
-      clicked: seen(OPENED_MARKERS.clicked),
-      tracked: seen(OPENED_MARKERS.tracked),
+    ...judgeOpened({ available: capture.available, ...observed }),
+    evidence,
+  };
+}
+
+/**
+ * What the SDK's lines say happened to a tap. Pure, so it is tested against real captures.
+ *
+ * A handled deep link counts as the click: the SDK only follows a push's link from its
+ * click path, and some builds follow it without printing "Clicked …" first.
+ */
+export function observeOpened(lines: string[]): {
+  observed: Omit<Parameters<typeof judgeOpened>[0], 'available'>;
+  deliveryId?: string;
+} {
+  const seen = (marker: RegExp) => lines.some((line) => marker.test(line));
+  const deliveryId = lines
+    .map(
+      (line) =>
+        OPENED_MARKERS.tracked.exec(line)?.[1] ??
+        OPENED_MARKERS.trackedEvent.exec(line)?.[1]
+    )
+    .find(Boolean);
+  const linkAttempted = seen(OPENED_MARKERS.linkHandling);
+  return {
+    observed: {
+      clicked: seen(OPENED_MARKERS.clicked) || linkAttempted,
+      tracked:
+        seen(OPENED_MARKERS.tracked) ||
+        seen(OPENED_MARKERS.trackedEvent) ||
+        seen(OPENED_MARKERS.metricOpened),
       foreign: seen(OPENED_MARKERS.foreign),
       emptyId: seen(OPENED_MARKERS.emptyId),
-      linkAttempted: seen(OPENED_MARKERS.linkHandling),
+      linkAttempted,
       linkHandled: seen(OPENED_MARKERS.linkHandled),
       linkUnhandled: seen(OPENED_MARKERS.linkUnhandled),
-    }),
-    evidence,
+    },
+    deliveryId,
   };
 }
 
