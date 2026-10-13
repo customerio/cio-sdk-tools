@@ -255,7 +255,8 @@ async function runOpenedCell(
     while (
       Date.now() < deadline &&
       !openedSequenceComplete(
-        observeOpened(capture.since(mark).map((line) => line.message)).observed
+        observeOpened(capture.since(mark).map((line) => line.message)).observed,
+        { linkSent: Boolean(options.link) }
       )
     ) {
       await sleep(TAP_POLL_MS);
@@ -288,12 +289,18 @@ async function runOpenedCell(
  * alone, because moving on to the next state suspends it mid-sequence.
  */
 export function openedSequenceComplete(
-  observed: ReturnType<typeof observeOpened>['observed']
+  observed: ReturnType<typeof observeOpened>['observed'],
+  options: { linkSent: boolean }
 ): boolean {
   if (observed.foreign || observed.emptyId || observed.linkUnhandled) {
     return true;
   }
-  return observed.tracked && (!observed.linkAttempted || observed.linkHandled);
+  if (!observed.tracked) return false;
+  // A push that carried a link is not finished until the link is: the open is tracked
+  // first and the link is started after it, so "tracked and no link yet" is the middle of
+  // the sequence, not its end. Moving on there suspended the app before it followed it.
+  if (options.linkSent) return observed.linkHandled;
+  return !observed.linkAttempted || observed.linkHandled;
 }
 
 /**

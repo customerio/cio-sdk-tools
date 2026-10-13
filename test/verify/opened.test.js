@@ -286,7 +286,7 @@ test('a tap is not finished until the open is tracked and the link has an outcom
     '[Push] Handling push notification deep link with url: apn-uikit://settings',
   ]).observed;
   assert.strictEqual(
-    openedSequenceComplete(midway),
+    openedSequenceComplete(midway, { linkSent: true }),
     false,
     'moved on mid-link'
   );
@@ -301,17 +301,35 @@ test('a tap is not finished until the open is tracked and the link has an outcom
     '[Push] Handling push notification deep link with url: apn-uikit://settings',
     '[Push] Deep link handled by host app callback implementation',
   ]).observed;
-  assert.strictEqual(openedSequenceComplete(done), true);
+  assert.strictEqual(openedSequenceComplete(done, { linkSent: true }), true);
+
+  // The run of 2026-10-13 00:29: the open was tracked and the link not yet started. With a
+  // link in the push, that is the middle of the sequence.
+  const trackedOnly = observeOpened([
+    '[Push] Clicked CIO push message',
+    '[Push] Tracking push message opened with deliveryId: dgS_ugcABQAAAaEyrArrbZp8xdiktcNTUA==',
+  ]).observed;
+  assert.strictEqual(
+    openedSequenceComplete(trackedOnly, { linkSent: true }),
+    false
+  );
+  assert.strictEqual(
+    openedSequenceComplete(trackedOnly, { linkSent: false }),
+    true
+  );
 
   assert.strictEqual(
     openedSequenceComplete(
-      observeOpened(['[Push] Deep link was not handled']).observed
+      observeOpened(['[Push] Deep link was not handled']).observed,
+      { linkSent: true }
     ),
     true,
     'an explicit failure ends the wait'
   );
   assert.strictEqual(
-    openedSequenceComplete(observeOpened(['nothing yet']).observed),
+    openedSequenceComplete(observeOpened(['nothing yet']).observed, {
+      linkSent: true,
+    }),
     false
   );
 });
