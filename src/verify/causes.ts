@@ -352,6 +352,22 @@ export const CAUSES: Record<string, CauseDefinition> = {
     remedy:
       'Read the error: it is usually the token, the credential, or a sandbox/production mismatch. Nothing about the SDK is proven either way until a send is accepted.',
   },
+  'runtime.capture_stopped': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      "The device's log capture stopped partway through the run, so nothing after that could be read.",
+    remedy:
+      'This says nothing about the integration. Run again; if it repeats, unplug and replug the phone, and make sure nothing else (Console, another idevicesyslog) is reading its log.',
+  },
+  'runtime.capture_silent': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      'Not one log line arrived after the tap, so this cell could not be judged.',
+    remedy:
+      'Either the tap did not happen, or the log stream from the phone stopped. If the app opened when you tapped, it was the stream: unplug and replug the phone, then run again.',
+  },
   'runtime.deep_link_outcome_unseen': {
     stage: 'delivered_matrix',
     severity: 'warning',

@@ -7,7 +7,7 @@ import { Target } from '../ios/device';
 import { Asker } from '../prompt';
 import { CellHandle, Reporter } from '../report';
 import { MatrixCell, MatrixSection, Verdict } from '../types';
-import { LogCapture, startCapture } from './logs';
+import { LogCapture, blameStoppedCapture, startCapture } from './logs';
 import { eachState, rejectedCell, sendVerifyPush } from './send';
 import { AppState, setAppState } from './states';
 
@@ -250,6 +250,7 @@ async function runOpenedCell(
   // The SDK's click path runs after the OS hands over the notification, which takes a
   // moment on a cold start — so wait for the end of the sequence, not a fixed time.
   handle?.phase('reading what the SDK did with the tap');
+  const afterTap = capture.mark();
   if (capture.available) {
     const deadline = Date.now() + TAP_SEQUENCE_TIMEOUT_MS;
     while (
@@ -275,12 +276,52 @@ async function runOpenedCell(
     evidence.push(`no log capture: ${capture.unavailableReason}`);
   }
 
-  return {
+  const judged: MatrixCell = {
     state,
     deliveryId,
     ...judgeOpened({ available: capture.available, ...observed }),
     evidence,
   };
+  const all = capture.since(mark);
+  return explainUnseenTap(judged, {
+    stoppedReason: capture.stoppedReason?.(),
+    linesAfterTap: capture.since(afterTap).length,
+    lastLineAt: all.length > 0 ? all[all.length - 1].at : undefined,
+  });
+}
+
+/**
+ * A tap the SDK "did not see" is re-judged when the log can account for it: a capture that
+ * stopped partway saw nothing because it was reading nothing, and a stream that produced
+ * not one line after the tap, though it was busy before it, may have stalled — on a phone
+ * the log relay has gone quiet mid-run without the reader exiting. Either way, telling the
+ * person their tap did not arrive would be a guess presented as a finding.
+ */
+export function explainUnseenTap(
+  cell: MatrixCell,
+  context: {
+    stoppedReason?: string;
+    linesAfterTap: number;
+    lastLineAt?: string;
+  }
+): MatrixCell {
+  if (cell.cause !== 'runtime.tap_not_seen') return cell;
+  if (context.stoppedReason) {
+    return blameStoppedCapture(cell, context.stoppedReason, [
+      'runtime.tap_not_seen',
+    ]);
+  }
+  if (context.linesAfterTap === 0 && context.lastLineAt) {
+    return {
+      ...cell,
+      cause: 'runtime.capture_silent',
+      evidence: [
+        ...cell.evidence,
+        `not one log line arrived after the tap; the last was at ${context.lastLineAt}`,
+      ],
+    };
+  }
+  return cell;
 }
 
 /**

@@ -4,6 +4,7 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import { isCommandAvailable, run } from '../exec';
 import { Target } from '../ios/device';
+import { MatrixCell } from '../types';
 
 export interface LogLine {
   /** Wall clock as the log reports it, trimmed to a readable time. */
@@ -32,6 +33,34 @@ export interface LogCapture {
   /** File the lines are appended to as they arrive. */
   evidencePath?: string;
   stop(): Promise<void>;
+  /**
+   * Why the capture stopped delivering partway through the run, if it did: its reader
+   * exited after it had started. A cell judged after that has nothing to read, which is
+   * not the same as the app having said nothing.
+   */
+  stoppedReason?(): string | undefined;
+}
+
+/**
+ * A cell that "saw nothing" after the capture stopped saw nothing because nothing was
+ * being read. It is re-judged as the capture's problem, so the person is not blamed for a
+ * tap they made or the app for a delivery it reported.
+ */
+export function blameStoppedCapture(
+  cell: MatrixCell,
+  stoppedReason: string | undefined,
+  silentCauses: string[]
+): MatrixCell {
+  if (!stoppedReason || !cell.cause || !silentCauses.includes(cell.cause)) {
+    return cell;
+  }
+  return {
+    ...cell,
+    verdict: 'skip',
+    cause: 'runtime.capture_stopped',
+    summary: undefined,
+    evidence: [...cell.evidence, `${stoppedReason} (was: ${cell.cause})`],
+  };
 }
 
 const SDK_PREDICATE =
@@ -235,8 +264,19 @@ async function streamProcess(
   let buffer = '';
   let stderr = '';
   let exited: number | null | undefined;
+  /** Set once the reader has survived startup; an exit after that is a mid-run stop. */
+  let started = false;
+  let stopping = false;
+  let stoppedReason: string | undefined;
   let sink: WriteStream | undefined;
   if (evidencePath) sink = createWriteStream(evidencePath, { flags: 'a' });
+
+  child.on('exit', (code) => {
+    if (!started || stopping) return;
+    stoppedReason = `${command} exited${
+      code === null ? '' : ` (${code})`
+    } at ${new Date().toISOString().slice(11, 19)}, partway through the run`;
+  });
 
   child.stderr?.on('data', (chunk: Buffer) => {
     stderr += chunk.toString();
@@ -281,6 +321,7 @@ async function streamProcess(
     };
   }
 
+  started = true;
   return {
     available: true,
     how,
@@ -288,7 +329,9 @@ async function streamProcess(
     mark: () => dropped + lines.length,
     since: (mark: number) => lines.slice(Math.max(0, mark - dropped)),
     evidencePath,
+    stoppedReason: () => stoppedReason,
     stop: async () => {
+      stopping = true;
       child.kill();
       await new Promise<void>((resolve) => sink?.end(resolve) ?? resolve());
     },

@@ -3,6 +3,7 @@ import { MatrixCell, MatrixSection, Verdict } from '../types';
 import {
   LogCapture,
   NSE_MARKERS,
+  blameStoppedCapture,
   deliveryIdsIn,
   ranInExtension,
   startCapture,
@@ -180,13 +181,10 @@ async function runCell(
   known: RunState
 ): Promise<MatrixCell> {
   const handle = options.reporter?.cell(state);
-  const cell = await runCellBody(
-    state,
-    options,
-    capture,
-    seenIds,
-    handle,
-    known
+  const cell = blameStoppedCapture(
+    await runCellBody(state, options, capture, seenIds, handle, known),
+    capture.stoppedReason?.(),
+    SILENT
   );
   handle?.done(cell);
   return cell;

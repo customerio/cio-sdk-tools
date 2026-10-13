@@ -363,3 +363,71 @@ test('a phone without idevicesyslog is named before anything is sent; a simulato
     exec.isCommandAvailable = original;
   }
 });
+
+const { explainUnseenTap } = require('../../dist/verify/matrix/opened');
+const { blameStoppedCapture } = require('../../dist/verify/matrix/logs');
+
+test('a cell that saw nothing after the capture stopped blames the capture', () => {
+  const silent = {
+    state: 'killed',
+    verdict: 'skip',
+    cause: 'runtime.no_evidence',
+    evidence: [],
+  };
+  const blamed = blameStoppedCapture(
+    silent,
+    'idevicesyslog exited (1) at 04:32:00, partway through the run',
+    ['runtime.no_evidence']
+  );
+  assert.strictEqual(blamed.verdict, 'skip');
+  assert.strictEqual(blamed.cause, 'runtime.capture_stopped');
+  assert.match(
+    blamed.evidence[0],
+    /exited \(1\) at 04:32:00.*was: runtime\.no_evidence/
+  );
+
+  const passed = { state: 'killed', verdict: 'pass', evidence: [] };
+  assert.strictEqual(
+    blameStoppedCapture(passed, 'stopped', ['runtime.no_evidence']),
+    passed
+  );
+  assert.strictEqual(
+    blameStoppedCapture(silent, undefined, ['runtime.no_evidence']),
+    silent
+  );
+});
+
+test('a tap followed by not one log line says the stream may have stopped', () => {
+  // The background tap of 2026-10-13 00:29: the stream went quiet at 04:32:00 without its
+  // reader exiting, and the cell said the tap had not arrived.
+  const unseen = {
+    state: 'background',
+    verdict: 'skip',
+    cause: 'runtime.tap_not_seen',
+    evidence: [],
+  };
+  const silent = explainUnseenTap(unseen, {
+    linesAfterTap: 0,
+    lastLineAt: '04:32:00.270',
+  });
+  assert.strictEqual(silent.cause, 'runtime.capture_silent');
+  assert.match(silent.evidence[0], /the last was at 04:32:00\.270/);
+
+  assert.strictEqual(
+    explainUnseenTap(unseen, {
+      stoppedReason: 'idevicesyslog exited',
+      linesAfterTap: 0,
+    }).cause,
+    'runtime.capture_stopped'
+  );
+  assert.strictEqual(
+    explainUnseenTap(unseen, { linesAfterTap: 412, lastLineAt: 'x' }),
+    unseen,
+    'a busy log after the tap means the tap really was not seen'
+  );
+  const other = { ...unseen, cause: 'runtime.deep_link_outcome_unseen' };
+  assert.strictEqual(
+    explainUnseenTap(other, { linesAfterTap: 0, lastLineAt: 'x' }),
+    other
+  );
+});
