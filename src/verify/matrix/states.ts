@@ -15,8 +15,10 @@ export interface StateResult {
   error?: string;
 }
 
-/** Launching another app is the only way to background the target on a simulator. */
+/** Launching another app is how the target is sent to the background, on both kinds. */
 const BACKGROUND_FOIL = 'com.apple.Preferences';
+/** A locked phone waits to launch an app rather than failing, so the wait is bounded. */
+const FOIL_LAUNCH_TIMEOUT_MS = 45_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -131,6 +133,32 @@ async function deviceState(
   await sleep(4_000);
 
   if (state === 'background') {
+    // Opening another app sends this one through the real lifecycle, as pressing Home
+    // does. Freezing its process did not: on an iPhone, tapping the frozen app's
+    // notification made iOS start a new process, and the log stream from the phone went
+    // quiet. Freezing stays as the fallback, named as such, for a phone that will not open
+    // the other app.
+    const foil = await run(
+      'xcrun',
+      [
+        'devicectl',
+        'device',
+        'process',
+        'launch',
+        '--device',
+        target.udid,
+        BACKGROUND_FOIL,
+      ],
+      FOIL_LAUNCH_TIMEOUT_MS
+    );
+    if (foil.code === 0) {
+      await sleep(2_000);
+      return {
+        ok: true,
+        how: `devicectl process launch ${BACKGROUND_FOIL} over the app`,
+      };
+    }
+    const foilError = foil.stderr.trim().split('\n')[0] || `exit ${foil.code}`;
     const pid = await devicePid(target, executableName);
     if (!pid) {
       return {
@@ -157,7 +185,7 @@ async function deviceState(
     // through the lifecycle, so the app may never see applicationDidEnterBackground.
     return {
       ok: code === 0,
-      how: 'devicectl process suspend (process-level, not a lifecycle transition)',
+      how: `devicectl process suspend (process-level, not a lifecycle transition; ${BACKGROUND_FOIL} would not open: ${foilError})`,
       error: code === 0 ? undefined : stderr.trim().split('\n')[0],
     };
   }
