@@ -530,6 +530,7 @@ async function climb(
         token: device.sdk?.pushDeviceToken,
         sandbox: wiring.apsEnvironment !== 'production',
         processNames: wiring.processNames,
+        extensionName: wiring.extensionName,
       });
       await openedMatrix(ladder, options, reporter, asker, {
         target: device.target,
@@ -540,6 +541,7 @@ async function climb(
         sandbox: wiring.apsEnvironment !== 'production',
         provider: wiring.provider,
         processNames: wiring.processNames,
+        extensionName: wiring.extensionName,
       });
     }
 
@@ -787,6 +789,7 @@ async function matrix(
     sandbox: boolean;
     provider: PushProvider;
     processNames?: string[];
+    extensionName?: string;
     /** The profile reports push_enabled false. */
     pushDisabled?: boolean;
   }
@@ -830,6 +833,7 @@ async function matrix(
     sandbox: inputs.sandbox,
     provider: inputs.provider,
     processNames: inputs.processNames,
+    extensionName: inputs.extensionName,
     states,
     dryRun: options.dryRun,
     resend: options.resend,
@@ -946,6 +950,7 @@ async function openedMatrix(
     sandbox: boolean;
     provider: PushProvider;
     processNames?: string[];
+    extensionName?: string;
   }
 ): Promise<void> {
   if (!options.opened) return;
@@ -991,6 +996,7 @@ async function openedMatrix(
       link: options.link,
       states: options.states ? parseStates(options.states) : undefined,
       processNames: inputs.processNames,
+      extensionName: inputs.extensionName,
       evidenceDirectory: options.evidence,
       asker,
       reporter,

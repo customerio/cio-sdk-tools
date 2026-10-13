@@ -17,6 +17,7 @@ import { adb } from '../android/adb';
 import { ALL_STATES, AppState } from './states';
 import { stopwatch } from '../clock';
 import { CellHandle, Reporter } from '../report';
+import { deliveredTitle, pushTag } from './identity';
 
 export interface AndroidMatrixOptions {
   dryRun?: boolean;
@@ -125,9 +126,7 @@ async function runCellBody(
   }
 
   const mark = capture.mark();
-  const title = `cio verify · ${state} · ${new Date()
-    .toISOString()
-    .slice(11, 19)}`;
+  const title = deliveredTitle(state, pushTag());
   handle?.phase('sending');
   const sent = await sendVerifyPush({
     dryRun: options.dryRun,

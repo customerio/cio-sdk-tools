@@ -10,6 +10,7 @@ import { MatrixCell, MatrixSection, Verdict } from '../types';
 import { LogCapture, blameStoppedCapture, startCapture } from './logs';
 import { eachState, rejectedCell, sendVerifyPush } from './send';
 import { AppState, setAppState } from './states';
+import { pushTag, tapTitle } from './identity';
 
 /**
  * The half of push verification that cannot be automated.
@@ -87,6 +88,8 @@ export interface OpenedOptions {
   link: string;
   states?: AppState[];
   processNames?: string[];
+  /** The extension's process, whose lines are the OS's word that it ran. */
+  extensionName?: string;
   evidenceDirectory?: string;
   asker: Asker;
   reporter?: Reporter;
@@ -121,7 +124,8 @@ export async function runOpenedMatrix(
   const capture = await startCapture(
     options.target,
     options.evidenceDirectory,
-    options.processNames ?? []
+    options.processNames ?? [],
+    options.extensionName
   );
   options.reporter?.matrix(capture.how, 'opened');
   const sectionTimer = stopwatch();
@@ -172,7 +176,7 @@ async function runOpenedCell(
 
   const mark = capture.mark();
   const sinceMs = Date.now() - 1_000;
-  const title = `cio verify · tap me · ${state}`;
+  const title = tapTitle(state, pushTag());
   handle?.phase('sending');
   const sent = await sendVerifyPush({
     environmentId: options.environmentId,

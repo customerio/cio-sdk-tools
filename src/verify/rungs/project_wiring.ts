@@ -58,6 +58,8 @@ export interface WiringResult {
   bundleId?: string;
   /** Process names the runtime log can be filtered to. */
   processNames?: string[];
+  /** The extension's process: a line from it is the OS's word that the extension ran. */
+  extensionName?: string;
 }
 
 /**
@@ -187,6 +189,7 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
     processNames: [app, nse]
       .filter((target): target is Target => Boolean(target))
       .map((target) => target.settings.PRODUCT_NAME || target.name),
+    extensionName: nse ? nse.settings.PRODUCT_NAME || nse.name : undefined,
   };
 }
 

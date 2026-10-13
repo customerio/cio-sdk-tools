@@ -39,6 +39,13 @@ export interface LogCapture {
    * not the same as the app having said nothing.
    */
   stoppedReason?(): string | undefined;
+  /**
+   * The stream can drop lines, so a line that is missing proves nothing. A phone's log
+   * through `idevicesyslog` is: during a cold launch it lost the SDK's lines for seven taps
+   * the app's own record shows were all handled. `simctl log stream` and `adb logcat` have
+   * not been seen to drop anything.
+   */
+  lossy?: boolean;
 }
 
 /**
@@ -63,8 +70,19 @@ export function blameStoppedCapture(
   };
 }
 
-const SDK_PREDICATE =
-  'subsystem == "io.customer.sdk" OR processImagePath CONTAINS "NotificationService"';
+/**
+ * The SDK's subsystem, plus the extension's process by name: a line from that process is the
+ * OS's word that the extension ran, whether or not the SDK logs anything. Extensions are
+ * usually called NotificationService-something, which the substring keeps covering when the
+ * project does not say.
+ */
+export function simulatorPredicate(extensionName?: string): string {
+  const named =
+    extensionName && !extensionName.includes('NotificationService')
+      ? ` OR process == "${extensionName.replace(/["\\]/g, '')}"`
+      : '';
+  return `subsystem == "io.customer.sdk" OR processImagePath CONTAINS "NotificationService"${named}`;
+}
 
 const NOT_CAPTURING: LogCapture = {
   available: false,
@@ -104,7 +122,8 @@ export async function deviceLogUnavailable(
 export async function startCapture(
   target: Target,
   evidenceDirectory?: string,
-  processNames: string[] = []
+  processNames: string[] = [],
+  extensionName?: string
 ): Promise<LogCapture> {
   const evidencePath = evidenceDirectory
     ? path.join(evidenceDirectory, `${target.kind}-${target.udid}.log`)
@@ -137,7 +156,7 @@ export async function startCapture(
         '--level',
         'debug',
         '--predicate',
-        SDK_PREDICATE,
+        simulatorPredicate(extensionName),
       ],
       parseNdjson,
       'simctl log stream --level debug',
@@ -172,13 +191,16 @@ export async function startCapture(
     ? ['-u', target.udid, '-p', filter]
     : ['-u', target.udid, '-K'];
 
-  return await streamProcess(
-    'idevicesyslog',
-    args,
-    parseSyslog,
-    filter ? `idevicesyslog -p "${filter}"` : 'idevicesyslog (unfiltered)',
-    evidencePath
-  );
+  return {
+    ...(await streamProcess(
+      'idevicesyslog',
+      args,
+      parseSyslog,
+      filter ? `idevicesyslog -p "${filter}"` : 'idevicesyslog (unfiltered)',
+      evidencePath
+    )),
+    lossy: true,
+  };
 }
 
 /**
@@ -390,8 +412,19 @@ export const NSE_MARKERS = {
   richFinished: /rich push step finished/,
 } as const;
 
-export function ranInExtension(lines: LogLine[]): boolean {
-  return lines.some((line) => /NotificationService/.test(line.process));
+/**
+ * Did the extension run? Read from which process wrote a line — the OS's attribution — never
+ * from what the line says, so it holds whatever the SDK logs or fails to.
+ */
+export function ranInExtension(
+  lines: LogLine[],
+  extensionName?: string
+): boolean {
+  return lines.some((line) =>
+    extensionName && line.process === extensionName
+      ? true
+      : /NotificationService/.test(line.process)
+  );
 }
 
 /** Delivery ids are base64url with a `dgS_` prefix — a charset without `_` and `-` misses. */

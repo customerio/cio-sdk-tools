@@ -9,6 +9,7 @@ import { OPENED_STATES, judgeOpened } from './opened';
 import { eachState, rejectedCell, sendVerifyPush } from './send';
 import { AppState } from './states';
 import { setAndroidState } from './android_states';
+import { pushTag, tapTitle } from './identity';
 
 /**
  * `opened` on Android: the same claim, a different set of sentences.
@@ -115,7 +116,7 @@ async function runCell(
   evidence.push(`state via ${staged.how}`);
 
   const mark = capture.mark();
-  const title = `cio verify · tap me · ${state}`;
+  const title = tapTitle(state, pushTag());
   handle?.phase('sending');
   const sent = await sendVerifyPush({
     environmentId: options.environmentId,

@@ -95,26 +95,54 @@ test('foreground is not offered by default — there is no banner to tap', () =>
 
 // --- arrival by title ----------------------------------------------------
 
-const { titlesFrom } = require('../../dist/verify/matrix/notifications');
+const { storedNotificationsFrom } = require('../../dist/verify/matrix/notifications');
 
-test('titles are read out of the archived store, which grep cannot see into', () => {
-  // Shape of real `plutil -p` output over a DeliveredNotifications.plist: an
-  // NSKeyedArchiver object table, which is why the raw file is not greppable.
-  const printed = `{
-  "$archiver" => "NSKeyedArchiver"
-  "$objects" => [
-    0 => "$null"
-    12 => "cio verify · tap me · killed"
-    13 => "io.customer.ios-sample.apn-spm.APN-UIKit"
-    14 => "Tap this notification to verify the opened metric."
-  ]
-}`;
-  const titles = titlesFrom(printed);
-  assert.ok(titles.includes('cio verify · tap me · killed'));
-  assert.ok(titles.includes('io.customer.ios-sample.apn-spm.APN-UIKit'));
-  // An exact title is the whole point: counting entries called an unrelated system
-  // notification our push arriving, and sent someone looking for a banner nobody sent.
-  assert.ok(!titles.includes('cio verify · tap me · background'));
+/** `plutil -convert xml1` over a DeliveredNotifications.plist, cut down to its shape. */
+function storeXml() {
+  const uid = (n) => `<dict><key>CF$UID</key><integer>${n}</integer></dict>`;
+  const objects = [
+    '<string>$null</string>',
+    // 1: the root, an array of stored notifications
+    `<dict><key>$class</key>${uid(10)}<key>NS.objects</key><array>${uid(2)}${uid(6)}</array></dict>`,
+    // 2: our push — its title next to its payload
+    `<dict><key>$class</key>${uid(11)}<key>NS.keys</key><array>${uid(3)}${uid(4)}</array><key>NS.objects</key><array>${uid(5)}${uid(7)}</array></dict>`,
+    '<string>AppNotificationTitle</string>',
+    '<string>UNNotificationUserInfo</string>',
+    '<string>cio verify · tap me · killed · 7KQ2M</string>',
+    // 6: someone else's notification, with no Customer.io payload
+    `<dict><key>$class</key>${uid(11)}<key>NS.keys</key><array>${uid(3)}${uid(4)}</array><key>NS.objects</key><array>${uid(8)}${uid(9)}</array></dict>`,
+    // 7: our payload
+    `<dict><key>$class</key>${uid(11)}<key>NS.keys</key><array>${uid(12)}</array><key>NS.objects</key><array>${uid(13)}</array></dict>`,
+    '<string>Tom &amp; Jerry</string>',
+    `<dict><key>$class</key>${uid(11)}<key>NS.keys</key><array>${uid(14)}</array><key>NS.objects</key><array>${uid(14)}</array></dict>`,
+    '<dict><key>$classname</key><string>NSMutableArray</string></dict>',
+    '<dict><key>$classname</key><string>NSMutableDictionary</string></dict>',
+    '<string>CIO-Delivery-ID</string>',
+    '<string>dgS_ugcABQAAAaEyeZeNdFdFrj0k0MlRGA==</string>',
+    '<string>aps</string>',
+  ];
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>$archiver</key><string>NSKeyedArchiver</string>
+<key>$objects</key><array>${objects.join('\n')}</array>
+<key>$top</key><dict><key>root</key>${uid(1)}</dict>
+<key>$version</key><integer>100000</integer></dict></plist>`;
+}
+
+test('the OS store names each notification by title and by delivery id', () => {
+  const stored = storedNotificationsFrom(storeXml());
+  assert.deepStrictEqual(stored, [
+    {
+      title: 'cio verify · tap me · killed · 7KQ2M',
+      deliveryId: 'dgS_ugcABQAAAaEyeZeNdFdFrj0k0MlRGA==',
+    },
+    { title: 'Tom & Jerry', deliveryId: undefined },
+  ]);
+});
+
+test('a store that will not parse names no notifications rather than throwing', () => {
+  assert.deepStrictEqual(storedNotificationsFrom('<plist><dict><key>'), []);
+  assert.deepStrictEqual(storedNotificationsFrom(''), []);
 });
 
 test('every cell closes its handle, or the result never reaches the screen', async () => {

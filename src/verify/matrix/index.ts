@@ -21,6 +21,7 @@ import { CellHandle, Reporter } from '../report';
 import { ProbeResult, probeLocalDelivery } from './probe';
 import { waitForTitle } from './notifications';
 import { PushProvider } from '../cio/push';
+import { deliveredTitle, pushTag } from './identity';
 
 export interface MatrixOptions {
   /** Exercise every step except the send itself. */
@@ -42,6 +43,8 @@ export interface MatrixOptions {
   states?: AppState[];
   /** App and extension process names, so a device log can be filtered to them. */
   processNames?: string[];
+  /** The extension's process, whose lines are the OS's word that it ran. */
+  extensionName?: string;
   evidenceDirectory?: string;
   /** How long one cell waits for the extension to finish. */
   cellTimeoutMs?: number;
@@ -77,7 +80,8 @@ export async function runDeliveredMatrix(
   const capture = await startCapture(
     options.target,
     options.evidenceDirectory,
-    options.processNames
+    options.processNames,
+    options.extensionName
   );
 
   const section: MatrixSection = {
@@ -213,9 +217,7 @@ async function runCellBody(
   const mark = capture.mark();
   const sinceMs = Date.now() - 1_000;
 
-  const title = `cio verify · ${state} · ${new Date()
-    .toISOString()
-    .slice(11, 19)}`;
+  const title = deliveredTitle(state, pushTag());
   handle?.phase('sending');
   const sent = await sendVerifyPush(deliveredRequest(options, title));
 
