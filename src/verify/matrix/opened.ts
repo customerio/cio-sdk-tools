@@ -9,7 +9,9 @@ import { CellHandle, Reporter } from '../report';
 import { MatrixCell, MatrixSection, Verdict } from '../types';
 import {
   LogCapture,
+  SDK_PUSH_LINE,
   blameStoppedCapture,
+  explainSdkSilence,
   deliveryIdsIn,
   extensionRanIn,
   ranInExtension,
@@ -143,6 +145,17 @@ export async function runOpenedMatrix(
         return cell;
       },
       { pauseMs: 4_000, reporter: options.reporter }
+    );
+    section.cells = explainSdkSilence(
+      section.cells,
+      {
+        appSpoke: capture.lines.length > 0,
+        sdkSpoke: capture.lines.some((line) =>
+          SDK_PUSH_LINE.test(line.message)
+        ),
+        how: "the app's processes logged",
+      },
+      options.reporter
     );
   } finally {
     await capture.stop();

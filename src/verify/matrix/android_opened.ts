@@ -3,7 +3,7 @@ import { stopwatch } from '../clock';
 import { Asker } from '../prompt';
 import { CellHandle, Reporter } from '../report';
 import { MatrixCell, MatrixSection } from '../types';
-import { LogCapture } from './logs';
+import { LogCapture, SDK_PUSH_LINE, explainSdkSilence } from './logs';
 import { ANDROID_MARKERS, startAndroidCapture } from './android_logs';
 import { OPENED_STATES, judgeOpened } from './opened';
 import { eachState, rejectedCell, sendVerifyPush } from './send';
@@ -83,15 +83,27 @@ export async function runAndroidOpenedMatrix(
 
   try {
     if (capture.available) await sleep(1_500);
+    const known = { listed: false };
     section.cells = await eachState(
       states,
       async (state) => {
         const handle = options.reporter?.cell(state);
-        const cell = await runCell(state, options, capture, handle);
+        const cell = await runCell(state, options, capture, known, handle);
         handle?.done(cell);
         return cell;
       },
       { pauseMs: 4_000, reporter: options.reporter }
+    );
+    section.cells = explainSdkSilence(
+      section.cells,
+      {
+        appSpoke: known.listed,
+        sdkSpoke: capture.lines.some((line) =>
+          SDK_PUSH_LINE.test(line.message)
+        ),
+        how: "the notification list showed this run's pushes",
+      },
+      options.reporter
     );
   } finally {
     await capture.stop();
@@ -110,6 +122,7 @@ async function runCell(
   state: AppState,
   options: AndroidOpenedOptions,
   capture: LogCapture,
+  known: { listed: boolean },
   handle?: CellHandle
 ): Promise<MatrixCell> {
   const evidence: string[] = [];
@@ -157,6 +170,7 @@ async function runCell(
     if (listed || shownBySdk() || Date.now() >= deadline) break;
     await sleep(1_500);
   }
+  if (listed) known.listed = true;
   if (!listed && !shownBySdk()) {
     return {
       state,

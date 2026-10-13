@@ -84,6 +84,52 @@ export function simulatorPredicate(extensionName?: string): string {
   return `subsystem == "io.customer.sdk" OR processImagePath CONTAINS "NotificationService"${named}`;
 }
 
+/** The SDK starts every line with its tag; `[Push]` is the module these checks read. */
+export const SDK_PUSH_LINE = /^\[Push\] /;
+
+/** Causes that mean something only if the SDK was writing its lines at all. */
+const NEEDS_SDK_LINES = [
+  'runtime.no_evidence',
+  'runtime.push_not_handled',
+  'runtime.tap_not_seen',
+  'runtime.tap_lines_lost',
+];
+
+/**
+ * A run where the app was plainly there and the SDK wrote not one line did not show an SDK
+ * doing nothing. Its push lines are debug lines, and an app built with a quieter log level
+ * prints none of them — which reads exactly like a push the SDK ignored. Cells that turned
+ * on the SDK's silence are re-judged as that, and printed again.
+ */
+export function explainSdkSilence(
+  cells: MatrixCell[],
+  seen: {
+    /** Something independent of the SDK showed the app at work. */
+    appSpoke: boolean;
+    sdkSpoke: boolean;
+    /** What showed the app at work, for the evidence. */
+    how: string;
+  },
+  reporter?: { cell(state: string): { done(cell: MatrixCell): void } }
+): MatrixCell[] {
+  if (!seen.appSpoke || seen.sdkSpoke) return cells;
+  return cells.map((cell) => {
+    if (!cell.cause || !NEEDS_SDK_LINES.includes(cell.cause)) return cell;
+    const quiet: MatrixCell = {
+      ...cell,
+      verdict: 'skip',
+      cause: 'runtime.sdk_logging_off',
+      summary: undefined,
+      evidence: [
+        ...cell.evidence,
+        `not one [Push] line from the SDK in this run, though ${seen.how} (was: ${cell.cause})`,
+      ],
+    };
+    reporter?.cell(`${cell.state}, SDK quiet`).done(quiet);
+    return quiet;
+  });
+}
+
 const NOT_CAPTURING: LogCapture = {
   available: false,
   lines: [],

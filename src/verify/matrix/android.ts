@@ -6,7 +6,7 @@ import {
   startAndroidCapture,
 } from './android_logs';
 import { setAndroidState } from './android_states';
-import { LogCapture } from './logs';
+import { LogCapture, SDK_PUSH_LINE, explainSdkSilence } from './logs';
 import {
   eachState,
   markLateArrivals,
@@ -64,9 +64,10 @@ export async function runAndroidDeliveredMatrix(
   try {
     if (capture.available) await sleep(1_500);
     const seenIds = new Set<string>();
+    const known = { listed: false };
     section.cells = await eachState(
       states,
-      (state) => runCell(state, options, capture, seenIds),
+      (state) => runCell(state, options, capture, seenIds, known),
       { pauseMs: 5_000, reporter: options.reporter }
     );
     // One dumpsys lists every posted notification, so it is read once, and only if a cell
@@ -76,6 +77,17 @@ export async function runAndroidDeliveredMatrix(
       section.cells,
       async (title) =>
         (posted ??= await postedTitles(options.serial)).includes(title),
+      options.reporter
+    );
+    section.cells = explainSdkSilence(
+      section.cells,
+      {
+        appSpoke: known.listed,
+        sdkSpoke: capture.lines.some((line) =>
+          SDK_PUSH_LINE.test(line.message)
+        ),
+        how: "the notification list showed this run's pushes",
+      },
       options.reporter
     );
   } finally {
@@ -94,10 +106,18 @@ async function runCell(
   state: AppState,
   options: AndroidMatrixOptions,
   capture: LogCapture,
-  seenIds: Set<string>
+  seenIds: Set<string>,
+  known: { listed: boolean }
 ): Promise<MatrixCell> {
   const handle = options.reporter?.cell(state);
-  const cell = await runCellBody(state, options, capture, seenIds, handle);
+  const cell = await runCellBody(
+    state,
+    options,
+    capture,
+    seenIds,
+    known,
+    handle
+  );
   handle?.done(cell);
   return cell;
 }
@@ -107,6 +127,7 @@ async function runCellBody(
   options: AndroidMatrixOptions,
   capture: LogCapture,
   seenIds: Set<string>,
+  known: { listed: boolean },
   handle?: CellHandle
 ): Promise<MatrixCell> {
   const evidence: string[] = [];
@@ -182,6 +203,7 @@ async function runCellBody(
     await sleep(1_500);
   }
 
+  if (listed) known.listed = true;
   const lines = since();
   const now = lines.map((line) => line.message);
   const titledId = androidIdForTitle(now, title);

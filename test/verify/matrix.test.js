@@ -522,3 +522,46 @@ test('notifications-off is not claimed when anything arrived, or when the profil
   };
   assert.strictEqual(explainNotificationsOff(silentButOn, false), silentButOn);
 });
+
+const { explainSdkSilence, SDK_PUSH_LINE } = require('../../dist/verify/matrix/logs');
+
+test('an app that logged while the SDK wrote nothing names the log level, not the push', () => {
+  const cells = [
+    { state: 'killed', verdict: 'skip', cause: 'runtime.tap_not_seen', evidence: [] },
+    { state: 'background', verdict: 'fail', cause: 'runtime.push_not_handled', evidence: [] },
+    { state: 'foreground', verdict: 'pass', evidence: [] },
+    { state: 'killed', verdict: 'fail', cause: 'runtime.push_never_arrived', evidence: [] },
+  ];
+  const quiet = explainSdkSilence(cells, {
+    appSpoke: true,
+    sdkSpoke: false,
+    how: "the app's processes logged",
+  });
+  assert.deepStrictEqual(
+    quiet.map((cell) => [cell.verdict, cell.cause]),
+    [
+      ['skip', 'runtime.sdk_logging_off'],
+      ['skip', 'runtime.sdk_logging_off'],
+      ['pass', undefined],
+      // Arrival is read from the OS, so a push that never arrived still never arrived.
+      ['fail', 'runtime.push_never_arrived'],
+    ]
+  );
+  assert.match(quiet[0].evidence[0], /not one \[Push\] line.*was: runtime\.tap_not_seen/);
+
+  // Either signal missing leaves the cells alone.
+  assert.strictEqual(
+    explainSdkSilence(cells, { appSpoke: true, sdkSpoke: true, how: 'x' }),
+    cells
+  );
+  assert.strictEqual(
+    explainSdkSilence(cells, { appSpoke: false, sdkSpoke: false, how: 'x' }),
+    cells
+  );
+});
+
+test('an SDK line is one the SDK tagged, not any bracketed framework line', () => {
+  assert.ok(SDK_PUSH_LINE.test('[Push] Received new message with deliveryId: x'));
+  assert.ok(!SDK_PUSH_LINE.test('[TLSCBQ] something from CFNetwork'));
+  assert.ok(!SDK_PUSH_LINE.test('Pushing a view controller'));
+});

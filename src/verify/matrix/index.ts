@@ -4,7 +4,9 @@ import {
   LogCapture,
   NSE_MARKERS,
   blameStoppedCapture,
+  SDK_PUSH_LINE,
   deliveryIdsIn,
+  explainSdkSilence,
   extensionRanIn,
   startCapture,
 } from './logs';
@@ -133,6 +135,17 @@ export async function runDeliveredMatrix(
         options.reporter
       );
     }
+    section.cells = explainSdkSilence(
+      section.cells,
+      {
+        appSpoke: capture.lines.length > 0,
+        sdkSpoke: capture.lines.some((line) =>
+          SDK_PUSH_LINE.test(line.message)
+        ),
+        how: "the app's processes logged",
+      },
+      options.reporter
+    );
   } finally {
     await capture.stop();
     section.durationMs = sectionTimer();

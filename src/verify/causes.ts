@@ -507,6 +507,14 @@ export const CAUSES: Record<string, CauseDefinition> = {
       'Something other than the SDK displayed it — usually FCM showing a notification message by itself while the app is in the background, so the SDK never sees the push and nothing is counted. Check that the app’s messaging service hands pushes to the SDK, and that the SDK log level is debug for this check.',
     docs: ANDROID_PUSH_DOCS,
   },
+  'runtime.sdk_logging_off': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      'The app was plainly at work, and the Customer.io SDK did not write a single line during the run.',
+    remedy:
+      "The checks that need the SDK's account read its debug lines, so set the SDK's log level to debug in the build you are verifying — SDKConfigBuilder.logLevel(.debug) on iOS, CustomerIOBuilder.logLevel(CioLogLevel.DEBUG) on Android, or the logLevel option in the React Native or Flutter config — and run again. Arrival is still read from the OS either way.",
+  },
   'runtime.no_evidence': {
     stage: 'delivered_matrix',
     severity: 'warning',
