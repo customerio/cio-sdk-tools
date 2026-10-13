@@ -39,7 +39,7 @@ export interface Reporter {
   block(title: string, facts: [string, string][]): void;
   rung(title: string): RungHandle;
   matrix(how?: string, metric?: string): void;
-  cell(state: string): CellHandle;
+  cell(state: string, metric?: string): CellHandle;
   /** A fact worth recording but not worth a line in the roll-up. */
   note(text: string): void;
   /**
@@ -226,7 +226,7 @@ export function createReporter(options: {
       );
     },
 
-    cell(state: string): CellHandle {
+    cell(state: string, metric?: string): CellHandle {
       const tracked = track(state, '  ');
       return {
         phase: tracked.phase,
@@ -237,7 +237,7 @@ export function createReporter(options: {
             row(
               `   ${glyph(cell.verdict)}`,
               state,
-              cellSummary(cell, currentMetric),
+              cellSummary(cell, metric ?? currentMetric),
               cell.durationMs ?? ms,
               columns
             )

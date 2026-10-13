@@ -120,7 +120,7 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
 
    1. **Preflight** (every run): project wiring, workspace, device, and profile, in that order. The first failure stops the run.
    2. **Real pushes** (with `--send`): one push per app state (killed, background, foreground), each followed until it reaches the device and the app handles it.
-   3. **Opened** (with `--opened`): a tap test in the killed and background states, including the deep link.
+   3. **Opened** (with `--opened`): you tap the same push in the killed and background states, and the tool checks the SDK handled the open and the deep link. One push per state serves both checks.
 
    A pass means what the device showed: the push arrived and the app handled it, and for a tap, the SDK handled the open of that exact push. Arrival is read from the OS (the notification list, or the extension's own process) wherever it can be, and SDK log lines only where the OS has no answer. Whether Customer.io recorded the metric isn't checked: test pushes have no stored delivery to read back yet, so every cell reports `recorded: "not_checked"`.
 

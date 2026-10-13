@@ -17,7 +17,15 @@ import { adb } from '../android/adb';
 import { ALL_STATES, AppState } from './states';
 import { stopwatch } from '../clock';
 import { CellHandle, Reporter } from '../report';
-import { androidIdForTitle, deliveredTitle, pushTag } from './identity';
+import {
+  androidIdForTitle,
+  deliveredTitle,
+  pushTag,
+  tapBody,
+} from './identity';
+import { PushMatrices, completeTaps } from './index';
+import { SentPush, TapPlan, notTappedCell } from './opened';
+import { tapAndroidPush } from './android_opened';
 
 export interface AndroidMatrixOptions {
   dryRun?: boolean;
@@ -29,6 +37,8 @@ export interface AndroidMatrixOptions {
   states?: AppState[];
   evidenceDirectory?: string;
   cellTimeoutMs?: number;
+  /** Ask for a tap on the push of these states, once it appears. */
+  tap?: TapPlan;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -42,7 +52,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 export async function runAndroidDeliveredMatrix(
   options: AndroidMatrixOptions
-): Promise<MatrixSection> {
+): Promise<PushMatrices> {
   const states = options.states ?? ALL_STATES;
   const capture = await startAndroidCapture(
     options.serial,
@@ -59,7 +69,11 @@ export async function runAndroidDeliveredMatrix(
     },
   };
 
-  options.reporter?.matrix(capture.how);
+  const tapped: MatrixCell[] = [];
+  options.reporter?.matrix(
+    capture.how,
+    options.tap ? 'delivered and opened' : 'delivered'
+  );
   const sectionTimer = stopwatch();
   try {
     if (capture.available) await sleep(1_500);
@@ -67,7 +81,7 @@ export async function runAndroidDeliveredMatrix(
     const known = { listed: false };
     section.cells = await eachState(
       states,
-      (state) => runCell(state, options, capture, seenIds, known),
+      (state) => runCell(state, options, capture, seenIds, known, tapped),
       { pauseMs: 5_000, reporter: options.reporter }
     );
     // One dumpsys lists every posted notification, so it is read once, and only if a cell
@@ -79,23 +93,33 @@ export async function runAndroidDeliveredMatrix(
         (posted ??= await postedTitles(options.serial)).includes(title),
       options.reporter
     );
-    section.cells = explainSdkSilence(
-      section.cells,
-      {
-        appSpoke: known.listed,
-        sdkSpoke: capture.lines.some((line) =>
-          SDK_PUSH_LINE.test(line.message)
-        ),
-        how: "the notification list showed this run's pushes",
-      },
-      options.reporter
+    const silence = {
+      appSpoke: known.listed,
+      sdkSpoke: capture.lines.some((line) => SDK_PUSH_LINE.test(line.message)),
+      how: "the notification list showed this run's pushes",
+    };
+    section.cells = explainSdkSilence(section.cells, silence, options.reporter);
+    tapped.splice(
+      0,
+      tapped.length,
+      ...explainSdkSilence(tapped, silence, options.reporter)
     );
   } finally {
     await capture.stop();
     section.durationMs = sectionTimer();
   }
 
-  return section;
+  return {
+    delivered: section,
+    opened: options.tap
+      ? {
+          metric: 'opened',
+          cells: completeTaps(options.tap, states, tapped),
+          logs: section.logs,
+          durationMs: section.durationMs,
+        }
+      : undefined,
+  };
 }
 
 /**
@@ -107,10 +131,11 @@ async function runCell(
   options: AndroidMatrixOptions,
   capture: LogCapture,
   seenIds: Set<string>,
-  known: { listed: boolean }
+  known: { listed: boolean },
+  tapped: MatrixCell[]
 ): Promise<MatrixCell> {
   const handle = options.reporter?.cell(state);
-  const cell = await runCellBody(
+  const { cell, push, noPush } = await runCellBody(
     state,
     options,
     capture,
@@ -119,6 +144,30 @@ async function runCell(
     handle
   );
   handle?.done(cell);
+
+  // The same push, tapped: asked for straight after it appeared, while the banner is up.
+  if (options.tap?.states.includes(state)) {
+    const tapHandle = options.reporter?.cell(state, 'opened');
+    const opened = push
+      ? await tapAndroidPush(
+          state,
+          push,
+          {
+            serial: options.serial,
+            tap: options.tap,
+            evidenceDirectory: options.evidenceDirectory,
+            reporter: options.reporter,
+          },
+          capture,
+          tapHandle
+        )
+      : notTappedCell(
+          state,
+          noPush ?? 'the push never arrived, so nobody was asked to tap it'
+        );
+    tapHandle?.done(opened);
+    tapped.push(opened);
+  }
   return cell;
 }
 
@@ -129,8 +178,9 @@ async function runCellBody(
   seenIds: Set<string>,
   known: { listed: boolean },
   handle?: CellHandle
-): Promise<MatrixCell> {
+): Promise<{ cell: MatrixCell; push?: SentPush; noPush?: string }> {
   const evidence: string[] = [];
+  const tapping = options.tap?.states.includes(state) === true;
 
   handle?.phase('staging the app state');
   const staged = await setAndroidState(
@@ -160,24 +210,32 @@ async function runCellBody(
     platform: 'android',
     provider: 'fcm',
     title,
-    body: 'Sent by cio-sdk-tools verify push.',
+    // A push that will be tapped carries the link, and its body says to tap it.
+    body: tapping ? tapBody(state) : 'Sent by cio-sdk-tools verify push.',
+    link: tapping ? options.tap?.link : undefined,
   });
 
   if (sent.wouldSend) {
     return {
-      state,
-      verdict: 'skip',
-      evidence: [
-        ...evidence,
-        `dry run — would POST /v1/environments/${options.environmentId}/verify/push`,
-        JSON.stringify(sent.wouldSend),
-      ],
+      cell: {
+        state,
+        verdict: 'skip',
+        evidence: [
+          ...evidence,
+          `dry run — would POST /v1/environments/${options.environmentId}/verify/push`,
+          JSON.stringify(sent.wouldSend),
+        ],
+      },
+      noPush: 'a dry run sends nothing, so there is nothing to tap',
     };
   }
   if (!sent.accepted) {
     // `FCM_UNREGISTERED` belongs in the report verbatim: it means the token is invalid,
     // and the usual cause is a token scraped from logcat, which truncates long lines.
-    return rejectedCell(state, sent, evidence);
+    return {
+      cell: rejectedCell(state, sent, evidence),
+      noPush: 'the push was not sent, so nobody was asked to tap it',
+    };
   }
   evidence.push(
     'sent (this route returns no delivery id, so the log supplies it)'
@@ -248,10 +306,12 @@ async function runCellBody(
     evidence.push(`no log capture: ${capture.unavailableReason}`);
   }
 
-  return {
+  const deliveryId =
+    expectedId ?? (freshIds.length === 1 ? freshIds[0] : undefined);
+  const cell: MatrixCell = {
     state,
     title,
-    deliveryId: expectedId ?? (freshIds.length === 1 ? freshIds[0] : undefined),
+    deliveryId,
     ...judgeAndroid({
       available: capture.available,
       sawLines: lines.length > 0,
@@ -263,6 +323,16 @@ async function runCellBody(
       freshIds,
     }),
     evidence,
+  };
+  if (!listed && !shown && !received) {
+    return {
+      cell,
+      noPush: 'the push never appeared, so nobody was asked to tap it',
+    };
+  }
+  return {
+    cell,
+    push: { title, expectedId: deliveryId, arrivalSeen: true, mark },
   };
 }
 

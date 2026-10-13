@@ -33,9 +33,8 @@ import {
 import { AndroidProjectModel, loadAndroidProject } from './android/project';
 import { XcodeProjectModel, loadProject } from './ios/xcode';
 import { explainNotificationsOff, runDeliveredMatrix } from './matrix';
-import { RATE_LIMITED_CAUSE, whyNoSend } from './matrix/send';
-import { openedSkipReason, runOpenedMatrix } from './matrix/opened';
-import { runAndroidOpenedMatrix } from './matrix/android_opened';
+import { whyNoSend } from './matrix/send';
+import { TapPlan, openedSkipReason } from './matrix/opened';
 import { runAndroidDeliveredMatrix } from './matrix/android';
 import { ALL_STATES, AppState } from './matrix/states';
 import {
@@ -58,7 +57,7 @@ import { profileLinked } from './rungs/profile_linked';
 import { projectWiring } from './rungs/project_wiring';
 import { gatherWorkspace, workspaceReady } from './rungs/workspace_ready';
 import { ERROR_CODES, ErrorCode, printError } from './errors';
-import { Consent, RUNG_TITLES, Report, RungId } from './types';
+import { Consent, MatrixSection, RUNG_TITLES, Report, RungId } from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson = require('../../package.json');
@@ -136,12 +135,12 @@ const pushCommand = new Command('push')
   )
   .option(
     '--opened',
-    'also verify the opened metric and the deep link — needs one tap per app state, so it never runs unattended (implies --send)',
+    'also verify the opened metric and the deep link, by tapping the push each app state already gets (killed and background by default) — it needs a person, so it never runs unattended (implies --send)',
     false
   )
   .option(
     '--link <url>',
-    'deep link to send with the tap test (must be a URL the app routes)'
+    'deep link the tapped pushes carry (must be a URL the app routes)'
   )
   .option(
     '--observe',
@@ -230,9 +229,9 @@ async function verifyPush(
     return toolError(options, (error as Error).message, ERROR_CODES.validation);
   }
 
-  // `--opened` sends its own pushes, so a run that asks for it is a sending run. Without
-  // this the delivered matrix stayed skipped and dragged a run that verified two taps
-  // down to "nothing was proven".
+  // `--opened` taps the pushes the delivered check sends, so a run that asks for it is a
+  // sending run. Without this the delivered matrix stayed skipped and dragged a run that
+  // verified two taps down to "nothing was proven".
   if (options.opened) options.send = true;
 
   // One evidence folder per sending run, settled here so every matrix writes into it. The
@@ -518,7 +517,7 @@ async function climb(
           retries: options.resend !== false,
         });
     if (!unreadable && consent?.granted !== false) {
-      await matrix(ladder, options, reporter, selection.states, {
+      await matrix(ladder, options, reporter, asker, selection.states, {
         target: device.target,
         pushDisabled: profile.checks.some(
           (check) => check.cause === 'profile.push_disabled'
@@ -529,17 +528,6 @@ async function climb(
         workspaceReason: workspace.resolution?.unresolvedReason ?? cio.reason,
         token: device.sdk?.pushDeviceToken,
         sandbox: wiring.apsEnvironment !== 'production',
-        processNames: wiring.processNames,
-        extensionName: wiring.extensionName,
-      });
-      await openedMatrix(ladder, options, reporter, asker, {
-        target: device.target,
-        bundleId: wiring.bundleId,
-        environmentId: workspace.resolution?.workspace?.id,
-        workspaceReason: workspace.resolution?.unresolvedReason ?? cio.reason,
-        token: device.sdk?.pushDeviceToken,
-        sandbox: wiring.apsEnvironment !== 'production',
-        provider: wiring.provider,
         processNames: wiring.processNames,
         extensionName: wiring.extensionName,
       });
@@ -779,6 +767,7 @@ async function matrix(
   ladder: Ladder,
   options: VerifyPushOptions,
   reporter: Reporter,
+  asker: Asker,
   states: AppState[] | undefined,
   inputs: {
     target?: Parameters<typeof runDeliveredMatrix>[0]['target'];
@@ -810,22 +799,22 @@ async function matrix(
     !inputs.environmentId ||
     !inputs.token
   ) {
-    ladder.addMatrix({
-      metric: 'delivered',
-      cells: [],
-      skipped:
-        whyNoSend({
-          target: inputs.target,
-          app: inputs.bundleId,
-          workspaceId: inputs.environmentId,
-          workspaceReason: inputs.workspaceReason,
-          token: inputs.token,
-        }) ?? 'no push was sent',
-    });
+    const skipped =
+      whyNoSend({
+        target: inputs.target,
+        app: inputs.bundleId,
+        workspaceId: inputs.environmentId,
+        workspaceReason: inputs.workspaceReason,
+        token: inputs.token,
+      }) ?? 'no push was sent';
+    ladder.addMatrix({ metric: 'delivered', cells: [], skipped });
+    if (options.opened)
+      ladder.addMatrix({ metric: 'opened', cells: [], skipped });
     return;
   }
 
-  const section = await runDeliveredMatrix({
+  const plan = tapPlanFor(options, asker, states ?? ALL_STATES);
+  const { delivered, opened } = await runDeliveredMatrix({
     target: inputs.target,
     bundleId: inputs.bundleId,
     environmentId: inputs.environmentId,
@@ -839,9 +828,60 @@ async function matrix(
     resend: options.resend,
     reporter,
     evidenceDirectory: evidenceDirectoryFor(options),
+    tap: plan.tap,
   });
   ladder.addMatrix(
-    explainNotificationsOff(section, inputs.pushDisabled === true)
+    explainNotificationsOff(delivered, inputs.pushDisabled === true)
+  );
+  addOpened(ladder, options, opened, plan.skipped);
+}
+
+/**
+ * Which states get a tap, on the push each already gets for the delivered check. `--opened`
+ * asks for it; a dry run, a run nobody can answer, or a missing `--link` makes the opened
+ * section a skip with the reason instead.
+ */
+function tapPlanFor(
+  options: VerifyPushOptions,
+  asker: Asker,
+  delivered: AppState[]
+): { tap?: TapPlan; skipped?: string } {
+  if (!options.opened) return {};
+  const skipped = openedSkipReason({
+    dryRun: Boolean(options.dryRun),
+    interactive: asker.interactive,
+    link: options.link ?? '',
+  });
+  if (skipped) return { skipped };
+  const states = openedStatesToSend({
+    opened: options.opened,
+    link: options.link,
+    interactive: asker.interactive,
+    states: parseStates(options.states),
+    delivered,
+  });
+  if (states.length === 0 || !options.link) {
+    return {
+      skipped:
+        'none of the states being sent has a banner to tap — add killed or background',
+    };
+  }
+  return { tap: { asker, link: options.link, states } };
+}
+
+function addOpened(
+  ladder: Ladder,
+  options: VerifyPushOptions,
+  opened: MatrixSection | undefined,
+  skipped: string | undefined
+): void {
+  if (!options.opened) return;
+  ladder.addMatrix(
+    opened ?? {
+      metric: 'opened',
+      cells: [],
+      skipped: skipped ?? 'no tap test ran',
+    }
   );
 }
 
@@ -855,153 +895,6 @@ function skipUnreadable(
   ladder.addMatrix({ metric: 'delivered', cells: [], skipped });
   if (options.opened)
     ladder.addMatrix({ metric: 'opened', cells: [], skipped });
-}
-
-/** Records the opened section as skipped when it must not run; see `openedSkipReason`. */
-function skipOpened(ladder: Ladder, options: VerifyPushOptions): boolean {
-  const skipped = openedSkipReason({
-    dryRun: options.dryRun,
-    rateLimited: ladder.matrixHasCause(RATE_LIMITED_CAUSE),
-  });
-  if (!skipped) return false;
-  ladder.addMatrix({ metric: 'opened', cells: [], skipped });
-  return true;
-}
-
-/** The Android half of the opened matrix: same causes, Android's own sentences. */
-async function androidOpened(
-  ladder: Ladder,
-  options: VerifyPushOptions,
-  reporter: Reporter,
-  asker: Asker,
-  inputs: {
-    serial?: string;
-    packageName?: string;
-    environmentId?: string;
-    workspaceReason?: string;
-    token?: string;
-  }
-): Promise<void> {
-  if (!options.opened) return;
-  if (skipOpened(ladder, options)) return;
-  if (
-    !inputs.serial ||
-    !inputs.packageName ||
-    !inputs.environmentId ||
-    !inputs.token
-  ) {
-    ladder.addMatrix({
-      metric: 'opened',
-      cells: [],
-      skipped:
-        whyNoSend({
-          target: inputs.serial,
-          app: inputs.packageName,
-          workspaceId: inputs.environmentId,
-          workspaceReason: inputs.workspaceReason,
-          token: inputs.token,
-        }) ?? 'no push was sent',
-    });
-    return;
-  }
-  if (!options.link) {
-    ladder.addMatrix({
-      metric: 'opened',
-      cells: [],
-      skipped:
-        'pass --link <url> with a URL this app routes, so the deep link half can be judged',
-    });
-    return;
-  }
-
-  ladder.addMatrix(
-    await runAndroidOpenedMatrix({
-      serial: inputs.serial,
-      packageName: inputs.packageName,
-      environmentId: inputs.environmentId,
-      token: inputs.token,
-      link: options.link,
-      states: options.states ? parseStates(options.states) : undefined,
-      evidenceDirectory: options.evidence,
-      asker,
-      reporter,
-    })
-  );
-}
-
-/**
- * The opened matrix, which only ever runs when asked and when someone can answer.
- *
- * Kept separate from the delivered matrix rather than folded in as more cells, because it
- * is a different kind of run: unattended verification is the product, and this is the part
- * that cannot be.
- */
-async function openedMatrix(
-  ladder: Ladder,
-  options: VerifyPushOptions,
-  reporter: Reporter,
-  asker: Asker,
-  inputs: {
-    target?: IosTarget;
-    bundleId?: string;
-    environmentId?: string;
-    workspaceReason?: string;
-    token?: string;
-    sandbox: boolean;
-    provider: PushProvider;
-    processNames?: string[];
-    extensionName?: string;
-  }
-): Promise<void> {
-  if (!options.opened) return;
-  if (skipOpened(ladder, options)) return;
-  if (
-    !inputs.target ||
-    !inputs.bundleId ||
-    !inputs.environmentId ||
-    !inputs.token
-  ) {
-    ladder.addMatrix({
-      metric: 'opened',
-      cells: [],
-      skipped:
-        whyNoSend({
-          target: inputs.target,
-          app: inputs.bundleId,
-          workspaceId: inputs.environmentId,
-          workspaceReason: inputs.workspaceReason,
-          token: inputs.token,
-        }) ?? 'no push was sent',
-    });
-    return;
-  }
-  if (!options.link) {
-    ladder.addMatrix({
-      metric: 'opened',
-      cells: [],
-      skipped:
-        'pass --link <url> with a URL this app routes, so the deep link half can be judged',
-    });
-    return;
-  }
-
-  ladder.addMatrix(
-    await runOpenedMatrix({
-      target: inputs.target,
-      bundleId: inputs.bundleId,
-      environmentId: inputs.environmentId,
-      token: inputs.token,
-      sandbox: inputs.sandbox,
-      provider: inputs.provider,
-      link: options.link,
-      states: options.states ? parseStates(options.states) : undefined,
-      processNames: inputs.processNames,
-      extensionName: inputs.extensionName,
-      evidenceDirectory: options.evidence,
-      asker,
-      reporter,
-    })
-  );
 }
 
 function parseStates(list?: string): AppState[] | undefined {
@@ -1173,17 +1066,7 @@ async function climbAndroid(
     retries: false,
   });
   if (consent?.granted !== false) {
-    await androidMatrix(ladder, options, reporter, selection.states, {
-      serial: device.target?.serial,
-      packageName,
-      environmentId: workspace.resolution?.workspace?.id,
-      workspaceReason: workspace.resolution?.unresolvedReason ?? cio.reason,
-      token: device.sdk?.deviceToken,
-    });
-
-    // Taps come last: the unattended cells should be done before anyone is asked for
-    // anything, which is also the order iOS runs in.
-    await androidOpened(ladder, options, reporter, asker, {
+    await androidMatrix(ladder, options, reporter, asker, selection.states, {
       serial: device.target?.serial,
       packageName,
       environmentId: workspace.resolution?.workspace?.id,
@@ -1241,6 +1124,7 @@ async function askToSend(
         link: options.link,
         interactive: asker.interactive,
         states: parseStates(options.states),
+        delivered: inputs.delivered ?? ALL_STATES,
       }),
       retries: inputs.retries,
     },
@@ -1256,6 +1140,7 @@ async function androidMatrix(
   ladder: Ladder,
   options: VerifyPushOptions,
   reporter: Reporter,
+  asker: Asker,
   states: AppState[] | undefined,
   inputs: {
     serial?: string;
@@ -1280,33 +1165,34 @@ async function androidMatrix(
     !inputs.environmentId ||
     !inputs.token
   ) {
-    ladder.addMatrix({
-      metric: 'delivered',
-      cells: [],
-      skipped:
-        whyNoSend({
-          target: inputs.serial,
-          app: inputs.packageName,
-          workspaceId: inputs.environmentId,
-          workspaceReason: inputs.workspaceReason,
-          token: inputs.token,
-        }) ?? 'no push was sent',
-    });
+    const skipped =
+      whyNoSend({
+        target: inputs.serial,
+        app: inputs.packageName,
+        workspaceId: inputs.environmentId,
+        workspaceReason: inputs.workspaceReason,
+        token: inputs.token,
+      }) ?? 'no push was sent';
+    ladder.addMatrix({ metric: 'delivered', cells: [], skipped });
+    if (options.opened)
+      ladder.addMatrix({ metric: 'opened', cells: [], skipped });
     return;
   }
 
-  ladder.addMatrix(
-    await runAndroidDeliveredMatrix({
-      serial: inputs.serial,
-      packageName: inputs.packageName,
-      environmentId: inputs.environmentId,
-      token: inputs.token,
-      states,
-      dryRun: options.dryRun,
-      reporter,
-      evidenceDirectory: evidenceDirectoryFor(options),
-    })
-  );
+  const plan = tapPlanFor(options, asker, states ?? ALL_STATES);
+  const { delivered, opened } = await runAndroidDeliveredMatrix({
+    serial: inputs.serial,
+    packageName: inputs.packageName,
+    environmentId: inputs.environmentId,
+    token: inputs.token,
+    states,
+    dryRun: options.dryRun,
+    reporter,
+    evidenceDirectory: evidenceDirectoryFor(options),
+    tap: plan.tap,
+  });
+  ladder.addMatrix(delivered);
+  addOpened(ladder, options, opened, plan.skipped);
 }
 
 function evidenceDirectoryFor(options: VerifyPushOptions): string {

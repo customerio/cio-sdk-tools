@@ -27,7 +27,8 @@ import {
   waitForTitle,
 } from './notifications';
 import { PushProvider } from '../cio/push';
-import { deliveredTitle, pushTag } from './identity';
+import { deliveredTitle, pushTag, tapBody } from './identity';
+import { SentPush, TapPlan, notTappedCell, tapIosPush } from './opened';
 
 export interface MatrixOptions {
   /** Exercise every step except the send itself. */
@@ -54,6 +55,19 @@ export interface MatrixOptions {
   evidenceDirectory?: string;
   /** How long one cell waits for the extension to finish. */
   cellTimeoutMs?: number;
+  /** Ask for a tap on the push of these states, once it arrives. */
+  tap?: TapPlan;
+}
+
+/**
+ * Both sections from one pass over the states. With a tap plan, each tapped state's push
+ * serves both checks, so a run sends one push per state and the notification list holds one
+ * banner per state.
+ */
+export interface PushMatrices {
+  delivered: MatrixSection;
+  /** Present when a tap plan was given. */
+  opened?: MatrixSection;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -83,7 +97,7 @@ const EVIDENCE_SETTLE_MS = 8_000;
  */
 export async function runDeliveredMatrix(
   options: MatrixOptions
-): Promise<MatrixSection> {
+): Promise<PushMatrices> {
   const states = options.states ?? ALL_STATES;
   const capture = await startCapture(
     options.target,
@@ -102,7 +116,11 @@ export async function runDeliveredMatrix(
     },
   };
 
-  options.reporter?.matrix(capture.how);
+  const tapped: MatrixCell[] = [];
+  options.reporter?.matrix(
+    capture.how,
+    options.tap ? 'delivered and opened' : 'delivered'
+  );
   const sectionTimer = stopwatch();
   try {
     // Give the stream a moment to attach, or the first cell's lines are simply missing.
@@ -116,7 +134,7 @@ export async function runDeliveredMatrix(
     const startedAt = Date.now();
     section.cells = await eachState(
       states,
-      (state) => runCell(state, options, capture, seenIds, known),
+      (state) => runCell(state, options, capture, seenIds, known, tapped),
       // Sustained sends to one token appear to throttle; a pause between cells costs
       // nothing and removes a whole class of confusing near-misses.
       { pauseMs: 8_000, reporter: options.reporter }
@@ -135,23 +153,51 @@ export async function runDeliveredMatrix(
         options.reporter
       );
     }
-    section.cells = explainSdkSilence(
-      section.cells,
-      {
-        appSpoke: capture.lines.length > 0,
-        sdkSpoke: capture.lines.some((line) =>
-          SDK_PUSH_LINE.test(line.message)
-        ),
-        how: "the app's processes logged",
-      },
-      options.reporter
+    const silence = {
+      appSpoke: capture.lines.length > 0,
+      sdkSpoke: capture.lines.some((line) => SDK_PUSH_LINE.test(line.message)),
+      how: "the app's processes logged",
+    };
+    section.cells = explainSdkSilence(section.cells, silence, options.reporter);
+    tapped.splice(
+      0,
+      tapped.length,
+      ...explainSdkSilence(tapped, silence, options.reporter)
     );
   } finally {
     await capture.stop();
     section.durationMs = sectionTimer();
   }
 
-  return section;
+  return {
+    delivered: section,
+    opened: options.tap
+      ? {
+          metric: 'opened',
+          cells: completeTaps(options.tap, states, tapped),
+          logs: section.logs,
+          durationMs: section.durationMs,
+        }
+      : undefined,
+  };
+}
+
+/**
+ * A tapped state whose cell never ran — the provider began refusing sends — still gets a
+ * line, so the opened section accounts for every state it was asked about.
+ */
+export function completeTaps(
+  tap: TapPlan,
+  states: AppState[],
+  tapped: MatrixCell[]
+): MatrixCell[] {
+  return tap.states
+    .filter((state) => states.includes(state))
+    .map(
+      (state) =>
+        tapped.find((cell) => cell.state === state) ??
+        notTappedCell(state, 'no push was sent for this state')
+    );
 }
 
 /**
@@ -165,7 +211,9 @@ export function deliveredRequest(
     MatrixOptions,
     'dryRun' | 'environmentId' | 'token' | 'sandbox' | 'provider'
   >,
-  title: string
+  title: string,
+  /** The push will be tapped: it carries the link, and its body says to tap it. */
+  tap?: { link: string; state: AppState }
 ): SendRequest {
   return {
     dryRun: options.dryRun,
@@ -175,7 +223,8 @@ export function deliveredRequest(
     platform: 'ios',
     provider: options.provider,
     title,
-    body: 'Sent by cio-sdk-tools verify push.',
+    body: tap ? tapBody(tap.state) : 'Sent by cio-sdk-tools verify push.',
+    link: tap?.link,
   };
 }
 
@@ -201,15 +250,48 @@ async function runCell(
   options: MatrixOptions,
   capture: LogCapture,
   seenIds: Set<string>,
-  known: RunState
+  known: RunState,
+  tapped: MatrixCell[]
 ): Promise<MatrixCell> {
   const handle = options.reporter?.cell(state);
+  const body = await runCellBody(
+    state,
+    options,
+    capture,
+    seenIds,
+    handle,
+    known
+  );
   const cell = blameStoppedCapture(
-    await runCellBody(state, options, capture, seenIds, handle, known),
+    body.cell,
     capture.stoppedReason?.(),
     SILENT
   );
   handle?.done(cell);
+
+  // The same push, tapped: asked for straight after it arrived, while the banner is up.
+  if (options.tap?.states.includes(state)) {
+    const tapHandle = options.reporter?.cell(state, 'opened');
+    const opened = body.push
+      ? await tapIosPush(
+          state,
+          body.push,
+          {
+            target: options.target,
+            tap: options.tap,
+            evidenceDirectory: options.evidenceDirectory,
+            reporter: options.reporter,
+          },
+          capture,
+          tapHandle
+        )
+      : notTappedCell(
+          state,
+          body.noPush ?? 'the push never arrived, so nobody was asked to tap it'
+        );
+    tapHandle?.done(opened);
+    tapped.push(opened);
+  }
   return cell;
 }
 
@@ -220,8 +302,15 @@ async function runCellBody(
   seenIds: Set<string>,
   handle: CellHandle | undefined,
   known: RunState
-): Promise<MatrixCell> {
+): Promise<{ cell: MatrixCell; push?: SentPush; noPush?: string }> {
   const evidence: string[] = [];
+  const tapping = options.tap?.states.includes(state) === true;
+  const tapPush = (title: string) =>
+    deliveredRequest(
+      options,
+      title,
+      tapping && options.tap ? { link: options.tap.link, state } : undefined
+    );
 
   handle?.phase('staging the app state');
   const staged = await setAppState(
@@ -238,21 +327,29 @@ async function runCellBody(
 
   const title = deliveredTitle(state, pushTag());
   handle?.phase('sending');
-  const sent = await sendVerifyPush(deliveredRequest(options, title));
+  const sent = await sendVerifyPush(tapPush(title));
 
   if (sent.wouldSend) {
     return {
-      state,
-      verdict: 'skip',
-      evidence: [
-        ...evidence,
-        `dry run — would POST /v1/environments/${options.environmentId}/verify/push`,
-        JSON.stringify(sent.wouldSend),
-      ],
+      cell: {
+        state,
+        verdict: 'skip',
+        evidence: [
+          ...evidence,
+          `dry run — would POST /v1/environments/${options.environmentId}/verify/push`,
+          JSON.stringify(sent.wouldSend),
+        ],
+      },
+      noPush: 'a dry run sends nothing, so there is nothing to tap',
     };
   }
 
-  if (!sent.accepted) return rejectedCell(state, sent, evidence);
+  if (!sent.accepted) {
+    return {
+      cell: rejectedCell(state, sent, evidence),
+      noPush: 'the push was not sent, so nobody was asked to tap it',
+    };
+  }
   evidence.push(
     sent.deliveryId
       ? `sent, delivery ${sent.deliveryId}`
@@ -275,6 +372,9 @@ async function runCellBody(
     if (!capture.available) return;
     handle?.phase('waiting for the extension to run');
     if (!(await waitFor(ranNow, budget))) return;
+    // A tap is asked for next, and the banner is up now: the extension's account keeps
+    // arriving in the capture while the person taps.
+    if (tapping) return;
     handle?.phase('collecting the extension’s account');
     await waitFor(
       () => since().some((line) => NSE_MARKERS.completion.test(line.message)),
@@ -315,9 +415,12 @@ async function runCellBody(
   ) {
     handle?.phase('nothing arrived — sending once more');
     const retryTitle = deliveredTitle(state, pushTag());
-    const again = await sendVerifyPush(deliveredRequest(options, retryTitle));
+    const again = await sendVerifyPush(tapPush(retryTitle));
     if (again.rateLimited) {
-      return rejectedCell(state, again, evidence, 're-send rejected');
+      return {
+        cell: rejectedCell(state, again, evidence, 're-send rejected'),
+        noPush: 'the push was not sent, so nobody was asked to tap it',
+      };
     }
     evidence.push(
       again.accepted
@@ -397,10 +500,12 @@ async function runCellBody(
     evidence.push(`no log capture: ${capture.unavailableReason}`);
   }
 
-  return {
+  const deliveryId =
+    expectedId ?? (freshIds.length === 1 ? freshIds[0] : undefined);
+  const cell: MatrixCell = {
     state,
     title,
-    deliveryId: expectedId ?? (freshIds.length === 1 ? freshIds[0] : undefined),
+    deliveryId,
     ...judge({
       localProbe,
       available: capture.available,
@@ -413,6 +518,22 @@ async function runCellBody(
       freshIds,
     }),
     evidence,
+  };
+  if (stored === false) {
+    return {
+      cell,
+      noPush: 'the push never arrived, so nobody was asked to tap it',
+    };
+  }
+  return {
+    cell,
+    push: {
+      // After a re-send, whichever of the two arrived is the one to tap.
+      title: stored ? stored.title : title,
+      expectedId: deliveryId,
+      arrivalSeen: stored ? true : extensionRan,
+      mark,
+    },
   };
 }
 

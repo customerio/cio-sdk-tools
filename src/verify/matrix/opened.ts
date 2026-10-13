@@ -1,25 +1,11 @@
 import * as path from 'path';
-import { stopwatch } from '../clock';
 import { run } from '../exec';
-import { waitForNotification } from './notifications';
-import { probeLocalDelivery } from './probe';
 import { Target } from '../ios/device';
 import { Asker, TapAnswer } from '../prompt';
 import { CellHandle, Reporter } from '../report';
-import { MatrixCell, MatrixSection, Verdict } from '../types';
-import {
-  LogCapture,
-  SDK_PUSH_LINE,
-  blameStoppedCapture,
-  explainSdkSilence,
-  deliveryIdsIn,
-  extensionRanIn,
-  ranInExtension,
-  startCapture,
-} from './logs';
-import { eachState, rejectedCell, sendVerifyPush } from './send';
-import { AppState, setAppState } from './states';
-import { pushTag, tapBody, tapTitle } from './identity';
+import { MatrixCell, Verdict } from '../types';
+import { LogCapture, blameStoppedCapture } from './logs';
+import { AppState } from './states';
 
 /**
  * The half of push verification that cannot be automated.
@@ -64,44 +50,56 @@ export const OPENED_STATES: AppState[] = ['killed', 'background'];
 /**
  * Why the tap test does not run though it was asked for, if it does not. A dry run comes
  * first: it skips the consent question because it sends nothing, so a tap test that went
- * ahead would send real pushes nobody agreed to. A provider that refused the delivered
- * sends as too frequent will refuse these too.
+ * ahead would send real pushes nobody agreed to. A tap needs someone to ask, and a link to
+ * judge where the tap goes.
  */
 export function openedSkipReason(options: {
   dryRun: boolean;
-  rateLimited: boolean;
+  rateLimited?: boolean;
+  interactive?: boolean;
+  link?: string;
 }): string | undefined {
   if (options.dryRun)
     return 'a dry run sends nothing, so there is nothing to tap';
+  if (options.interactive === false) {
+    return 'opened needs a real tap, and this run cannot ask for one — run it in a terminal';
+  }
+  if (options.link === '') {
+    return 'pass --link <url> with a URL this app routes, so the deep link half can be judged';
+  }
   if (options.rateLimited) {
     return 'the provider was refusing sends, so no tap test was sent';
   }
   return undefined;
 }
 
-export interface OpenedOptions {
-  target: Target;
-  bundleId: string;
-  environmentId: string;
-  token: string;
-  sandbox: boolean;
-  provider: 'apns' | 'fcm';
+/**
+ * Which states get a tap, and how. Each tap is on the push that state's delivered check sent:
+ * one push per state, so the notification list holds one banner per state rather than a
+ * delivered push and a tap-test push side by side.
+ */
+export interface TapPlan {
+  asker: Asker;
   /** The URL the app is expected to route. Must be one the app actually claims. */
   link: string;
-  states?: AppState[];
-  processNames?: string[];
-  /** The extension's process, whose lines are the OS's word that it ran. */
-  extensionName?: string;
-  evidenceDirectory?: string;
-  asker: Asker;
-  reporter?: Reporter;
+  /** The states that get a tap; always a subset of the states that get a push. */
+  states: AppState[];
   /** How long to leave the tap prompt open. Longer than a picker: a person has to look. */
   tapTimeoutMs?: number;
 }
 
-const TAP_TIMEOUT_MS = 180_000;
-/** Matches the delivered matrix: long enough that a slow simulator is not a failure. */
-const ARRIVAL_TIMEOUT_MS = 45_000;
+/** The push a delivered cell sent, which that state's tap test then asks for. */
+export interface SentPush {
+  title: string;
+  /** Its delivery id, when the send, the OS or the extension said what it is. */
+  expectedId?: string;
+  /** Something other than the tap showed the push arrive. */
+  arrivalSeen: boolean;
+  /** Where this push's lines begin in the capture. */
+  mark: number;
+}
+
+export const TAP_TIMEOUT_MS = 180_000;
 /**
  * How long a tap's sequence gets to finish after the person confirms it. A fixed six
  * seconds was not enough on a phone: a cold start from the tap, or iOS replacing a frozen
@@ -111,166 +109,30 @@ const ARRIVAL_TIMEOUT_MS = 45_000;
 const TAP_SEQUENCE_TIMEOUT_MS = 30_000;
 const TAP_POLL_MS = 500;
 
-export async function runOpenedMatrix(
-  options: OpenedOptions
-): Promise<MatrixSection> {
-  const states = options.states ?? OPENED_STATES;
-  const section: MatrixSection = { metric: 'opened', cells: [] };
-
-  if (!options.asker.interactive) {
-    section.skipped =
-      'opened needs a real tap, and this run cannot ask for one — run it in a terminal';
-    return section;
-  }
-
-  const capture = await startCapture(
-    options.target,
-    options.evidenceDirectory,
-    options.processNames ?? [],
-    options.extensionName
-  );
-  options.reporter?.matrix(capture.how, 'opened');
-  const sectionTimer = stopwatch();
-
-  try {
-    if (capture.available) await sleep(2_500);
-    section.cells = await eachState(
-      states,
-      async (state) => {
-        const handle = options.reporter?.cell(state);
-        const cell = await runOpenedCell(state, options, capture, handle);
-        // Closing the handle is what prints the result. Without it the cells ran, the
-        // taps were read correctly, and the run said nothing about either.
-        handle?.done(cell);
-        return cell;
-      },
-      { pauseMs: 4_000, reporter: options.reporter }
-    );
-    section.cells = explainSdkSilence(
-      section.cells,
-      {
-        appSpoke: capture.lines.length > 0,
-        sdkSpoke: capture.lines.some((line) =>
-          SDK_PUSH_LINE.test(line.message)
-        ),
-        how: "the app's processes logged",
-      },
-      options.reporter
-    );
-  } finally {
-    await capture.stop();
-    section.durationMs = sectionTimer();
-    section.logs = {
-      how: capture.how,
-      evidencePath: capture.evidencePath,
-      unavailableReason: capture.unavailableReason,
-    };
-  }
-
-  return section;
-}
-
-async function runOpenedCell(
+/**
+ * Ask for a tap on the push a delivered cell just sent, and read what the SDK did with it.
+ *
+ * Asked straight after the push is seen to arrive, so the banner is usually still on screen.
+ * Prompting before arrival was wrong twice over: the banner was still in flight, and when the
+ * push never came it asked for something impossible.
+ */
+export async function tapIosPush(
   state: AppState,
-  options: OpenedOptions,
+  push: SentPush,
+  options: {
+    target: Target;
+    tap: TapPlan;
+    evidenceDirectory?: string;
+    reporter?: Reporter;
+  },
   capture: LogCapture,
   handle?: CellHandle
 ): Promise<MatrixCell> {
-  const evidence: string[] = [];
-
-  handle?.phase('staging the app state');
-  const staged = await setAppState(
-    options.target,
-    options.bundleId,
-    state,
-    options.processNames?.[0]
-  );
-  evidence.push(`state via ${staged.how}`);
-
-  const mark = capture.mark();
-  const sinceMs = Date.now() - 1_000;
-  const title = tapTitle(pushTag());
-  handle?.phase('sending');
-  const sent = await sendVerifyPush({
-    environmentId: options.environmentId,
-    token: options.token,
-    sandbox: options.sandbox,
-    platform: 'ios',
-    provider: options.provider,
-    title,
-    body: tapBody(state),
-    link: options.link,
-  });
-
-  if (!sent.accepted) return rejectedCell(state, sent, evidence);
-  evidence.push(`sent with link ${options.link}`);
-
-  // Wait for the notification to land before asking anyone to tap it.
-  //
-  // Prompting straight after the send was wrong twice over: it asked for a tap while the
-  // banner was still in flight, so by the time a person read the prompt and looked, the
-  // banner had auto-dismissed and the screen was idle — and when the push never arrived
-  // at all it asked for something impossible, then waited three minutes for it. Waiting
-  // for arrival first puts the question on screen while the banner is live.
-  //
-  // Arrival also says which delivery this push is, so the open can be matched to it: the
-  // simulator's notification store holds the push's id; on a phone, the extension logs it
-  // when the push lands.
-  handle?.phase('waiting for the notification to land');
-  const stored = await waitForNotification({
-    target: options.target,
-    title,
-    timeoutMs: ARRIVAL_TIMEOUT_MS,
-    sinceMs,
-  });
-  if (stored === false) {
-    const probe = await probeLocalDelivery({
-      target: options.target,
-      bundleId: options.bundleId,
-    });
-    return {
-      state,
-      verdict: probe.result === 'absent' ? 'skip' : 'fail',
-      cause:
-        probe.result === 'absent'
-          ? 'device.notifications_wedged'
-          : 'runtime.push_never_arrived',
-      evidence: [
-        ...evidence,
-        'nothing arrived, so nobody was asked to tap it',
-        probe.evidence,
-      ],
-    };
-  }
-  let expectedId = sent.deliveryId ?? (stored ? stored.deliveryId : undefined);
-  let arrivalSeen = Boolean(stored);
-  if (stored) {
-    evidence.push(
-      `arrived: in the notification store${
-        stored.deliveryId ? `, delivery ${stored.deliveryId}` : ''
-      }`
-    );
-  } else if (capture.available) {
-    // A phone: the extension waking is the only sign the push landed.
-    const ran = await waitFor(
-      () => extensionRanIn(capture.since(mark), options.extensionName),
-      ARRIVAL_TIMEOUT_MS
-    );
-    const ids = deliveryIdsIn(
-      capture
-        .since(mark)
-        .filter((line) => ranInExtension([line], options.extensionName))
-    );
-    expectedId ??= ids.length === 1 ? ids[0] : undefined;
-    arrivalSeen = ran;
-    evidence.push(
-      ran
-        ? `the extension ran on it${
-            ids.length === 1 ? `, delivery ${ids[0]}` : ''
-          }`
-        : "the phone's log never showed the push landing; asking for the tap anyway"
-    );
-  }
+  const evidence: string[] = [
+    `the push this state's delivered check sent, "${push.title}"${
+      push.expectedId ? `, delivery ${push.expectedId}` : ''
+    }`,
+  ];
 
   // A screenshot here is the cheapest record of what was actually on screen when the tap
   // was asked for, and on a simulator it costs nothing.
@@ -282,21 +144,20 @@ async function runOpenedCell(
   if (shot) evidence.push(`screen at the prompt: ${shot}`);
 
   // The one place this tool waits on a person. Said plainly, because a prompt nobody
-  // understands is answered by pressing Enter without doing the thing.
-  // The spinner has to come down first: it repaints over the question, and a prompt
-  // nobody can read is a prompt nobody answers.
+  // understands is answered without doing the thing. The spinner has to come down first:
+  // it repaints over the question, and a prompt nobody can read is a prompt nobody answers.
   options.reporter?.pause();
-  const answer = await options.asker.askTap(
+  const answer = await options.tap.asker.askTap(
     [
-      `Tap the "${title}" notification on ${options.target.name}.`,
+      `Tap the "${push.title}" notification on ${options.target.name}.`,
       'If the banner has gone, swipe down from the top edge to find it in Notification Centre.',
       'The app may not visibly change — the verdict comes from the log, not the screen.',
     ].join('\n  '),
-    { timeoutMs: options.tapTimeoutMs ?? TAP_TIMEOUT_MS }
+    { timeoutMs: options.tap.tapTimeoutMs ?? TAP_TIMEOUT_MS }
   );
   options.reporter?.resume();
   if (answer !== 'tapped') {
-    return untappedCell(state, answer, evidence, arrivalSeen);
+    return untappedCell(state, answer, evidence, push.arrivalSeen);
   }
 
   // The SDK's click path runs after the OS hands over the notification, which takes a
@@ -308,18 +169,22 @@ async function runOpenedCell(
     while (
       Date.now() < deadline &&
       !openedSequenceComplete(
-        observeOpened(capture.since(mark).map((line) => line.message)).observed,
-        { linkSent: Boolean(options.link) }
+        observeOpened(capture.since(push.mark).map((line) => line.message))
+          .observed,
+        { linkSent: true }
       )
     ) {
       await sleep(TAP_POLL_MS);
     }
   }
 
-  const lines = capture.since(mark).map((line) => line.message);
+  // Read from the push's own start, not from the answer: people tap first and answer after,
+  // so the SDK's lines for the tap usually come before the prompt is answered. Nothing in
+  // the delivered check's lines reads as a tap.
+  const lines = capture.since(push.mark).map((line) => line.message);
   const { observed, deliveryId } = observeOpened(lines);
   const matched =
-    expectedId && deliveryId ? deliveryId === expectedId : undefined;
+    push.expectedId && deliveryId ? deliveryId === push.expectedId : undefined;
 
   if (capture.available) {
     evidence.push(
@@ -328,13 +193,13 @@ async function runOpenedCell(
     if (deliveryId) {
       evidence.push(
         matched === false
-          ? `the SDK opened ${deliveryId}, which is not this push (${expectedId})`
+          ? `the SDK opened ${deliveryId}, which is not this push (${push.expectedId})`
           : `the SDK opened ${deliveryId}${matched ? ', this push' : ''}`
       );
     }
     if (observed.osDelivered && !observed.clicked) {
       const handed = capture
-        .since(mark)
+        .since(push.mark)
         .find((line) => OPENED_MARKERS.osDelivered.test(line.message));
       evidence.push(
         `iOS handed the tap to the app${
@@ -348,8 +213,8 @@ async function runOpenedCell(
 
   const judged: MatrixCell = {
     state,
-    title,
-    deliveryId: deliveryId ?? expectedId,
+    title: push.title,
+    deliveryId: deliveryId ?? push.expectedId,
     ...judgeOpened({
       available: capture.available,
       lossy: capture.lossy,
@@ -358,12 +223,25 @@ async function runOpenedCell(
     }),
     evidence,
   };
-  const all = capture.since(mark);
+  const all = capture.since(push.mark);
   return explainUnseenTap(judged, {
     stoppedReason: capture.stoppedReason?.(),
     linesAfterTap: capture.since(afterTap).length,
     lastLineAt: all.length > 0 ? all[all.length - 1].at : undefined,
   });
+}
+
+/**
+ * The opened cell for a state whose push was never there to tap: it was not sent, or it
+ * never arrived. The delivered cell already says which; this one only says nothing was asked.
+ */
+export function notTappedCell(state: AppState, why: string): MatrixCell {
+  return {
+    state,
+    verdict: 'skip',
+    summary: 'not tapped',
+    evidence: [why],
+  };
 }
 
 /**
@@ -570,18 +448,6 @@ async function screenshot(
     file,
   ]);
   return code === 0 ? file : undefined;
-}
-
-async function waitFor(
-  predicate: () => boolean,
-  timeoutMs: number
-): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return true;
-    await sleep(TAP_POLL_MS);
-  }
-  return predicate();
 }
 
 function sleep(ms: number): Promise<void> {

@@ -1,22 +1,16 @@
 import { adb } from '../android/adb';
-import { stopwatch } from '../clock';
-import { Asker } from '../prompt';
 import { CellHandle, Reporter } from '../report';
-import { MatrixCell, MatrixSection } from '../types';
-import { LogCapture, SDK_PUSH_LINE, explainSdkSilence } from './logs';
-import { ANDROID_MARKERS, startAndroidCapture } from './android_logs';
-import { OPENED_STATES, judgeOpened, untappedCell } from './opened';
-import { eachState, rejectedCell, sendVerifyPush } from './send';
-import { AppState } from './states';
-import { setAndroidState } from './android_states';
+import { MatrixCell } from '../types';
+import { LogCapture } from './logs';
 import {
-  androidIdForTitle,
-  androidOpenedIdentity,
-  pushTag,
-  tapBody,
-  tapTitle,
-} from './identity';
-import { LIST_CATCH_UP_MS, listedWithin, postedTitles } from './android';
+  SentPush,
+  TAP_TIMEOUT_MS,
+  TapPlan,
+  judgeOpened,
+  untappedCell,
+} from './opened';
+import { AppState } from './states';
+import { androidOpenedIdentity } from './identity';
 
 /**
  * `opened` on Android: the same claim, a different set of sentences.
@@ -27,11 +21,8 @@ import { LIST_CATCH_UP_MS, listedWithin, postedTitles } from './android';
  * shared with iOS on purpose: one cause vocabulary is what lets the plugin learn a single
  * contract instead of one per platform.
  *
- * Arrival is read from the log rather than a notification store. Android exposes no
- * readable delivered-notification store — `cmd notification list` has already been caught
- * reporting nothing while a notification was on screen — but the SDK says "Showing
- * notification for message:" when it posts one, which is a better signal anyway: it is the
- * SDK's own account of what it did.
+ * The push tapped is the one the delivered check just sent and saw arrive, in the
+ * notification list or by the SDK's own "Showing notification" line.
  */
 export const ANDROID_OPENED_MARKERS = {
   tracked: /Tracking push message opened with payload: (.+)/,
@@ -45,158 +36,33 @@ export const ANDROID_OPENED_MARKERS = {
   linkUnhandled: /Deep link was not handled/,
 };
 
-export interface AndroidOpenedOptions {
-  serial: string;
-  packageName: string;
-  environmentId: string;
-  token: string;
-  link: string;
-  states?: AppState[];
-  evidenceDirectory?: string;
-  asker: Asker;
-  reporter?: Reporter;
-  tapTimeoutMs?: number;
-}
-
-const TAP_TIMEOUT_MS = 180_000;
-const ARRIVAL_TIMEOUT_MS = 45_000;
 /** How long a tap's sequence gets to finish; the wait ends as soon as it does. */
 const TAP_SEQUENCE_TIMEOUT_MS = 30_000;
 
-export async function runAndroidOpenedMatrix(
-  options: AndroidOpenedOptions
-): Promise<MatrixSection> {
-  const states = options.states ?? OPENED_STATES;
-  const section: MatrixSection = { metric: 'opened', cells: [] };
-
-  if (!options.asker.interactive) {
-    section.skipped =
-      'opened needs a real tap, and this run cannot ask for one — run it in a terminal';
-    return section;
-  }
-
-  const capture = await startAndroidCapture(
-    options.serial,
-    options.evidenceDirectory
-  );
-  options.reporter?.matrix(capture.how, 'opened');
-  const sectionTimer = stopwatch();
-
-  try {
-    if (capture.available) await sleep(1_500);
-    const known = { listed: false };
-    section.cells = await eachState(
-      states,
-      async (state) => {
-        const handle = options.reporter?.cell(state);
-        const cell = await runCell(state, options, capture, known, handle);
-        handle?.done(cell);
-        return cell;
-      },
-      { pauseMs: 4_000, reporter: options.reporter }
-    );
-    section.cells = explainSdkSilence(
-      section.cells,
-      {
-        appSpoke: known.listed,
-        sdkSpoke: capture.lines.some((line) =>
-          SDK_PUSH_LINE.test(line.message)
-        ),
-        how: "the notification list showed this run's pushes",
-      },
-      options.reporter
-    );
-  } finally {
-    await capture.stop();
-    section.durationMs = sectionTimer();
-    section.logs = {
-      how: capture.how,
-      evidencePath: capture.evidencePath,
-      unavailableReason: capture.unavailableReason,
-    };
-  }
-
-  return section;
-}
-
-async function runCell(
+/**
+ * Ask for a tap on the push a delivered cell just sent, and read what the SDK did with it.
+ * Asked straight after the push appeared, so the banner is usually still up.
+ */
+export async function tapAndroidPush(
   state: AppState,
-  options: AndroidOpenedOptions,
+  push: SentPush,
+  options: {
+    serial: string;
+    tap: TapPlan;
+    evidenceDirectory?: string;
+    reporter?: Reporter;
+  },
   capture: LogCapture,
-  known: { listed: boolean },
   handle?: CellHandle
 ): Promise<MatrixCell> {
-  const evidence: string[] = [];
-
-  handle?.phase('staging the app state');
-  const staged = await setAndroidState(
-    options.serial,
-    options.packageName,
-    state
-  );
-  evidence.push(`state via ${staged.how}`);
-
-  const mark = capture.mark();
-  const title = tapTitle(pushTag());
-  handle?.phase('sending');
-  const sent = await sendVerifyPush({
-    environmentId: options.environmentId,
-    token: options.token,
-    sandbox: false,
-    platform: 'android',
-    provider: 'fcm',
-    title,
-    body: tapBody(state),
-    link: options.link,
-  });
-
-  if (!sent.accepted) return rejectedCell(state, sent, evidence);
-  evidence.push(`sent with link ${options.link}`);
-
-  const since = () => capture.since(mark).map((line) => line.message);
+  const evidence: string[] = [
+    `the push this state's delivered check sent, "${push.title}"${
+      push.expectedId ? `, delivery ${push.expectedId}` : ''
+    }`,
+  ];
+  // From the push's own start, not from the answer: people tap first and answer after.
+  const since = () => capture.since(push.mark).map((line) => line.message);
   const seen = (marker: RegExp) => since().some((line) => marker.test(line));
-  const shownBySdk = () =>
-    androidIdForTitle(
-      since().filter((line) => ANDROID_MARKERS.shown.test(line)),
-      title
-    ) !== undefined;
-
-  // Nobody is asked to tap a notification that has not appeared. The OS's notification
-  // list says it has; the SDK saying it showed this push, by its title, says so too.
-  handle?.phase('waiting for the notification to appear');
-  let listed = false;
-  const deadline = Date.now() + ARRIVAL_TIMEOUT_MS;
-  for (;;) {
-    if (!listed) listed = (await postedTitles(options.serial)).includes(title);
-    if (listed || shownBySdk() || Date.now() >= deadline) break;
-    await sleep(1_500);
-  }
-  if (!listed && shownBySdk()) {
-    listed = await listedWithin(options.serial, title, LIST_CATCH_UP_MS);
-  }
-  if (listed) known.listed = true;
-  if (!listed && !shownBySdk()) {
-    return {
-      state,
-      verdict: capture.available ? 'fail' : 'skip',
-      cause: capture.available
-        ? 'runtime.push_never_arrived'
-        : 'runtime.no_evidence',
-      evidence: [
-        ...evidence,
-        capture.available
-          ? 'neither the notification list nor the SDK showed this push, so nobody was asked to tap it'
-          : `no log capture: ${capture.unavailableReason}`,
-      ],
-    };
-  }
-  const expectedId = sent.deliveryId ?? androidIdForTitle(since(), title);
-  evidence.push(
-    (listed
-      ? 'the notification list (dumpsys) shows it'
-      : 'the SDK showed it; the notification list (dumpsys) does not') +
-      (expectedId ? `, delivery ${expectedId}` : '')
-  );
 
   const shot = await screenshot(
     options.serial,
@@ -206,17 +72,18 @@ async function runCell(
   if (shot) evidence.push(`screen at the prompt: ${shot}`);
 
   options.reporter?.pause();
-  const answer = await options.asker.askTap(
+  const answer = await options.tap.asker.askTap(
     [
-      `Tap the "${title}" notification on ${options.serial}.`,
+      `Tap the "${push.title}" notification on ${options.serial}.`,
       'If the banner has gone, pull down the notification shade to find it.',
       'The app may not visibly change — the verdict comes from the log, not the screen.',
     ].join('\n  '),
-    { timeoutMs: options.tapTimeoutMs ?? TAP_TIMEOUT_MS }
+    { timeoutMs: options.tap.tapTimeoutMs ?? TAP_TIMEOUT_MS }
   );
   options.reporter?.resume();
-  // The prompt is only reached once the list or the SDK showed the push, so arrival is known.
-  if (answer !== 'tapped') return untappedCell(state, answer, evidence, true);
+  if (answer !== 'tapped') {
+    return untappedCell(state, answer, evidence, push.arrivalSeen);
+  }
 
   // Wait for the end of the sequence, as on iOS: the open, then the deep link's outcome —
   // or a refusal. A fixed wait either cut a slow cold start short or wasted time.
@@ -244,9 +111,9 @@ async function runCell(
     .map(androidOpenedIdentity);
   const isThisPush = (open: { title?: string; deliveryId?: string }) =>
     open.title
-      ? open.title === title
-      : expectedId && open.deliveryId
-      ? open.deliveryId === expectedId
+      ? open.title === push.title
+      : push.expectedId && open.deliveryId
+      ? open.deliveryId === push.expectedId
       : undefined;
   const opened = opens.find((open) => isThisPush(open) === true) ?? opens[0];
   const matched = opened ? isThisPush(opened) : undefined;
@@ -274,12 +141,14 @@ async function runCell(
       .map((line) => ANDROID_OPENED_MARKERS.linkHandling.exec(line)?.[1])
       .find(Boolean);
     if (behaviour) evidence.push(`pushClickBehavior: ${behaviour}`);
+  } else {
+    evidence.push(`no log capture: ${capture.unavailableReason}`);
   }
 
   return {
     state,
-    title,
-    deliveryId: opened?.deliveryId ?? expectedId,
+    title: push.title,
+    deliveryId: opened?.deliveryId ?? push.expectedId,
     ...judgeOpened({
       available: capture.available,
       lossy: capture.lossy,

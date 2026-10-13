@@ -5,6 +5,7 @@ const {
   judgeOpened,
   OPENED_MARKERS,
   OPENED_STATES,
+  openedSkipReason,
 } = require('../../dist/verify/matrix/opened');
 
 const tapped = {
@@ -164,43 +165,41 @@ test('a store that will not parse names no notifications rather than throwing', 
   assert.deepStrictEqual(storedNotificationsFrom(''), []);
 });
 
-test('every cell closes its handle, or the result never reaches the screen', async () => {
-  const { runOpenedMatrix } = require('../../dist/verify/matrix/opened');
-  const closed = [];
-  const reporter = {
-    level: 'human',
-    start: () => {},
-    rung: () => ({ phase: () => {}, done: () => {} }),
-    matrix: () => {},
-    cell: (state) => ({
-      phase: () => {},
-      done: (cell) => closed.push(`${state}:${cell.verdict}`),
-    }),
-    note: () => {},
-    pause: () => {},
-    resume: () => {},
-    summary: () => {},
-  };
+test('every tapped state gets a line, even one whose push was never sent', () => {
+  const { completeTaps } = require('../../dist/verify/matrix');
+  const { notTappedCell } = require('../../dist/verify/matrix/opened');
+  const tap = { asker: {}, link: 'app://x', states: ['killed', 'background'] };
+  const killed = { state: 'killed', verdict: 'pass', evidence: [] };
+  // The provider refused the background send, so that state's cell never ran.
+  const cells = completeTaps(tap, ['killed', 'background', 'foreground'], [killed]);
+  assert.deepStrictEqual(
+    cells.map((cell) => [cell.state, cell.verdict, cell.summary]),
+    [
+      ['killed', 'pass', undefined],
+      ['background', 'skip', 'not tapped'],
+    ]
+  );
+  // A tap state the run does not send is not a cell at all.
+  assert.deepStrictEqual(
+    completeTaps(tap, ['killed'], [killed]).map((cell) => cell.state),
+    ['killed']
+  );
+  assert.deepStrictEqual(notTappedCell('killed', 'why').evidence, ['why']);
+});
 
-  // Non-interactive short-circuits before any cell runs, which is the one case where
-  // nothing should be closed.
-  const section = await runOpenedMatrix({
-    target: { udid: 'x', name: 'x', kind: 'simulator', state: 'Booted' },
-    bundleId: 'io.example',
-    environmentId: '1',
-    token: 't',
-    sandbox: true,
-    provider: 'apns',
-    link: 'example://x',
-    asker: {
-      interactive: false,
-      select: async () => undefined,
-      askTap: async () => 'no_answer',
-    },
-    reporter,
-  });
-  assert.match(section.skipped, /needs a real tap/);
-  assert.deepStrictEqual(closed, []);
+test('a run that cannot ask for a tap, or has no link, says so instead of tapping', () => {
+  assert.match(
+    openedSkipReason({ dryRun: false, interactive: false, link: 'x://' }),
+    /needs a real tap/
+  );
+  assert.match(
+    openedSkipReason({ dryRun: false, interactive: true, link: '' }),
+    /pass --link/
+  );
+  assert.strictEqual(
+    openedSkipReason({ dryRun: false, interactive: true, link: 'x://' }),
+    undefined
+  );
 });
 
 // --- Android parity -------------------------------------------------------
@@ -267,7 +266,6 @@ test('both platforms reach the same verdict through the same judge', () => {
   );
 });
 
-const { openedSkipReason } = require('../../dist/verify/matrix/opened');
 
 test('a dry run never runs the tap test, because it skipped the consent question', () => {
   assert.match(

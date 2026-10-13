@@ -146,7 +146,7 @@ test('the question names the target, app, workspace, login, token prefix and cou
   assert.doesNotMatch(context, /opened/);
 });
 
-test('--opened adds its pushes to the count, and one push reads in the singular', async () => {
+test('--opened adds taps on the same pushes, not more pushes, and one push reads in the singular', async () => {
   const opened = scripted(true);
   await consentToSend({
     plan: plan({ opened: ['killed', 'background'] }),
@@ -156,10 +156,11 @@ test('--opened adds its pushes to the count, and one push reads in the singular'
     reporter: reporterOn(sink()),
     ladder: new Ladder(),
   });
-  assert.strictEqual(opened.asked[0].question, 'Send 5 real pushes?');
+  // One push per state: the two taps are on two of the three pushes.
+  assert.strictEqual(opened.asked[0].question, 'Send 3 real pushes?');
   assert.match(
     opened.asked[0].context,
-    /opened\s+2 · killed, background · one tap each/
+    /taps\s+2 · killed, background · on the same pushes, one tap each/
   );
 
   const single = scripted(true);
@@ -259,7 +260,7 @@ test('declining sends nothing and skips every section that would have sent', asy
     ladder,
   });
 
-  assert.deepStrictEqual(consent, { granted: false, by: 'prompt', pushes: 5 });
+  assert.deepStrictEqual(consent, { granted: false, by: 'prompt', pushes: 3 });
   const built = ladder.toReport({
     schema: 1,
     provenance: 'read',
@@ -307,4 +308,9 @@ test('the count only includes tap-test pushes that will actually be sent', () =>
   );
   assert.deepStrictEqual(openedStatesToSend({ ...asked, link: undefined }), []);
   assert.deepStrictEqual(openedStatesToSend({ ...asked, opened: false }), []);
+  // A tap is only ever on a push the run sends.
+  assert.deepStrictEqual(
+    openedStatesToSend({ ...asked, delivered: ['killed', 'foreground'] }),
+    ['killed']
+  );
 });

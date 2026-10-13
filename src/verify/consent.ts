@@ -29,30 +29,38 @@ export interface SendPlan {
   login?: string;
   token: string;
   delivered: AppState[];
-  /** Empty unless the opened matrix is going to run. */
+  /** The states whose push will also be tapped. Empty unless the tap test runs. */
   opened: AppState[];
   /** True when a delivered cell sends once more if nothing arrives. */
   retries: boolean;
 }
 
 /**
- * The tap-test states that will actually be sent. None without `--opened` or a `--link`,
- * and none when nobody can tap, because the opened matrices skip themselves then — a
- * count that included them would promise pushes the run never sends.
+ * The states whose push will also be tapped. None without `--opened` or a `--link`, and
+ * none when nobody can tap, because the tap test skips itself then. Only states that get a
+ * push at all: a tap is always on the push that state's delivered check sent.
  */
 export function openedStatesToSend(options: {
   opened: boolean;
   link?: string;
   interactive: boolean;
   states?: AppState[];
+  /** The states that get a push: a tap is only ever on one of those pushes. */
+  delivered?: AppState[];
 }): AppState[] {
   if (!options.opened || !options.link || !options.interactive) return [];
-  return options.states ?? OPENED_STATES;
+  const wanted = options.states ?? OPENED_STATES;
+  return options.delivered
+    ? wanted.filter((state) => options.delivered?.includes(state))
+    : wanted;
 }
 
-/** First sends only: a re-send happens only when the first push never arrived. */
+/**
+ * First sends only: a re-send happens only when the first push never arrived. Taps add
+ * none — each one is on a push that is already counted.
+ */
 export function pushCount(plan: SendPlan): number {
-  return plan.delivered.length + plan.opened.length;
+  return plan.delivered.length;
 }
 
 /** Enough of a token to tell two apart, never the whole address. */
@@ -74,8 +82,10 @@ export function consentFacts(plan: SendPlan): [string, string][] {
   ]);
   if (plan.opened.length > 0) {
     facts.push([
-      'opened',
-      `${plan.opened.length} · ${plan.opened.join(', ')} · one tap each`,
+      'taps',
+      `${plan.opened.length} · ${plan.opened.join(
+        ', '
+      )} · on the same pushes, one tap each`,
     ]);
   }
   if (plan.retries) {
