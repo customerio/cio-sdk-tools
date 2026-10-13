@@ -25,12 +25,21 @@ export function pushTag(random: () => number = Math.random): string {
   return tag;
 }
 
+/**
+ * The tag comes straight after "cio verify": a banner truncates a long title from the end,
+ * and `cio verify · tap me · background · 3X7ZS` lost exactly the part that tells pushes
+ * apart. Titles stay under thirty characters; the tap test's state goes in its body.
+ */
 export function deliveredTitle(state: AppState, tag: string): string {
-  return `cio verify · ${state} · ${tag}`;
+  return `cio verify ${tag} · ${state}`;
 }
 
-export function tapTitle(state: AppState, tag: string): string {
-  return `cio verify · tap me · ${state} · ${tag}`;
+export function tapTitle(tag: string): string {
+  return `cio verify ${tag} · tap me`;
+}
+
+export function tapBody(state: AppState): string {
+  return `Tap this to verify the opened metric (${state} state).`;
 }
 
 const DELIVERY_ID = /[A-Za-z0-9_-]{8,}={0,2}/;

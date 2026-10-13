@@ -19,7 +19,7 @@ import {
 } from './logs';
 import { eachState, rejectedCell, sendVerifyPush } from './send';
 import { AppState, setAppState } from './states';
-import { pushTag, tapTitle } from './identity';
+import { pushTag, tapBody, tapTitle } from './identity';
 
 /**
  * The half of push verification that cannot be automated.
@@ -189,7 +189,7 @@ async function runOpenedCell(
 
   const mark = capture.mark();
   const sinceMs = Date.now() - 1_000;
-  const title = tapTitle(state, pushTag());
+  const title = tapTitle(pushTag());
   handle?.phase('sending');
   const sent = await sendVerifyPush({
     environmentId: options.environmentId,
@@ -198,7 +198,7 @@ async function runOpenedCell(
     platform: 'ios',
     provider: options.provider,
     title,
-    body: 'Tap this notification to verify the opened metric.',
+    body: tapBody(state),
     link: options.link,
   });
 

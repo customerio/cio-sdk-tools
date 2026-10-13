@@ -13,6 +13,7 @@ import {
   androidIdForTitle,
   androidOpenedIdentity,
   pushTag,
+  tapBody,
   tapTitle,
 } from './identity';
 import { LIST_CATCH_UP_MS, listedWithin, postedTitles } from './android';
@@ -136,7 +137,7 @@ async function runCell(
   evidence.push(`state via ${staged.how}`);
 
   const mark = capture.mark();
-  const title = tapTitle(state, pushTag());
+  const title = tapTitle(pushTag());
   handle?.phase('sending');
   const sent = await sendVerifyPush({
     environmentId: options.environmentId,
@@ -145,7 +146,7 @@ async function runCell(
     platform: 'android',
     provider: 'fcm',
     title,
-    body: 'Tap this notification to verify the opened metric.',
+    body: tapBody(state),
     link: options.link,
   });
 

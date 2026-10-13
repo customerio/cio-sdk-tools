@@ -5,6 +5,7 @@ const {
   pushTag,
   deliveredTitle,
   tapTitle,
+  tapBody,
   androidIdForTitle,
   androidOpenedIdentity,
 } = require('../../dist/verify/matrix/identity');
@@ -18,14 +19,24 @@ test('every push gets its own tag, in an alphabet nobody misreads off a banner',
 test('the tap test title changes every run, so an old banner cannot pass for a new one', () => {
   // It used to be `cio verify · tap me · killed` on every run.
   assert.notStrictEqual(
-    tapTitle('killed', pushTag(() => 0)),
-    tapTitle('killed', pushTag(() => 0.99))
+    tapTitle(pushTag(() => 0)),
+    tapTitle(pushTag(() => 0.99))
   );
-  assert.strictEqual(
-    tapTitle('background', 'AB2CD'),
-    'cio verify · tap me · background · AB2CD'
-  );
-  assert.strictEqual(deliveredTitle('killed', 'AB2CD'), 'cio verify · killed · AB2CD');
+  assert.strictEqual(tapTitle('AB2CD'), 'cio verify AB2CD · tap me');
+  assert.strictEqual(deliveredTitle('killed', 'AB2CD'), 'cio verify AB2CD · killed');
+  assert.match(tapBody('background'), /\(background state\)/);
+});
+
+test('the tag survives a banner cutting the title short', () => {
+  // A banner showed `cio verify · tap me · background · 3X7ZS` without its tag.
+  for (const title of [
+    deliveredTitle('background', 'AB2CD'),
+    deliveredTitle('foreground', 'AB2CD'),
+    tapTitle('AB2CD'),
+  ]) {
+    assert.ok(title.length <= 30, `${title} is ${title.length} characters`);
+    assert.ok(title.indexOf('AB2CD') <= 'cio verify '.length, title);
+  }
 });
 
 // Real lines from an S24 capture, token replaced.
