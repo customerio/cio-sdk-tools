@@ -352,6 +352,14 @@ export const CAUSES: Record<string, CauseDefinition> = {
     remedy:
       'Read the error: it is usually the token, the credential, or a sandbox/production mismatch. Nothing about the SDK is proven either way until a send is accepted.',
   },
+  'runtime.tap_not_handled': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary:
+      'iOS handed the tap to the app, and the SDK never handled it, so no open was reported.',
+    remedy:
+      'The notification response reached the app but not the SDK. On a launch from the tap, iOS delivers the response as the app starts — through the scene with UIScene, and to the UNUserNotificationCenter delegate — so the SDK’s handling (its automatic delegate, or the app forwarding to MessagingPush) has to be in place before launch finishes. If it happens only sometimes, it is a launch race: run the killed state several times to see how often.',
+  },
   'runtime.capture_stopped': {
     stage: 'delivered_matrix',
     severity: 'warning',

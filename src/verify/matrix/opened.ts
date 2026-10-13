@@ -45,6 +45,14 @@ export const OPENED_MARKERS = {
   linkHandled:
     /Deep link handled by (?:host app callback implementation|internal host app navigation|system)/,
   linkUnhandled: /Deep link was not handled/,
+  /**
+   * iOS itself handing the tap to the app, logged by UIKit in the app's own process. It
+   * proves the tap happened whatever the SDK does next — on a phone, a cold launch from a
+   * tap logged these and the SDK logged nothing, which the cell used to call a tap that
+   * never arrived. (A simulator's capture is filtered to the SDK, so it never sees them.)
+   */
+  osDelivered:
+    /Decode <UINotificationResponseAction|Received action\(s\) in scene-(?:create|update): <UINotificationResponseAction/,
 };
 
 /** Only the states where a banner exists to tap. */
@@ -272,6 +280,16 @@ async function runOpenedCell(
       `log: ${lines.length} lines, click seen: ${observed.clicked}, opened tracked: ${observed.tracked}, deep link handled: ${observed.linkHandled}`
     );
     if (deliveryId) evidence.push(`opened reported for ${deliveryId}`);
+    if (observed.osDelivered && !observed.clicked) {
+      const handed = capture
+        .since(mark)
+        .find((line) => OPENED_MARKERS.osDelivered.test(line.message));
+      evidence.push(
+        `iOS handed the tap to the app${
+          handed ? ` at ${handed.at}` : ''
+        }, and the SDK logged no click`
+      );
+    }
   } else {
     evidence.push(`no log capture: ${capture.unavailableReason}`);
   }
@@ -375,6 +393,7 @@ export function observeOpened(lines: string[]): {
       linkAttempted,
       linkHandled: seen(OPENED_MARKERS.linkHandled),
       linkUnhandled: seen(OPENED_MARKERS.linkUnhandled),
+      osDelivered: seen(OPENED_MARKERS.osDelivered),
     },
     deliveryId,
   };
@@ -393,15 +412,21 @@ export function judgeOpened(observed: {
   linkAttempted: boolean;
   linkHandled: boolean;
   linkUnhandled: boolean;
+  /** iOS logged handing the tap to the app (phone captures only). */
+  osDelivered?: boolean;
 }): { verdict: Verdict; cause?: string } {
   if (!observed.available) return { verdict: 'skip' };
 
-  // Nothing at all: the tap did not reach the SDK. Could be the wrong notification, or a
+  // Nothing at all from the SDK. If iOS says it handed the tap over, the tap happened and
+  // the SDK dropped it — a real finding. Otherwise it could be the wrong notification, or a
   // banner that had already gone.
   if (!observed.clicked && !observed.tracked) {
-    return observed.foreign
-      ? { verdict: 'fail', cause: 'runtime.tap_not_ours' }
-      : { verdict: 'skip', cause: 'runtime.tap_not_seen' };
+    if (observed.foreign)
+      return { verdict: 'fail', cause: 'runtime.tap_not_ours' };
+    if (observed.osDelivered) {
+      return { verdict: 'fail', cause: 'runtime.tap_not_handled' };
+    }
+    return { verdict: 'skip', cause: 'runtime.tap_not_seen' };
   }
   if (observed.emptyId) {
     return { verdict: 'fail', cause: 'runtime.opened_without_delivery_id' };

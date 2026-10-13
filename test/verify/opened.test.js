@@ -431,3 +431,38 @@ test('a tap followed by not one log line says the stream may have stopped', () =
     other
   );
 });
+
+test('a tap iOS handed to the app that the SDK never handled is a finding, not "not seen"', () => {
+  // The killed tap of 2026-10-13 04:43 on an iPhone 15: a cold launch from the tap, with
+  // the response action decoded and delivered in scene-create, and no SDK line after it.
+  const cold = observeOpened([
+    'Decode <UINotificationResponseAction: 0x002200b0>',
+    '[Init] Creating new instance of CustomerIO SDK version: 4.8.1...',
+    'CIO: Registering for remote notifications',
+    '[(FBSceneManager):sceneID:io.customer.ios-sample.apn-spm.APN-UIKit-default] Received action(s) in scene-create: <UINotificationResponseAction: 0x002200b0>',
+  ]).observed;
+  assert.strictEqual(cold.osDelivered, true);
+  assert.deepStrictEqual(judgeOpened({ available: true, ...cold }), {
+    verdict: 'fail',
+    cause: 'runtime.tap_not_handled',
+  });
+
+  // The same launch at 04:03, where the SDK did its part, still passes.
+  const handled = observeOpened([
+    'Decode <UINotificationResponseAction: 0x00220043>',
+    'Received action(s) in scene-create: <UINotificationResponseAction: 0x00220043>',
+    'push metric opened',
+    '[Push] Handling push notification deep link with url: apn-uikit://settings',
+    '[Push] Deep link handled by host app callback implementation',
+  ]).observed;
+  assert.deepStrictEqual(judgeOpened({ available: true, ...handled }), {
+    verdict: 'pass',
+  });
+
+  // Without iOS's lines (a simulator's filtered capture), it stays "not seen".
+  assert.strictEqual(
+    judgeOpened({ available: true, ...observeOpened(['unrelated']).observed })
+      .cause,
+    'runtime.tap_not_seen'
+  );
+});
