@@ -116,13 +116,15 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
 
    ## What It Does
 
-   `verify push` checks an iOS or Android app's push setup, then sends real pushes and follows each one until the SDK reports it delivered and, with a tap, opened. When something breaks, it names the step and the fix. It catches the failure a dashboard doesn't show: the push displays, but delivered and opened stay at zero.
+   `verify push` checks an iOS or Android app's push setup, then sends real pushes and follows each one until the app receives it and, with a tap, opens it. When something breaks, it names the step and the fix. It catches failures a dashboard doesn't show: the push displays, but the app's notification extension never runs on it, or the SDK never handles the tap.
 
    1. **Preflight** (every run): project wiring, workspace, device, and profile, in that order. The first failure stops the run.
-   2. **Real pushes** (with `--send`): one push per app state (killed, background, foreground), each followed until the SDK reports it delivered.
+   2. **Real pushes** (with `--send`): one push per app state (killed, background, foreground), each followed until it reaches the device and the app handles it.
    3. **Opened** (with `--opened`): a tap test in the killed and background states, including the deep link.
 
-   A pass means the SDK reported the metric and Customer.io accepted the request. Test sends have no stored delivery behind them, so the tool does not read metrics back from your workspace.
+   A pass means what the device showed: the push arrived and the app handled it, and for a tap, the SDK handled the open of that exact push. Arrival is read from the OS (the notification list, or the extension's own process) wherever it can be, and SDK log lines only where the OS has no answer. Whether Customer.io recorded the metric isn't checked: test pushes have no stored delivery to read back yet, so every cell reports `recorded: "not_checked"`.
+
+   The SDK's push lines are debug lines, so the build you verify needs the SDK's log level set to debug. On a phone, the log stream can drop lines; a missing line there makes a cell inconclusive, never failed.
 
    ### Requirements
 

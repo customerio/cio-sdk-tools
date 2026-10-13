@@ -102,7 +102,7 @@ export const verifyCommand = new Command('verify').description(
 
 const pushCommand = new Command('push')
   .description(
-    'Verify an iOS or Android push integration, then send real pushes and follow each one until the SDK reports it'
+    'Verify an iOS or Android push integration, then send real pushes and follow each one until the app receives it'
   )
   .argument(
     '[path]',
@@ -162,7 +162,7 @@ const pushCommand = new Command('push')
   )
   .option(
     '--send',
-    'send real pushes and follow each one until the SDK reports it delivered',
+    'send real pushes and follow each one until it reaches the device and the app handles it',
     false
   )
   .option(
@@ -799,7 +799,7 @@ async function matrix(
       metric: 'delivered',
       cells: [],
       skipped:
-        'no push was sent — pass --send to send one per app state and follow it until the SDK reports it',
+        'no push was sent — pass --send to send one per app state and follow it until the app receives it',
     });
     return;
   }
@@ -1270,7 +1270,7 @@ async function androidMatrix(
       metric: 'delivered',
       cells: [],
       skipped:
-        'no push was sent — pass --send to send one per app state and follow it until the SDK reports it',
+        'no push was sent — pass --send to send one per app state and follow it until the app receives it',
     });
     return;
   }

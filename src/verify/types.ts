@@ -68,8 +68,16 @@ export interface MatrixCell {
   verdict: Verdict;
   cause?: string;
   evidence: string[];
-  /** As returned by the send, for correlating against the log. */
+  /**
+   * The delivery this push is: from the send when it says, otherwise from the OS's stored
+   * copy of the notification or the SDK line that names the push.
+   */
   deliveryId?: string;
+  /**
+   * Whether Customer.io recorded this push's metric. Always `not_checked` until a test push
+   * has a stored delivery the tool can read back; the device evidence never decides it.
+   */
+  recorded?: 'not_checked' | 'recorded' | 'not_recorded';
   /** Staging the app state, sending, and following the push to the metric. */
   durationMs?: number;
   /** One short phrase for the roll-up line. */

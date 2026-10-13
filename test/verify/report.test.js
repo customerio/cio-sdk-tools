@@ -181,12 +181,13 @@ test('the closing line carries the total, the provenance and the evidence path',
     assert.match(text, /evidence \/tmp\/ev\.log/);
     assert.match(
       text,
-      /push works: the SDK reported delivery and Customer\.io accepted it\./
+      /push works on the device: it arrived and the app handled it\./
     );
+    assert.match(text, /whether Customer\.io recorded it isn't checked yet\./);
   }
 });
 
-test('the closing line names both metrics when opened ran too, and never says counted', () => {
+test('the closing line names the tap when opened ran too, and claims nothing was recorded', () => {
   const out = sink();
   reporterOn('human', out).summary(
     report({
@@ -198,9 +199,11 @@ test('the closing line names both metrics when opened ran too, and never says co
   );
   assert.match(
     out.text(),
-    /push works: the SDK reported delivered and opened, and Customer\.io accepted both\./
+    /push works on the device: it arrived and the tap reached the SDK\./
   );
-  assert.doesNotMatch(out.text(), /counted|recorded/);
+  // Only what the device showed: no claim that Customer.io accepted or counted anything.
+  assert.doesNotMatch(out.text(), /counted|accepted|reported/);
+  assert.match(out.text(), /isn't checked yet/);
 });
 
 test('a failed run says a push was tried, not that a metric went uncounted', () => {
@@ -210,9 +213,10 @@ test('a failed run says a push was tried, not that a metric went uncounted', () 
   assert.doesNotMatch(out.text(), /counted/);
 });
 
-test('a cell reports "reported" without its evidence, and expands when it did not', () => {
+test('a cell says "received" or "opened" without its evidence, and expands when it did not', () => {
   const out = sink();
   const reporter = reporterOn('human', out);
+  reporter.matrix('simctl', 'delivered');
   const good = reporter.cell('killed');
   good.phase('sending');
   good.done({
@@ -228,12 +232,29 @@ test('a cell reports "reported" without its evidence, and expands when it did no
     evidence: ['log: 120 lines'],
     durationMs: 45_000,
   });
+  reporter.matrix('simctl', 'opened');
+  reporter.cell('killed').done({
+    state: 'killed',
+    verdict: 'pass',
+    evidence: [],
+    durationMs: 20_100,
+  });
 
   const text = out.text();
-  assert.match(text, /killed\s+reported\s+12\.4s/);
+  assert.match(text, /killed\s+received\s+12\.4s/);
+  assert.match(text, /killed\s+opened\s+20\.1s/);
   assert.ok(!text.includes('79 lines'), 'a passing cell printed its evidence');
   assert.match(text, /background\s+runtime\.nse_did_not_run\s+45\.0s/);
   assert.match(text, /log: 120 lines/);
+});
+
+test('every cell says Customer.io\u2019s record was not checked', () => {
+  const ladder = new (require('../../dist/verify/ladder').Ladder)();
+  ladder.addMatrix({
+    metric: 'delivered',
+    cells: [{ state: 'killed', verdict: 'pass', evidence: [] }],
+  });
+  assert.strictEqual(ladder.matrices[0].cells[0].recorded, 'not_checked');
 });
 
 test('a handle times what it wraps, but never overwrites a measured duration', async () => {

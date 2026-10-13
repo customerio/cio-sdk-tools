@@ -99,6 +99,8 @@ export function createReporter(options: {
   let spinner: Ora | undefined;
   let spinnerText = '';
   let paused: string | undefined;
+  /** Which matrix the cells now printing belong to: they say "received" or "opened". */
+  let currentMetric = 'delivered';
   let timer: NodeJS.Timeout | undefined;
 
   function paint(): void {
@@ -216,6 +218,7 @@ export function createReporter(options: {
     },
 
     matrix(how?: string, metric = 'delivered') {
+      currentMetric = metric;
       line(
         `${chalk.bold(`  ${metric} matrix`)}${
           how ? chalk.dim(`   (${how})`) : ''
@@ -234,7 +237,7 @@ export function createReporter(options: {
             row(
               `   ${glyph(cell.verdict)}`,
               state,
-              cellSummary(cell),
+              cellSummary(cell, currentMetric),
               cell.durationMs ?? ms,
               columns
             )
@@ -317,21 +320,21 @@ export function createReporter(options: {
       } else if (report.verdict === 'skip') {
         body.push(chalk.yellow('  nothing was proven. skipped is not passed.'));
       } else if ((report.matrices ?? []).some((section) => !section.skipped)) {
-        // Name what was actually proven: reporting a delivery and reporting a tap are
-        // different claims, and a run that did both should say so. Proven means the SDK
-        // reported it and Customer.io accepted the request — a test send has no stored
-        // delivery behind it, so nothing here may claim a metric was recorded.
-        const proven = (report.matrices ?? [])
-          .filter((section) => !section.skipped)
-          .map((section) => section.metric);
+        // Name what was actually proven, and only that. On the device: the push arrived and,
+        // when the tap test ran, the tap reached the SDK. Whether Customer.io recorded either
+        // is not checked — a test send has no stored delivery to read back yet.
+        const opened = (report.matrices ?? []).some(
+          (section) => !section.skipped && section.metric === 'opened'
+        );
         body.push(
           chalk.green(
-            proven.includes('opened')
-              ? `  push works: the SDK reported ${proven.join(
-                  ' and '
-                )}, and Customer.io accepted both.`
-              : '  push works: the SDK reported delivery and Customer.io accepted it.'
+            opened
+              ? '  push works on the device: it arrived and the tap reached the SDK.'
+              : '  push works on the device: it arrived and the app handled it.'
           )
+        );
+        body.push(
+          chalk.dim("  whether Customer.io recorded it isn't checked yet.")
         );
       } else {
         body.push(chalk.green('  preflight passed.'));
@@ -402,17 +405,18 @@ function summarise(rung: Rung): string {
   return `${rung.checks.length} checks`;
 }
 
-function cellSummary(cell: MatrixCell): string {
+function cellSummary(cell: MatrixCell, metric = 'delivered'): string {
   if (cell.summary) return cell.summary;
+  // What a cell proves happened on the device: the push was received, or the tap opened
+  // it. Never "counted" or "reported": what Customer.io recorded is not checked here.
+  const done = metric === 'opened' ? 'opened' : 'received';
   switch (cell.verdict) {
-    // "reported", never "counted": what a cell proves is that the SDK reported the metric
-    // and Customer.io accepted the request, not that a delivery was stored.
     case 'pass':
-      return 'reported';
+      return done;
     case 'fail':
-      return cell.cause ?? 'not reported';
+      return cell.cause ?? `not ${done}`;
     case 'warn':
-      return cell.cause ?? 'reported, with a caveat';
+      return cell.cause ?? `${done}, with a caveat`;
     default:
       // A skip is a dry run only when nothing named it; the rest are inconclusive cells
       // that did send, and labelling those "not sent" was simply wrong.

@@ -69,6 +69,9 @@ export class Ladder {
   /** The runtime matrix, which runs after the climb and never halts it. */
   /** Sections accumulate: `delivered` runs unattended, `opened` needs a person. */
   addMatrix(section: MatrixSection): void {
+    // Nothing reads Customer.io's record of a push yet, so every cell says so rather than
+    // leaving a reader to assume it was checked.
+    for (const cell of section.cells) cell.recorded ??= 'not_checked';
     this.matrices.push(section);
   }
 
