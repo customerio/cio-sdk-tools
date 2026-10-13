@@ -316,7 +316,7 @@ export function postedTitlesFrom(dumpsys: string): string[] {
   );
 }
 
-async function postedTitles(serial: string): Promise<string[]> {
+export async function postedTitles(serial: string): Promise<string[]> {
   const { stdout, code } = await adb(
     serial,
     ['shell', 'dumpsys', 'notification', '--noredact'],

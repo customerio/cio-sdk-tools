@@ -9,7 +9,13 @@ import { OPENED_STATES, judgeOpened } from './opened';
 import { eachState, rejectedCell, sendVerifyPush } from './send';
 import { AppState } from './states';
 import { setAndroidState } from './android_states';
-import { pushTag, tapTitle } from './identity';
+import {
+  androidIdForTitle,
+  androidOpenedIdentity,
+  pushTag,
+  tapTitle,
+} from './identity';
+import { postedTitles } from './android';
 
 /**
  * `opened` on Android: the same claim, a different set of sentences.
@@ -53,7 +59,8 @@ export interface AndroidOpenedOptions {
 
 const TAP_TIMEOUT_MS = 180_000;
 const ARRIVAL_TIMEOUT_MS = 45_000;
-const AFTER_TAP_MS = 6_000;
+/** How long a tap's sequence gets to finish; the wait ends as soon as it does. */
+const TAP_SEQUENCE_TIMEOUT_MS = 30_000;
 
 export async function runAndroidOpenedMatrix(
   options: AndroidOpenedOptions
@@ -134,14 +141,23 @@ async function runCell(
 
   const since = () => capture.since(mark).map((line) => line.message);
   const seen = (marker: RegExp) => since().some((line) => marker.test(line));
+  const shownBySdk = () =>
+    androidIdForTitle(
+      since().filter((line) => ANDROID_MARKERS.shown.test(line)),
+      title
+    ) !== undefined;
 
-  // Nobody is asked to tap a notification that has not appeared.
+  // Nobody is asked to tap a notification that has not appeared. The OS's notification
+  // list says it has; the SDK saying it showed this push, by its title, says so too.
   handle?.phase('waiting for the notification to appear');
-  const shown = await waitFor(
-    () => seen(ANDROID_MARKERS.shown),
-    ARRIVAL_TIMEOUT_MS
-  );
-  if (!shown) {
+  let listed = false;
+  const deadline = Date.now() + ARRIVAL_TIMEOUT_MS;
+  for (;;) {
+    if (!listed) listed = (await postedTitles(options.serial)).includes(title);
+    if (listed || shownBySdk() || Date.now() >= deadline) break;
+    await sleep(1_500);
+  }
+  if (!listed && !shownBySdk()) {
     return {
       state,
       verdict: capture.available ? 'fail' : 'skip',
@@ -151,12 +167,18 @@ async function runCell(
       evidence: [
         ...evidence,
         capture.available
-          ? 'the SDK never said it was showing a notification, so nobody was asked to tap one'
+          ? 'neither the notification list nor the SDK showed this push, so nobody was asked to tap it'
           : `no log capture: ${capture.unavailableReason}`,
       ],
     };
   }
-  evidence.push('the SDK posted the notification');
+  const expectedId = sent.deliveryId ?? androidIdForTitle(since(), title);
+  evidence.push(
+    (listed
+      ? 'the notification list (dumpsys) shows it'
+      : 'the SDK showed it; the notification list (dumpsys) does not') +
+      (expectedId ? `, delivery ${expectedId}` : '')
+  );
 
   const shot = await screenshot(
     options.serial,
@@ -184,14 +206,38 @@ async function runCell(
     };
   }
 
+  // Wait for the end of the sequence, as on iOS: the open, then the deep link's outcome —
+  // or a refusal. A fixed wait either cut a slow cold start short or wasted time.
   handle?.phase('reading what the SDK did with the tap');
-  await sleep(AFTER_TAP_MS);
+  await waitFor(
+    () =>
+      seen(ANDROID_OPENED_MARKERS.skippedNoId) ||
+      seen(ANDROID_OPENED_MARKERS.failedClick) ||
+      seen(ANDROID_OPENED_MARKERS.linkUnhandled) ||
+      (seen(ANDROID_OPENED_MARKERS.tracked) &&
+        seen(ANDROID_OPENED_MARKERS.linkHandled)),
+    TAP_SEQUENCE_TIMEOUT_MS
+  );
 
   const lines = since();
   const tracked = seen(ANDROID_OPENED_MARKERS.tracked);
   const emptyId = seen(ANDROID_OPENED_MARKERS.skippedNoId);
   const failed = seen(ANDROID_OPENED_MARKERS.failedClick);
   const linkAttempted = seen(ANDROID_OPENED_MARKERS.linkHandling);
+
+  // The opened line names the tapped push by title and id, so an open of an older banner
+  // is recognised as that rather than counted for this push.
+  const opens = lines
+    .filter((line) => ANDROID_OPENED_MARKERS.tracked.test(line))
+    .map(androidOpenedIdentity);
+  const isThisPush = (open: { title?: string; deliveryId?: string }) =>
+    open.title
+      ? open.title === title
+      : expectedId && open.deliveryId
+      ? open.deliveryId === expectedId
+      : undefined;
+  const opened = opens.find((open) => isThisPush(open) === true) ?? opens[0];
+  const matched = opened ? isThisPush(opened) : undefined;
 
   if (capture.available) {
     evidence.push(
@@ -201,6 +247,17 @@ async function runCell(
         ANDROID_OPENED_MARKERS.linkHandled
       )}`
     );
+    if (opened) {
+      evidence.push(
+        matched === false
+          ? `the SDK opened "${
+              opened.title ?? opened.deliveryId
+            }", not this push`
+          : `the SDK opened ${opened.deliveryId ?? 'a push'}${
+              matched ? ', this push' : ''
+            }`
+      );
+    }
     const behaviour = lines
       .map((line) => ANDROID_OPENED_MARKERS.linkHandling.exec(line)?.[1])
       .find(Boolean);
@@ -209,9 +266,13 @@ async function runCell(
 
   return {
     state,
+    title,
+    deliveryId: opened?.deliveryId ?? expectedId,
     ...judgeOpened({
       available: capture.available,
-      // Android logs no separate "clicked" line: the metric, the skip and the failure are
+      lossy: capture.lossy,
+      matched,
+      // Android logs no separate "clicked" line: the open, the skip and the failure are
       // each evidence that the click reached the SDK at all.
       clicked: tracked || emptyId || failed,
       tracked,

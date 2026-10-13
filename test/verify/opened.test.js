@@ -43,10 +43,29 @@ test('a push with no link is a warning, because the open itself is fine', () => 
   );
 });
 
-test('the click reaching the SDK without a metric is the invisible failure', () => {
+test('a click the SDK never turned into an open fails, unless the log can drop lines', () => {
   assert.deepStrictEqual(judgeOpened({ ...tapped, tracked: false }), {
     verdict: 'fail',
     cause: 'runtime.opened_not_tracked',
+  });
+  // On a phone the missing line may simply be lost.
+  assert.deepStrictEqual(
+    judgeOpened({ ...tapped, tracked: false, lossy: true }),
+    { verdict: 'skip', cause: 'runtime.tap_lines_lost' }
+  );
+});
+
+test('an open of a different push says nothing about this one', () => {
+  assert.deepStrictEqual(judgeOpened({ ...tapped, matched: false }), {
+    verdict: 'skip',
+    cause: 'runtime.tap_other_push',
+  });
+  assert.deepStrictEqual(judgeOpened({ ...tapped, matched: true }), {
+    verdict: 'pass',
+  });
+  // Unknown is not a mismatch: without an id to compare, the open is judged on its own.
+  assert.deepStrictEqual(judgeOpened({ ...tapped, matched: undefined }), {
+    verdict: 'pass',
   });
 });
 
@@ -267,9 +286,10 @@ test('a dry run never runs the tap test, because it skipped the consent question
 
 const { observeOpened } = require('../../dist/verify/matrix/opened');
 
-test('an open tracked without "Clicked" or "Tracking push message opened" still passes', () => {
-  // Captured from a physical iPhone 15 on 2026-10-13: the build tracked the open and
-  // followed the link, and printed neither of the lines the check used to require.
+test('internal event lines no longer stand in for the SDK handling the open', () => {
+  // Captured from a physical iPhone 15 on 2026-10-13. The lines the check needs were not
+  // missing from the build — the app's own diagnostics file shows it printing them — they
+  // were dropped by the phone's log stream. So on a phone this is unproven, not a pass.
   const iphone = [
     'CombinedCacheEventBusHandler: Posting event TrackMetricEvent(storageId: "AEC89E46-B36F-402D-8117-E73441E74DC8", params: [:], deliveryID: "dgS_ugcABQAAAaEykelzxSgfj-nrCK1jxQ==", event: "opened", deviceToken: "aecc305e54ae")',
     '[Push] Handling push notification deep link with url: apn-uikit://settings',
@@ -277,12 +297,13 @@ test('an open tracked without "Clicked" or "Tracking push message opened" still 
     'push metric opened',
   ];
   const { observed, deliveryId } = observeOpened(iphone);
-  assert.strictEqual(deliveryId, 'dgS_ugcABQAAAaEykelzxSgfj-nrCK1jxQ==');
+  assert.strictEqual(deliveryId, undefined);
   assert.strictEqual(observed.clicked, true, 'a followed deep link is a click');
-  assert.strictEqual(observed.tracked, true);
-  assert.deepStrictEqual(judgeOpened({ available: true, ...observed }), {
-    verdict: 'pass',
-  });
+  assert.strictEqual(observed.tracked, false);
+  assert.deepStrictEqual(
+    judgeOpened({ available: true, lossy: true, ...observed }),
+    { verdict: 'skip', cause: 'runtime.tap_lines_lost' }
+  );
 });
 
 test('the older wording still reads the same way', () => {
@@ -310,7 +331,7 @@ test('a tap is not finished until the open is tracked and the link has an outcom
   const midway = observeOpened([
     '[Push] Clicked notification for message: UNNotificationWrapper(…)',
     '[Push] Clicked CIO push message',
-    'CombinedCacheEventBusHandler: Posting event TrackMetricEvent(deliveryID: "dgS_ugcABQAAAaEyoyVrHPyFGaoC6os_SQ==", event: "opened", deviceToken: "aecc")',
+    '[Push] Tracking push message opened with deliveryId: dgS_ugcABQAAAaEyoyVrHPyFGaoC6os_SQ==',
     '[Push] Handling push notification deep link with url: apn-uikit://settings',
   ]).observed;
   assert.strictEqual(
@@ -325,7 +346,7 @@ test('a tap is not finished until the open is tracked and the link has an outcom
 
   const done = observeOpened([
     '[Push] Clicked CIO push message',
-    'push metric opened',
+    '[Push] Tracking push message opened with deliveryId: dgS_ugcABQAAAaEyoyVrHPyFGaoC6os_SQ==',
     '[Push] Handling push notification deep link with url: apn-uikit://settings',
     '[Push] Deep link handled by host app callback implementation',
   ]).observed;
@@ -460,9 +481,11 @@ test('a tap followed by not one log line says the stream may have stopped', () =
   );
 });
 
-test('a tap iOS handed to the app that the SDK never handled is a finding, not "not seen"', () => {
-  // The killed tap of 2026-10-13 04:43 on an iPhone 15: a cold launch from the tap, with
-  // the response action decoded and delivered in scene-create, and no SDK line after it.
+test('a tap iOS handed to the app with no SDK line after it is lost lines, not a finding', () => {
+  // The killed tap of 2026-10-13 04:43 on an iPhone 15: a cold launch from the tap, with the
+  // response action decoded and delivered in scene-create, and no SDK line after it in the
+  // phone's log. The app's own diagnostics file shows the SDK handled that tap at
+  // 04:43:22.230 — the log stream lost the lines. The same happened to six more taps.
   const cold = observeOpened([
     'Decode <UINotificationResponseAction: 0x002200b0>',
     '[Init] Creating new instance of CustomerIO SDK version: 4.8.1...',
@@ -470,27 +493,48 @@ test('a tap iOS handed to the app that the SDK never handled is a finding, not "
     '[(FBSceneManager):sceneID:io.customer.ios-sample.apn-spm.APN-UIKit-default] Received action(s) in scene-create: <UINotificationResponseAction: 0x002200b0>',
   ]).observed;
   assert.strictEqual(cold.osDelivered, true);
-  assert.deepStrictEqual(judgeOpened({ available: true, ...cold }), {
-    verdict: 'fail',
-    cause: 'runtime.tap_not_handled',
+  assert.deepStrictEqual(judgeOpened({ available: true, lossy: true, ...cold }), {
+    verdict: 'skip',
+    cause: 'runtime.tap_lines_lost',
   });
 
-  // The same launch at 04:03, where the SDK did its part, still passes.
+  // The same launch with the SDK's lines intact passes.
   const handled = observeOpened([
     'Decode <UINotificationResponseAction: 0x00220043>',
     'Received action(s) in scene-create: <UINotificationResponseAction: 0x00220043>',
-    'push metric opened',
+    '[Push] Clicked CIO push message',
+    '[Push] Tracking push message opened with deliveryId: dgS_ugcABQAAAaE2jyHtPzZT21RAOnpLAw==',
     '[Push] Handling push notification deep link with url: apn-uikit://settings',
     '[Push] Deep link handled by host app callback implementation',
   ]).observed;
-  assert.deepStrictEqual(judgeOpened({ available: true, ...handled }), {
-    verdict: 'pass',
-  });
+  assert.deepStrictEqual(
+    judgeOpened({ available: true, lossy: true, ...handled }),
+    { verdict: 'pass' }
+  );
 
   // Without iOS's lines (a simulator's filtered capture), it stays "not seen".
   assert.strictEqual(
     judgeOpened({ available: true, ...observeOpened(['unrelated']).observed })
       .cause,
     'runtime.tap_not_seen'
+  );
+});
+
+test('a capture that stopped explains lost tap lines too', () => {
+  const lost = {
+    state: 'killed',
+    verdict: 'skip',
+    cause: 'runtime.tap_lines_lost',
+    evidence: [],
+  };
+  assert.strictEqual(
+    explainUnseenTap(lost, { stoppedReason: 'idevicesyslog exited', linesAfterTap: 3 })
+      .cause,
+    'runtime.capture_stopped'
+  );
+  assert.strictEqual(
+    explainUnseenTap(lost, { linesAfterTap: 0, lastLineAt: 'x' }),
+    lost,
+    'iOS logged the tap, so the stream was not silent'
   );
 });

@@ -1,13 +1,20 @@
 import * as path from 'path';
 import { stopwatch } from '../clock';
 import { run } from '../exec';
-import { waitForTitle } from './notifications';
+import { waitForNotification } from './notifications';
 import { probeLocalDelivery } from './probe';
 import { Target } from '../ios/device';
 import { Asker } from '../prompt';
 import { CellHandle, Reporter } from '../report';
 import { MatrixCell, MatrixSection, Verdict } from '../types';
-import { LogCapture, blameStoppedCapture, startCapture } from './logs';
+import {
+  LogCapture,
+  blameStoppedCapture,
+  deliveryIdsIn,
+  extensionRanIn,
+  ranInExtension,
+  startCapture,
+} from './logs';
 import { eachState, rejectedCell, sendVerifyPush } from './send';
 import { AppState, setAppState } from './states';
 import { pushTag, tapTitle } from './identity';
@@ -29,15 +36,8 @@ import { pushTag, tapTitle } from './identity';
 export const OPENED_MARKERS = {
   /** The OS handed the click to the SDK at all. */
   clicked: /Clicked (?:notification for message|CIO push message)/,
-  /** The metric itself, which is the assertion this section makes. */
+  /** The SDK handling the open, naming the delivery it belongs to. */
   tracked: /Tracking push message opened with deliveryId: (\S+)/,
-  /**
-   * The same metric as the event bus posts it. Some builds track the open without the line
-   * above — a physical iPhone running a feature-branch build printed only this and the
-   * DataPipeline line below — so either one counts.
-   */
-  trackedEvent: /TrackMetricEvent\(.*deliveryID: "([^"]+)".*event: "opened"/,
-  metricOpened: /^push metric opened$/,
   /** The SDK saw a click it decided was not ours. */
   foreign: /Clicked non CIO push message/,
   emptyId: /Clicked message with empty deliveryId/,
@@ -199,14 +199,18 @@ async function runOpenedCell(
   // banner had auto-dismissed and the screen was idle — and when the push never arrived
   // at all it asked for something impossible, then waited three minutes for it. Waiting
   // for arrival first puts the question on screen while the banner is live.
+  //
+  // Arrival also says which delivery this push is, so the open can be matched to it: the
+  // simulator's notification store holds the push's id; on a phone, the extension logs it
+  // when the push lands.
   handle?.phase('waiting for the notification to land');
-  const arrived = await waitForTitle({
+  const stored = await waitForNotification({
     target: options.target,
     title,
     timeoutMs: ARRIVAL_TIMEOUT_MS,
     sinceMs,
   });
-  if (arrived === false) {
+  if (stored === false) {
     const probe = await probeLocalDelivery({
       target: options.target,
       bundleId: options.bundleId,
@@ -225,7 +229,33 @@ async function runOpenedCell(
       ],
     };
   }
-  if (arrived) evidence.push('notification landed');
+  let expectedId = sent.deliveryId ?? (stored ? stored.deliveryId : undefined);
+  if (stored) {
+    evidence.push(
+      `arrived: in the notification store${
+        stored.deliveryId ? `, delivery ${stored.deliveryId}` : ''
+      }`
+    );
+  } else if (capture.available) {
+    // A phone: the extension waking is the only sign the push landed.
+    const ran = await waitFor(
+      () => extensionRanIn(capture.since(mark), options.extensionName),
+      ARRIVAL_TIMEOUT_MS
+    );
+    const ids = deliveryIdsIn(
+      capture
+        .since(mark)
+        .filter((line) => ranInExtension([line], options.extensionName))
+    );
+    expectedId ??= ids.length === 1 ? ids[0] : undefined;
+    evidence.push(
+      ran
+        ? `the extension ran on it${
+            ids.length === 1 ? `, delivery ${ids[0]}` : ''
+          }`
+        : "the phone's log never showed the push landing; asking for the tap anyway"
+    );
+  }
 
   // A screenshot here is the cheapest record of what was actually on screen when the tap
   // was asked for, and on a simulator it costs nothing.
@@ -278,12 +308,20 @@ async function runOpenedCell(
 
   const lines = capture.since(mark).map((line) => line.message);
   const { observed, deliveryId } = observeOpened(lines);
+  const matched =
+    expectedId && deliveryId ? deliveryId === expectedId : undefined;
 
   if (capture.available) {
     evidence.push(
       `log: ${lines.length} lines, click seen: ${observed.clicked}, opened tracked: ${observed.tracked}, deep link handled: ${observed.linkHandled}`
     );
-    if (deliveryId) evidence.push(`opened reported for ${deliveryId}`);
+    if (deliveryId) {
+      evidence.push(
+        matched === false
+          ? `the SDK opened ${deliveryId}, which is not this push (${expectedId})`
+          : `the SDK opened ${deliveryId}${matched ? ', this push' : ''}`
+      );
+    }
     if (observed.osDelivered && !observed.clicked) {
       const handed = capture
         .since(mark)
@@ -291,7 +329,7 @@ async function runOpenedCell(
       evidence.push(
         `iOS handed the tap to the app${
           handed ? ` at ${handed.at}` : ''
-        }, and the SDK logged no click`
+        }, and no SDK line for it reached the log`
       );
     }
   } else {
@@ -300,8 +338,14 @@ async function runOpenedCell(
 
   const judged: MatrixCell = {
     state,
-    deliveryId,
-    ...judgeOpened({ available: capture.available, ...observed }),
+    title,
+    deliveryId: deliveryId ?? expectedId,
+    ...judgeOpened({
+      available: capture.available,
+      lossy: capture.lossy,
+      matched,
+      ...observed,
+    }),
     evidence,
   };
   const all = capture.since(mark);
@@ -327,12 +371,19 @@ export function explainUnseenTap(
     lastLineAt?: string;
   }
 ): MatrixCell {
-  if (cell.cause !== 'runtime.tap_not_seen') return cell;
+  if (
+    cell.cause !== 'runtime.tap_not_seen' &&
+    cell.cause !== 'runtime.tap_lines_lost'
+  ) {
+    return cell;
+  }
   if (context.stoppedReason) {
     return blameStoppedCapture(cell, context.stoppedReason, [
       'runtime.tap_not_seen',
+      'runtime.tap_lines_lost',
     ]);
   }
+  if (cell.cause !== 'runtime.tap_not_seen') return cell;
   if (context.linesAfterTap === 0 && context.lastLineAt) {
     return {
       ...cell,
@@ -378,20 +429,13 @@ export function observeOpened(lines: string[]): {
 } {
   const seen = (marker: RegExp) => lines.some((line) => marker.test(line));
   const deliveryId = lines
-    .map(
-      (line) =>
-        OPENED_MARKERS.tracked.exec(line)?.[1] ??
-        OPENED_MARKERS.trackedEvent.exec(line)?.[1]
-    )
+    .map((line) => OPENED_MARKERS.tracked.exec(line)?.[1])
     .find(Boolean);
   const linkAttempted = seen(OPENED_MARKERS.linkHandling);
   return {
     observed: {
       clicked: seen(OPENED_MARKERS.clicked) || linkAttempted,
-      tracked:
-        seen(OPENED_MARKERS.tracked) ||
-        seen(OPENED_MARKERS.trackedEvent) ||
-        seen(OPENED_MARKERS.metricOpened),
+      tracked: seen(OPENED_MARKERS.tracked),
       foreign: seen(OPENED_MARKERS.foreign),
       emptyId: seen(OPENED_MARKERS.emptyId),
       linkAttempted,
@@ -406,9 +450,17 @@ export function observeOpened(lines: string[]): {
 /**
  * Pure, like the delivered judge, and for the same reason: every wrong verdict this
  * project has produced came from reading evidence, never from deciding on it.
+ *
+ * Only positive evidence fails a cell. On a phone the log stream drops lines — during a
+ * cold launch it lost the SDK's lines for seven taps the app's own record shows were all
+ * handled — so a line that is missing there makes a cell inconclusive, never failed.
  */
 export function judgeOpened(observed: {
   available: boolean;
+  /** The capture can drop lines (a phone's), so a missing line proves nothing. */
+  lossy?: boolean;
+  /** The open names this push (true), another push (false), or cannot be matched. */
+  matched?: boolean;
   clicked: boolean;
   tracked: boolean;
   foreign: boolean;
@@ -421,25 +473,30 @@ export function judgeOpened(observed: {
 }): { verdict: Verdict; cause?: string } {
   if (!observed.available) return { verdict: 'skip' };
 
-  // Nothing at all from the SDK. If iOS says it handed the tap over, the tap happened and
-  // the SDK dropped it — a real finding. Otherwise it could be the wrong notification, or a
-  // banner that had already gone.
   if (!observed.clicked && !observed.tracked) {
     if (observed.foreign)
       return { verdict: 'fail', cause: 'runtime.tap_not_ours' };
+    // iOS says the tap reached the app, and not one SDK line for it reached the log.
     if (observed.osDelivered) {
-      return { verdict: 'fail', cause: 'runtime.tap_not_handled' };
+      return { verdict: 'skip', cause: 'runtime.tap_lines_lost' };
     }
     return { verdict: 'skip', cause: 'runtime.tap_not_seen' };
+  }
+  // The open belongs to a different push — an older banner, usually — so it says nothing
+  // about this one.
+  if (observed.matched === false) {
+    return { verdict: 'skip', cause: 'runtime.tap_other_push' };
   }
   if (observed.emptyId) {
     return { verdict: 'fail', cause: 'runtime.opened_without_delivery_id' };
   }
   if (!observed.tracked) {
-    return { verdict: 'fail', cause: 'runtime.opened_not_tracked' };
+    return observed.lossy
+      ? { verdict: 'skip', cause: 'runtime.tap_lines_lost' }
+      : { verdict: 'fail', cause: 'runtime.opened_not_tracked' };
   }
-  // The metric landed. The deep link is a second, independent claim: a push that counts an
-  // open but routes nowhere is a real defect, and a common one — when the SDK says so.
+  // The open was handled. The deep link is a second, independent claim: a push that opens
+  // but routes nowhere is a real defect, and a common one — when the SDK says so.
   if (observed.linkUnhandled) {
     return { verdict: 'fail', cause: 'runtime.deep_link_not_handled' };
   }
@@ -470,6 +527,18 @@ async function screenshot(
     file,
   ]);
   return code === 0 ? file : undefined;
+}
+
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs: number
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await sleep(TAP_POLL_MS);
+  }
+  return predicate();
 }
 
 function sleep(ms: number): Promise<void> {
