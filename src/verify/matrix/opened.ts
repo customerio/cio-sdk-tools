@@ -89,7 +89,14 @@ export interface OpenedOptions {
 const TAP_TIMEOUT_MS = 180_000;
 /** Matches the delivered matrix: long enough that a slow simulator is not a failure. */
 const ARRIVAL_TIMEOUT_MS = 45_000;
-const AFTER_TAP_MS = 6_000;
+/**
+ * How long a tap's sequence gets to finish after the person confirms it. A fixed six
+ * seconds was not enough on a phone: a cold start from the tap, or iOS replacing a frozen
+ * process, took longer, and the next cell then suspended the app before it had said how the
+ * deep link ended. The wait ends as soon as the sequence is complete.
+ */
+const TAP_SEQUENCE_TIMEOUT_MS = 30_000;
+const TAP_POLL_MS = 500;
 
 export async function runOpenedMatrix(
   options: OpenedOptions
@@ -241,9 +248,19 @@ async function runOpenedCell(
   }
 
   // The SDK's click path runs after the OS hands over the notification, which takes a
-  // moment on a cold start.
+  // moment on a cold start — so wait for the end of the sequence, not a fixed time.
   handle?.phase('reading what the SDK did with the tap');
-  await sleep(AFTER_TAP_MS);
+  if (capture.available) {
+    const deadline = Date.now() + TAP_SEQUENCE_TIMEOUT_MS;
+    while (
+      Date.now() < deadline &&
+      !openedSequenceComplete(
+        observeOpened(capture.since(mark).map((line) => line.message)).observed
+      )
+    ) {
+      await sleep(TAP_POLL_MS);
+    }
+  }
 
   const lines = capture.since(mark).map((line) => line.message);
   const { observed, deliveryId } = observeOpened(lines);
@@ -263,6 +280,20 @@ async function runOpenedCell(
     ...judgeOpened({ available: capture.available, ...observed }),
     evidence,
   };
+}
+
+/**
+ * Whether the SDK has finished with a tap: the open is tracked and, when a deep link was
+ * started, its outcome is in — or the tap was refused outright. Until then the app is left
+ * alone, because moving on to the next state suspends it mid-sequence.
+ */
+export function openedSequenceComplete(
+  observed: ReturnType<typeof observeOpened>['observed']
+): boolean {
+  if (observed.foreign || observed.emptyId || observed.linkUnhandled) {
+    return true;
+  }
+  return observed.tracked && (!observed.linkAttempted || observed.linkHandled);
 }
 
 /**
@@ -331,12 +362,14 @@ export function judgeOpened(observed: {
     return { verdict: 'fail', cause: 'runtime.opened_not_tracked' };
   }
   // The metric landed. The deep link is a second, independent claim: a push that counts an
-  // open but routes nowhere is a real defect, and a common one.
-  if (
-    observed.linkUnhandled ||
-    (observed.linkAttempted && !observed.linkHandled)
-  ) {
+  // open but routes nowhere is a real defect, and a common one — when the SDK says so.
+  if (observed.linkUnhandled) {
     return { verdict: 'fail', cause: 'runtime.deep_link_not_handled' };
+  }
+  // Started and never finished is not the same claim. On a phone the app was suspended by
+  // the next cell before it said how the link ended; silence convicted nothing.
+  if (observed.linkAttempted && !observed.linkHandled) {
+    return { verdict: 'warn', cause: 'runtime.deep_link_outcome_unseen' };
   }
   if (!observed.linkAttempted) {
     return { verdict: 'warn', cause: 'runtime.deep_link_absent' };

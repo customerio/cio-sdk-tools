@@ -55,6 +55,23 @@ const NOT_CAPTURING: LogCapture = {
  * stream against one simulator silently yields nothing at all, which is indistinguishable
  * from an SDK that did nothing.
  */
+/**
+ * Why a phone's log cannot be read, if it cannot. On a phone there is no supported route
+ * through `log`: streaming has no device support and `log collect --device-udid` needs root.
+ * libimobiledevice is the way in, and it is an optional prerequisite. Without it nothing a
+ * push does on the phone can be seen, so the run checks this before sending anything.
+ */
+export async function deviceLogUnavailable(
+  target: Target
+): Promise<string | undefined> {
+  if (target.kind !== 'device') return undefined;
+  if (await isCommandAvailable('idevicesyslog')) return undefined;
+  return (
+    'idevicesyslog is not installed — `brew install libimobiledevice` to read device logs, ' +
+    'or verify on a simulator instead'
+  );
+}
+
 export async function startCapture(
   target: Target,
   evidenceDirectory?: string,
@@ -99,16 +116,9 @@ export async function startCapture(
     );
   }
 
-  // On a phone there is no supported route through `log`: streaming has no device support
-  // and `log collect --device-udid` needs root. libimobiledevice is the way in, and it is
-  // an optional prerequisite — without it the runtime cells report skipped.
-  if (!(await isCommandAvailable('idevicesyslog'))) {
-    return {
-      ...NOT_CAPTURING,
-      unavailableReason:
-        'idevicesyslog is not installed — `brew install libimobiledevice` to read device logs, ' +
-        'or verify on a simulator instead',
-    };
+  const unreadable = await deviceLogUnavailable(target);
+  if (unreadable) {
+    return { ...NOT_CAPTURING, unavailableReason: unreadable };
   }
 
   // Unfiltered, a phone's syslog is tens of megabytes a minute and buries the twelve lines

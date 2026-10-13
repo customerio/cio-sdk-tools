@@ -27,10 +27,12 @@ test('an open that is counted but routes nowhere is a real defect', () => {
     judgeOpened({ ...tapped, linkHandled: false, linkUnhandled: true }),
     { verdict: 'fail', cause: 'runtime.deep_link_not_handled' }
   );
-  // Attempted and silent counts the same: nothing claimed the URL.
+  // Attempted and silent is not the same claim: on a phone (2026-10-13) the next cell
+  // suspended the app before it said how the link ended. Only the SDK's own "not handled"
+  // convicts; silence is a warning, because the open itself was tracked.
   assert.deepStrictEqual(judgeOpened({ ...tapped, linkHandled: false }), {
-    verdict: 'fail',
-    cause: 'runtime.deep_link_not_handled',
+    verdict: 'warn',
+    cause: 'runtime.deep_link_outcome_unseen',
   });
 });
 
@@ -271,4 +273,75 @@ test('the older wording still reads the same way', () => {
     judgeOpened({ available: true, ...observeOpened(['unrelated']).observed }),
     { verdict: 'skip', cause: 'runtime.tap_not_seen' }
   );
+});
+
+const { openedSequenceComplete } = require('../../dist/verify/matrix/opened');
+
+test('a tap is not finished until the open is tracked and the link has an outcome', () => {
+  // The killed tap of 2026-10-13, read before the app said how the link ended.
+  const midway = observeOpened([
+    '[Push] Clicked notification for message: UNNotificationWrapper(…)',
+    '[Push] Clicked CIO push message',
+    'CombinedCacheEventBusHandler: Posting event TrackMetricEvent(deliveryID: "dgS_ugcABQAAAaEyoyVrHPyFGaoC6os_SQ==", event: "opened", deviceToken: "aecc")',
+    '[Push] Handling push notification deep link with url: apn-uikit://settings',
+  ]).observed;
+  assert.strictEqual(
+    openedSequenceComplete(midway),
+    false,
+    'moved on mid-link'
+  );
+  assert.deepStrictEqual(judgeOpened({ available: true, ...midway }), {
+    verdict: 'warn',
+    cause: 'runtime.deep_link_outcome_unseen',
+  });
+
+  const done = observeOpened([
+    '[Push] Clicked CIO push message',
+    'push metric opened',
+    '[Push] Handling push notification deep link with url: apn-uikit://settings',
+    '[Push] Deep link handled by host app callback implementation',
+  ]).observed;
+  assert.strictEqual(openedSequenceComplete(done), true);
+
+  assert.strictEqual(
+    openedSequenceComplete(
+      observeOpened(['[Push] Deep link was not handled']).observed
+    ),
+    true,
+    'an explicit failure ends the wait'
+  );
+  assert.strictEqual(
+    openedSequenceComplete(observeOpened(['nothing yet']).observed),
+    false
+  );
+});
+
+const exec = require('../../dist/verify/exec');
+const { deviceLogUnavailable } = require('../../dist/verify/matrix/logs');
+
+test('a phone without idevicesyslog is named before anything is sent; a simulator never is', async () => {
+  const original = exec.isCommandAvailable;
+  exec.isCommandAvailable = async () => false;
+  try {
+    assert.match(
+      await deviceLogUnavailable({
+        kind: 'device',
+        name: 'iPhone',
+        udid: 'u',
+        state: 'available',
+      }),
+      /brew install libimobiledevice/
+    );
+    assert.strictEqual(
+      await deviceLogUnavailable({
+        kind: 'simulator',
+        name: 'sim',
+        udid: 's',
+        state: 'booted',
+      }),
+      undefined
+    );
+  } finally {
+    exec.isCommandAvailable = original;
+  }
 });

@@ -16,7 +16,7 @@ import {
 } from './prompt';
 import { freshness, watchFor } from './observe';
 import { startAndroidCapture } from './matrix/android_logs';
-import { startCapture } from './matrix/logs';
+import { deviceLogUnavailable, startCapture } from './matrix/logs';
 import {
   Target as IosTarget,
   describeTarget,
@@ -496,18 +496,28 @@ async function climb(
     ladder.adopt(profile, profileTimer());
     profileRung.done(profile);
 
-    const consent = await askToSend(ladder, options, reporter, asker, {
-      target:
-        device.target &&
-        `${describeTarget(device.target)} · ${device.target.udid}`,
-      app: wiring.bundleId,
-      workspace: workspace.resolution?.workspace,
-      login: cio.profile,
-      token: device.sdk?.pushDeviceToken,
-      delivered: selection.states,
-      retries: options.resend !== false,
-    });
-    if (consent?.granted !== false) {
+    // A phone whose log cannot be read can prove nothing, so it is sent nothing, and the
+    // person is not asked to agree to pushes that could never be followed.
+    const unreadable =
+      options.send && device.target
+        ? await deviceLogUnavailable(device.target)
+        : undefined;
+    if (unreadable) skipUnreadable(ladder, options, unreadable);
+
+    const consent = unreadable
+      ? undefined
+      : await askToSend(ladder, options, reporter, asker, {
+          target:
+            device.target &&
+            `${describeTarget(device.target)} · ${device.target.udid}`,
+          app: wiring.bundleId,
+          workspace: workspace.resolution?.workspace,
+          login: cio.profile,
+          token: device.sdk?.pushDeviceToken,
+          delivered: selection.states,
+          retries: options.resend !== false,
+        });
+    if (!unreadable && consent?.granted !== false) {
       await matrix(ladder, options, reporter, selection.states, {
         target: device.target,
         pushDisabled: profile.checks.some(
@@ -829,6 +839,18 @@ async function matrix(
   ladder.addMatrix(
     explainNotificationsOff(section, inputs.pushDisabled === true)
   );
+}
+
+/** Records every section that would have sent as skipped, because the log is unreadable. */
+function skipUnreadable(
+  ladder: Ladder,
+  options: VerifyPushOptions,
+  reason: string
+): void {
+  const skipped = `no push was sent: the device's log cannot be read (${reason})`;
+  ladder.addMatrix({ metric: 'delivered', cells: [], skipped });
+  if (options.opened)
+    ladder.addMatrix({ metric: 'opened', cells: [], skipped });
 }
 
 /** Records the opened section as skipped when it must not run; see `openedSkipReason`. */

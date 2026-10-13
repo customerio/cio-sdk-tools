@@ -352,6 +352,14 @@ export const CAUSES: Record<string, CauseDefinition> = {
     remedy:
       'Read the error: it is usually the token, the credential, or a sandbox/production mismatch. Nothing about the SDK is proven either way until a send is accepted.',
   },
+  'runtime.deep_link_outcome_unseen': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      'The SDK reported the open and started following the deep link, but never said how it ended.',
+    remedy:
+      'The open itself is fine. Usually the app was moved on before the link finished: run the cell again and leave the app in front until the run continues. If it repeats, check that the deepLinkCallback returns once it has navigated.',
+  },
   'runtime.push_arrived_late': {
     stage: 'delivered_matrix',
     severity: 'warning',
