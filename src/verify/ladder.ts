@@ -98,14 +98,29 @@ export class Ladder {
     return this.rungs.find((r) => Ladder.verdictOf(r) === 'fail');
   }
 
-  /** Every named cause, in ladder order, resolved against the registry. */
+  /**
+   * Every named cause, in ladder order, resolved against the registry — once each. Two
+   * cells with the same cause are one finding with more evidence, and printing its summary
+   * and remedy twice only made the reader look for a difference that was not there.
+   */
   causes(): ReportedCause[] {
     const out: ReportedCause[] = [];
+    const add = (code: string, evidence: string[]) => {
+      const earlier = out.find((cause) => cause.code === code);
+      if (!earlier) {
+        // A copy: merging later evidence must not rewrite the first cell's own.
+        out.push(resolveCause(code, [...evidence]));
+        return;
+      }
+      for (const line of evidence) {
+        if (!earlier.evidence.includes(line)) earlier.evidence.push(line);
+      }
+    };
     for (const rung of this.rungs) {
       for (const check of rung.checks) {
         if (!check.cause) continue;
         if (check.verdict !== 'fail' && check.verdict !== 'warn') continue;
-        out.push(resolveCause(check.cause, check.evidence ?? []));
+        add(check.cause, check.evidence ?? []);
       }
     }
     // A skipped cell that names a cause is inconclusive for a known reason — a rate limit,
@@ -113,7 +128,7 @@ export class Ladder {
     for (const cell of this.matrices.flatMap((section) => section.cells)) {
       if (!cell.cause) continue;
       if (cell.verdict === 'pass') continue;
-      out.push(resolveCause(cell.cause, cell.evidence));
+      add(cell.cause, cell.evidence);
     }
     return out;
   }

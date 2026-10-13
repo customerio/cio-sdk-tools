@@ -185,8 +185,8 @@ test('a rate-limited run is inconclusive, and the report carries the cause with 
   assert.match(causes[0].remedy, /--states killed/);
 });
 
-test('the catalog gained the cause, and only that one', () => {
-  assert.strictEqual(Object.keys(CAUSES).length, 58);
+test('the catalog holds the rate-limit cause', () => {
+  assert.strictEqual(Object.keys(CAUSES).length, 59);
   assert.strictEqual(CAUSES[RATE_LIMITED_CAUSE].stage, 'delivered_matrix');
 });
 

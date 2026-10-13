@@ -32,7 +32,7 @@ import {
 } from './select';
 import { AndroidProjectModel, loadAndroidProject } from './android/project';
 import { XcodeProjectModel, loadProject } from './ios/xcode';
-import { runDeliveredMatrix } from './matrix';
+import { explainNotificationsOff, runDeliveredMatrix } from './matrix';
 import { RATE_LIMITED_CAUSE, whyNoSend } from './matrix/send';
 import { openedSkipReason, runOpenedMatrix } from './matrix/opened';
 import { runAndroidOpenedMatrix } from './matrix/android_opened';
@@ -510,6 +510,9 @@ async function climb(
     if (consent?.granted !== false) {
       await matrix(ladder, options, reporter, selection.states, {
         target: device.target,
+        pushDisabled: profile.checks.some(
+          (check) => check.cause === 'profile.push_disabled'
+        ),
         bundleId: wiring.bundleId,
         provider: wiring.provider,
         environmentId: workspace.resolution?.workspace?.id,
@@ -774,6 +777,8 @@ async function matrix(
     sandbox: boolean;
     provider: PushProvider;
     processNames?: string[];
+    /** The profile reports push_enabled false. */
+    pushDisabled?: boolean;
   }
 ): Promise<void> {
   if (!options.send) {
@@ -807,28 +812,22 @@ async function matrix(
     return;
   }
 
-  const evidenceDirectory =
-    options.evidence ??
-    path.join(
-      os.tmpdir(),
-      `cio-verify-${new Date().toISOString().slice(0, 19)}`
-    );
-
+  const section = await runDeliveredMatrix({
+    target: inputs.target,
+    bundleId: inputs.bundleId,
+    environmentId: inputs.environmentId,
+    token: inputs.token,
+    sandbox: inputs.sandbox,
+    provider: inputs.provider,
+    processNames: inputs.processNames,
+    states,
+    dryRun: options.dryRun,
+    resend: options.resend,
+    reporter,
+    evidenceDirectory: evidenceDirectoryFor(options),
+  });
   ladder.addMatrix(
-    await runDeliveredMatrix({
-      target: inputs.target,
-      bundleId: inputs.bundleId,
-      environmentId: inputs.environmentId,
-      token: inputs.token,
-      sandbox: inputs.sandbox,
-      provider: inputs.provider,
-      processNames: inputs.processNames,
-      states,
-      dryRun: options.dryRun,
-      resend: options.resend,
-      reporter,
-      evidenceDirectory,
-    })
+    explainNotificationsOff(section, inputs.pushDisabled === true)
   );
 }
 

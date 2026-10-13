@@ -387,3 +387,89 @@ test('the re-send goes out the same way as the first send, Firebase included', (
   }
   assert.strictEqual(retry.title, 'cio verify · killed (retry)');
 });
+
+const { explainNotificationsOff } = require('../../dist/verify/matrix');
+
+test('silence in every state with notifications off is named as that, once', () => {
+  // The iPhone run of 2026-10-13, before notifications were allowed for the app.
+  const silent = {
+    metric: 'delivered',
+    cells: [
+      {
+        state: 'killed',
+        verdict: 'skip',
+        cause: 'runtime.no_evidence',
+        evidence: ['log: 0 lines'],
+      },
+      {
+        state: 'background',
+        verdict: 'skip',
+        cause: 'runtime.no_evidence',
+        evidence: ['log: 0 lines'],
+      },
+      {
+        state: 'foreground',
+        verdict: 'fail',
+        cause: 'runtime.nse_did_not_run',
+        evidence: ['log: 215 lines'],
+      },
+    ],
+  };
+  const explained = explainNotificationsOff(silent, true);
+  assert.deepStrictEqual(
+    explained.cells.map((cell) => [cell.verdict, cell.cause]),
+    [
+      ['fail', 'device.notifications_disabled'],
+      ['fail', 'device.notifications_disabled'],
+      ['fail', 'device.notifications_disabled'],
+    ]
+  );
+  assert.match(
+    explained.cells[2].evidence.at(-1),
+    /was: runtime\.nse_did_not_run/
+  );
+
+  const ladder = new Ladder();
+  ladder.addMatrix(explained);
+  const causes = ladder.causes();
+  assert.deepStrictEqual(
+    causes.map((cause) => cause.code),
+    ['device.notifications_disabled'],
+    'one finding, not one per state'
+  );
+  assert.match(causes[0].remedy, /allow notifications/);
+  assert.strictEqual(
+    explained.cells[0].evidence.length,
+    2,
+    'merging the evidence rewrote the first cell'
+  );
+});
+
+test('notifications-off is not claimed when anything arrived, or when the profile says on', () => {
+  const mixed = {
+    metric: 'delivered',
+    cells: [
+      {
+        state: 'killed',
+        verdict: 'fail',
+        cause: 'runtime.push_never_arrived',
+        evidence: [],
+      },
+      { state: 'foreground', verdict: 'pass', evidence: [] },
+    ],
+  };
+  assert.strictEqual(explainNotificationsOff(mixed, true), mixed);
+
+  const silentButOn = {
+    metric: 'delivered',
+    cells: [
+      {
+        state: 'killed',
+        verdict: 'fail',
+        cause: 'runtime.push_never_arrived',
+        evidence: [],
+      },
+    ],
+  };
+  assert.strictEqual(explainNotificationsOff(silentButOn, false), silentButOn);
+});

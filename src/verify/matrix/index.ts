@@ -372,6 +372,46 @@ async function runCellBody(
   };
 }
 
+/** The causes a cell gets when nothing at all reached the app in its state. */
+const SILENT = [
+  'runtime.push_never_arrived',
+  'runtime.no_evidence',
+  'runtime.nse_did_not_run',
+];
+
+/**
+ * When no state received anything and the profile says notifications are off, say that,
+ * rather than a separate "never arrived" or "extension did not run" per state.
+ *
+ * iOS drops an alert push for an app with notifications off before its extension runs, so
+ * the silence looks exactly like a broken extension. On its own, `push_enabled: false` is
+ * only a hint — it has read false while permission was granted — but with nothing arriving
+ * in any state, it is the likeliest reason, and the cheapest one to check. A single state
+ * that received something means notifications are on, and the section is left alone.
+ */
+export function explainNotificationsOff(
+  section: MatrixSection,
+  pushDisabled: boolean
+): MatrixSection {
+  const silent =
+    section.cells.length > 0 &&
+    section.cells.every((cell) => cell.cause && SILENT.includes(cell.cause));
+  if (!pushDisabled || !silent) return section;
+  return {
+    ...section,
+    cells: section.cells.map((cell) => ({
+      ...cell,
+      verdict: 'fail',
+      cause: 'device.notifications_disabled',
+      summary: undefined,
+      evidence: [
+        ...cell.evidence,
+        `nothing reached the app in any state, and the profile reports push_enabled false (was: ${cell.cause})`,
+      ],
+    })),
+  };
+}
+
 /**
  * What the evidence adds up to.
  *

@@ -352,6 +352,14 @@ export const CAUSES: Record<string, CauseDefinition> = {
     remedy:
       'Read the error: it is usually the token, the credential, or a sandbox/production mismatch. Nothing about the SDK is proven either way until a send is accepted.',
   },
+  'device.notifications_disabled': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary:
+      'Nothing reached the app in any state, and its profile reports that notifications are off.',
+    remedy:
+      'On the device, open Settings → Notifications, find the app by its display name, and allow notifications; then run again. With notifications off, iOS drops an alert push before the extension runs, which looks exactly like a broken extension.',
+  },
   'send.provider_rate_limited': {
     stage: 'delivered_matrix',
     severity: 'blocker',
