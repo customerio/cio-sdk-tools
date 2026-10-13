@@ -615,3 +615,96 @@ test('"never showed up" is as strong as the arrival evidence behind it', () => {
     /nobody answered/
   );
 });
+
+// --- arrow keys on a terminal -------------------------------------------------
+
+const fakeTerminal = () => {
+  const input = new PassThrough();
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = (mode) => {
+    input.isRaw = mode;
+  };
+  const written = [];
+  const output = { isTTY: true, write: (chunk) => written.push(String(chunk)) };
+  return { input, output, text: () => written.join('') };
+};
+
+const press = (input, ...keys) => {
+  let delay = 10;
+  for (const key of keys) {
+    setTimeout(() => input.write(key), delay);
+    delay += 10;
+  }
+};
+
+test('on a terminal, the arrow keys move and Enter picks', async () => {
+  const { input, output, text } = fakeTerminal();
+  const asker = createAsker({ interactive: true, input, output, timeoutMs: 2_000 });
+  press(input, '\u001b[B', '\r');
+  assert.strictEqual(await asker.askTap('Tap the "x" notification.'), 'not_shown');
+  assert.match(text(), /↑\/↓ to move/);
+  assert.match(text(), /✔.*It never showed up/);
+  assert.strictEqual(input.isRaw, false, 'raw mode was left on');
+});
+
+test('arrows wrap, a number jumps, and the default is where the cursor starts', async () => {
+  const { pickWithArrows } = require('../../dist/verify/prompt');
+  const rows = [{ label: 'a' }, { label: 'b' }, { label: 'c' }];
+
+  let terminal = fakeTerminal();
+  press(terminal.input, '\u001b[A', '\r');
+  assert.strictEqual(
+    await pickWithArrows(terminal.input, terminal.output, rows, 0, 2_000),
+    2,
+    'up from the first row wraps to the last'
+  );
+
+  terminal = fakeTerminal();
+  press(terminal.input, '2', '\r');
+  assert.strictEqual(
+    await pickWithArrows(terminal.input, terminal.output, rows, 0, 2_000),
+    1
+  );
+
+  terminal = fakeTerminal();
+  press(terminal.input, '\r');
+  assert.strictEqual(
+    await pickWithArrows(terminal.input, terminal.output, rows, 2, 2_000),
+    2
+  );
+});
+
+test('no key in time is no answer, and the terminal is restored', async () => {
+  const { pickWithArrows } = require('../../dist/verify/prompt');
+  const { input, output, text } = fakeTerminal();
+  assert.strictEqual(
+    await pickWithArrows(input, output, [{ label: 'a' }], 0, 50),
+    undefined
+  );
+  assert.strictEqual(input.isRaw, false);
+  assert.match(text(), /no answer/);
+});
+
+test('a select on a terminal uses the arrows too, and a pipe still answers by number', async () => {
+  const terminal = fakeTerminal();
+  const onTerminal = createAsker({
+    interactive: true,
+    input: terminal.input,
+    output: terminal.output,
+    timeoutMs: 2_000,
+  });
+  press(terminal.input, '\u001b[B', '\r');
+  const picked = await onTerminal.select(
+    'How much should be sent?',
+    [
+      { value: 'all', label: 'All three app states' },
+      { value: 'killed', label: 'Killed only' },
+    ],
+    { flag: '--states' }
+  );
+  assert.strictEqual(picked, 'killed');
+
+  // A pipe is not a terminal: numbers, as before.
+  assert.strictEqual(await tapAsker(['2']).asker.askTap('x'), 'not_shown');
+});
