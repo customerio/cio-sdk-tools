@@ -427,6 +427,21 @@ export function ranInExtension(
   );
 }
 
+/**
+ * Did the extension run on a push? A line from its own process is the OS's word for it. The
+ * SDK's "Tracking push message delivered" counts too, because only the extension writes it:
+ * a parser that lost the process name once turned a working extension into an accusation.
+ */
+export function extensionRanIn(
+  lines: LogLine[],
+  extensionName?: string
+): boolean {
+  return (
+    ranInExtension(lines, extensionName) ||
+    lines.some((line) => NSE_MARKERS.tracking.test(line.message))
+  );
+}
+
 /** Delivery ids are base64url with a `dgS_` prefix — a charset without `_` and `-` misses. */
 export function deliveryIdsIn(lines: LogLine[]): string[] {
   const ids = new Set<string>();

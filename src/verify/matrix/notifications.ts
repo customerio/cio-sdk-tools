@@ -71,26 +71,27 @@ export async function deliveredNotifications(
 }
 
 /**
- * Wait for the notification with one exact title. `undefined` means the question cannot be
- * asked here, which is not the same answer as `false`.
+ * Wait for the notification with one exact title, or any of several. `undefined` means the
+ * question cannot be asked here, which is not the same answer as `false`.
  */
 export async function waitForNotification(options: {
   target: Target;
-  title: string;
+  title: string | string[];
   timeoutMs: number;
   /** Ignore stores untouched since this moment — normally just before the send. */
   sinceMs: number;
   intervalMs?: number;
 }): Promise<StoredNotification | false | undefined> {
   if (options.target.kind !== 'simulator') return undefined;
+  const titles = ([] as string[]).concat(options.title);
   const deadline = Date.now() + options.timeoutMs;
   for (;;) {
     const stored = await deliveredNotifications(
       options.target,
       options.sinceMs
     );
-    const found = stored?.find(
-      (notification) => notification.title === options.title
+    const found = stored?.find((notification) =>
+      titles.includes(notification.title)
     );
     if (found) return found;
     if (Date.now() >= deadline) return false;

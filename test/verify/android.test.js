@@ -17,8 +17,8 @@ const base = {
   available: true,
   sawLines: true,
   stopped: false,
+  posted: true,
   received: true,
-  tracked: true,
   loggedIds: ['abc12345'],
   freshIds: ['abc12345'],
 };
@@ -29,27 +29,44 @@ test('a stopped app is a precondition, not a failed integration', () => {
   // `am force-stop` leaves an app undeliverable-to by design. Calling that a broken
   // integration is the misdiagnosis the whole check exists to prevent.
   assert.deepStrictEqual(
-    judgeAndroid({ ...base, stopped: true, received: false, tracked: false }),
+    judgeAndroid({ ...base, stopped: true, posted: false, received: false }),
     { verdict: 'skip', cause: 'runtime.app_force_stopped' }
   );
 });
 
 test('nothing received on a running app is a real failure', () => {
   assert.deepStrictEqual(
-    judgeAndroid({ ...base, received: false, tracked: false }),
+    judgeAndroid({ ...base, posted: false, received: false }),
     { verdict: 'fail', cause: 'runtime.push_never_arrived' }
   );
 });
 
-test('received and never counted is the Android invisible failure', () => {
-  assert.deepStrictEqual(judgeAndroid({ ...base, tracked: false }), {
+test('on the device and never received by the SDK is a real failure', () => {
+  // FCM displays a notification message by itself while the app is in the background, so
+  // the notification is there and the SDK never saw the push.
+  assert.deepStrictEqual(judgeAndroid({ ...base, received: false }), {
     verdict: 'fail',
-    cause: 'runtime.metric_not_tracked',
+    cause: 'runtime.push_not_handled',
   });
 });
 
-test('tracked is the pass, because Android logs no acceptance line at all', () => {
+test('received by the SDK is the pass, whether or not the list showed it', () => {
   assert.deepStrictEqual(judgeAndroid(base), { verdict: 'pass' });
+  // The SDK receiving it proves it reached the device; the list is the OS's second word.
+  assert.deepStrictEqual(judgeAndroid({ ...base, posted: false }), {
+    verdict: 'pass',
+  });
+});
+
+test('the id from the line naming this push decides which delivery it is', () => {
+  assert.deepStrictEqual(
+    judgeAndroid({ ...base, expectedId: 'abc12345', freshIds: [] }),
+    { verdict: 'pass' }
+  );
+  assert.deepStrictEqual(
+    judgeAndroid({ ...base, expectedId: 'zzz99999' }),
+    { verdict: 'warn', cause: 'runtime.delivery_id_mismatch' }
+  );
 });
 
 test('a cell that counted an earlier cell’s delivery only warns', () => {
@@ -236,17 +253,15 @@ test('nothing connected says exactly that', () => {
   assert.match(rung.skipped, /no connected device and no running emulator/);
 });
 
-test('the handoff worker is the acceptance signal, and its absence is not a failure', () => {
+test('the handoff worker is evidence, never the verdict', () => {
   // Observed on API 35: tracked lands in ~30ms, the notification ~6s later, the worker up
-  // to ~40s after that. A slow worker is not a broken integration.
-  assert.deepStrictEqual(
-    judgeAndroid({ ...base, accepted: true }),
-    { verdict: 'pass' }
-  );
-  assert.deepStrictEqual(
-    judgeAndroid({ ...base, accepted: false }),
-    { verdict: 'pass' }
-  );
+  // to ~40s after that. What it reports is Customer.io's to confirm.
+  assert.deepStrictEqual(judgeAndroid({ ...base, reported: true }), {
+    verdict: 'pass',
+  });
+  assert.deepStrictEqual(judgeAndroid({ ...base, reported: false }), {
+    verdict: 'pass',
+  });
 });
 
 test('the handoff markers match the SDK’s two success phrasings', () => {

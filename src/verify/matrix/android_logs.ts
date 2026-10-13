@@ -128,10 +128,11 @@ export function parseLogcat(raw: string): LogLine | undefined {
 /**
  * The SDK's own phrasings on Android.
  *
- * There *is* an acceptance signal here, contrary to a first reading of the source: the
- * delivered metric goes through a handoff queue backed by WorkManager, and the worker says
- * either `worker success, removed key=<id>` or `worker skipped, already delivered key=<id>`.
- * Both mean the delivery was reported; the second means it had already gone out directly.
+ * The delivered metric goes through a handoff queue backed by WorkManager, and the worker
+ * says either `worker success, removed key=<id>` or `worker skipped, already delivered
+ * key=<id>`. Both mean the SDK sent its report; the second means it had already gone out
+ * directly. They are kept as evidence and never judged: what was recorded is Customer.io's
+ * to say. The verdict rests on the push being on the device and the SDK receiving it.
  *
  * The timing matters as much as the wording. A full sequence observed on API 35:
  *

@@ -5,7 +5,7 @@ import {
   NSE_MARKERS,
   blameStoppedCapture,
   deliveryIdsIn,
-  ranInExtension,
+  extensionRanIn,
   startCapture,
 } from './logs';
 import {
@@ -19,7 +19,11 @@ import { ALL_STATES, AppState, setAppState } from './states';
 import { stopwatch } from '../clock';
 import { CellHandle, Reporter } from '../report';
 import { ProbeResult, probeLocalDelivery } from './probe';
-import { waitForTitle } from './notifications';
+import {
+  StoredNotification,
+  waitForNotification,
+  waitForTitle,
+} from './notifications';
 import { PushProvider } from '../cio/push';
 import { deliveredTitle, pushTag } from './identity';
 
@@ -62,6 +66,8 @@ const ARRIVAL_TIMEOUT_MS = 45_000;
 const RETRY_ARRIVAL_TIMEOUT_MS = 12_000;
 /** Confirming a condition an earlier cell already proved. */
 const CONFIRMING_TIMEOUT_MS = 10_000;
+/** After the extension runs, how long to wait for its own account to finish, as evidence. */
+const EVIDENCE_SETTLE_MS = 8_000;
 
 /**
  * The delivered matrix: one real push per app state, followed to the metric.
@@ -241,35 +247,36 @@ async function runCellBody(
   );
 
   const since = () => capture.since(mark);
+  const ranNow = () => extensionRanIn(since(), options.extensionName);
   const confirming = known.nothingArrives === true;
   const timeout = confirming
     ? CONFIRMING_TIMEOUT_MS
     : options.cellTimeoutMs ?? 60_000;
 
   /**
-   * Wait for the *end* of the sequence, never the middle: `delivered` fires part way
-   * through, so stopping there truncates the capture and loses the rich-push outcome.
+   * Wait for the extension to run, then a little longer so the evidence holds the SDK's own
+   * account of what it did. That account is evidence, never the verdict, so the extra wait
+   * ends early on the SDK's end-of-processing line and otherwise simply runs out.
    */
-  const awaitSequence = async (budget: number): Promise<boolean> => {
-    if (!capture.available) return false;
-    handle?.phase('waiting for the extension to finish');
-    return waitFor(
-      () =>
-        since().some((line) => NSE_MARKERS.completion.test(line.message)) &&
-        since().some((line) => NSE_MARKERS.accepted.test(line.message)),
-      budget
+  const awaitExtension = async (budget: number): Promise<void> => {
+    if (!capture.available) return;
+    handle?.phase('waiting for the extension to run');
+    if (!(await waitFor(ranNow, budget))) return;
+    handle?.phase('collecting the extension’s account');
+    await waitFor(
+      () => since().some((line) => NSE_MARKERS.completion.test(line.message)),
+      EVIDENCE_SETTLE_MS
     );
   };
 
   // Arrival comes first, because it is the precondition for everything the extension
-  // does: waiting a minute for an extension to finish handling a push that never landed
-  // is a minute spent proving nothing, three times per run. Where arrival cannot be read
-  // at all — every physical device — the old order stands, since there is nothing to gate
-  // the wait on.
+  // does: waiting a minute for an extension to handle a push that never landed is a
+  // minute spent proving nothing, three times per run. Where arrival cannot be read at
+  // all — every physical device — the wait is for the extension itself.
   handle?.phase('waiting for the push to arrive');
-  let arrived = await waitForArrival(
+  let stored = await waitForArrival(
     options.target,
-    title,
+    [title],
     sinceMs,
     evidence,
     confirming ? CONFIRMING_TIMEOUT_MS : ARRIVAL_TIMEOUT_MS
@@ -280,34 +287,34 @@ async function runCellBody(
     );
   }
 
-  let finished = arrived === false ? false : await awaitSequence(timeout);
+  if (stored !== false) await awaitExtension(timeout);
 
   // Nothing arrived and the extension never woke: on a simulator that is as often APNs
   // being slow as it is a real failure, and the tool has no business calling a delayed
   // push a broken one. One re-send, said out loud in the evidence, settles which it was.
+  // It carries its own tag, and either push arriving counts: the first may just be late.
   if (
     options.resend !== false &&
-    arrived === false &&
-    !ranInExtension(since()) &&
+    stored === false &&
+    !ranNow() &&
     known.localProbe !== 'absent' &&
     !confirming
   ) {
     handle?.phase('nothing arrived — sending once more');
-    const again = await sendVerifyPush(
-      deliveredRequest(options, `${title} (retry)`)
-    );
+    const retryTitle = deliveredTitle(state, pushTag());
+    const again = await sendVerifyPush(deliveredRequest(options, retryTitle));
     if (again.rateLimited) {
       return rejectedCell(state, again, evidence, 're-send rejected');
     }
     evidence.push(
       again.accepted
-        ? 'nothing arrived on the first send; re-sent once'
+        ? `nothing arrived on the first send; re-sent once as "${retryTitle}"`
         : `re-send rejected: ${again.error ?? 'unknown error'}`
     );
     if (again.accepted) {
-      arrived = await waitForArrival(
+      stored = await waitForArrival(
         options.target,
-        title,
+        [title, retryTitle],
         sinceMs,
         evidence,
         RETRY_ARRIVAL_TIMEOUT_MS
@@ -315,14 +322,14 @@ async function runCellBody(
       // It arrived on the second attempt: give the extension the full budget, because a
       // slow delivery is exactly the case where patience is the difference between a
       // right answer and a wrong one.
-      if (arrived !== false) finished = await awaitSequence(timeout);
+      if (stored !== false) await awaitExtension(timeout);
     }
   }
 
   // Nothing arrived: before blaming the integration, find out whether this target is
   // delivering anything at all.
   let localProbe = known.localProbe;
-  if (arrived === false && !ranInExtension(since())) {
+  if (stored === false && !ranNow()) {
     if (localProbe === undefined) {
       handle?.phase('nothing arrived — testing the target itself');
       const probe = await probeLocalDelivery({
@@ -341,12 +348,14 @@ async function runCellBody(
     }
   }
 
-  if (arrived === false && !ranInExtension(since())) {
+  if (stored === false && !ranNow()) {
     known.nothingArrives = true;
   }
 
   const lines = since();
-  const extensionRan = ranInExtension(lines);
+  const extensionRan = ranNow();
+  // Kept as evidence of what the SDK did, never judged: whether a report landed is
+  // Customer.io's to say, and the device's log of it is the part most often missing.
   const tracking = lines.some((line) =>
     NSE_MARKERS.tracking.test(line.message)
   );
@@ -357,17 +366,18 @@ async function runCellBody(
     NSE_MARKERS.richFinished.test(line.message)
   );
   const ids = deliveryIdsIn(lines);
-  // The route that lets us keep the workspace credential alone returns no delivery id, so
-  // freshness stands in for correlation: a cell that counted an id an earlier cell already
-  // saw is reading a leftover delivery, and proves less than it appears to.
+  // Without an id from the send or the OS's stored copy, freshness stands in for
+  // correlation: a cell that reads an id an earlier cell already saw is reading a leftover
+  // delivery, and proves less than it appears to.
   const freshIds = ids.filter((id) => !seenIds.has(id));
   for (const id of ids) seenIds.add(id);
+  const expectedId =
+    sent.deliveryId ?? (stored ? stored.deliveryId : undefined);
 
   if (capture.available) {
+    evidence.push(`log: ${lines.length} lines, extension ran: ${extensionRan}`);
     evidence.push(
-      `log: ${lines.length} lines, extension ran: ${extensionRan}, ` +
-        `tracked: ${tracking}, accepted: ${accepted}, rich: ${rich}` +
-        (finished ? '' : ' (sequence did not complete in time)')
+      `SDK lines, not judged: tracking delivered ${tracking}, report accepted ${accepted}, rich push ${rich}`
     );
     if (ids.length > 0) evidence.push(`delivery ids in log: ${ids.join(', ')}`);
   } else {
@@ -377,16 +387,15 @@ async function runCellBody(
   return {
     state,
     title,
-    deliveryId: sent.deliveryId,
+    deliveryId: expectedId ?? (freshIds.length === 1 ? freshIds[0] : undefined),
     ...judge({
       localProbe,
       available: capture.available,
-      arrived,
+      lossy: capture.lossy,
+      arrived: stored === undefined ? undefined : stored !== false,
       extensionRan,
-      tracked: tracking,
-      accepted,
       sawLines: lines.length > 0,
-      sentId: sent.deliveryId,
+      expectedId,
       loggedIds: ids,
       freshIds,
     }),
@@ -399,6 +408,7 @@ const SILENT = [
   'runtime.push_never_arrived',
   'runtime.no_evidence',
   'runtime.nse_did_not_run',
+  'runtime.push_not_seen',
 ];
 
 /**
@@ -437,19 +447,23 @@ export function explainNotificationsOff(
 /**
  * What the evidence adds up to.
  *
- * The distinction that matters is between "never arrived" and "arrived and was not
- * counted". The first is a send or credential problem; the second is the invisible failure
- * this tool exists for, and the two look identical from the dashboard.
+ * "Received" means this push reached the device and the app's extension ran on it. Both
+ * come from the OS — its notification store, and which process wrote a line — so neither
+ * depends on what the SDK chooses to log. Whether a report then reached Customer.io is not
+ * decided here: the device's log of it is the evidence most often missing, and only
+ * Customer.io can say what it recorded.
  */
 export function judge(observed: {
   available: boolean;
+  /** The capture can drop lines (a phone's), so a missing line proves nothing. */
+  lossy?: boolean;
+  /** From the OS's notification store: definite on a simulator, unknown on a phone. */
   arrived: boolean | undefined;
+  /** The extension's own process logged after the send. */
   extensionRan: boolean;
-  /** The SDK's own "tracking delivered" line: proof it was handed the request at all. */
-  tracked: boolean;
-  accepted: boolean;
   sawLines: boolean;
-  sentId?: string;
+  /** This push's delivery id, when the send or the OS's stored copy says what it is. */
+  expectedId?: string;
   loggedIds: string[];
   freshIds: string[];
   /**
@@ -463,39 +477,27 @@ export function judge(observed: {
     return { verdict: 'skip' };
   }
   // Arrival is read from the notification store, which is independent of the log capture,
-  // so a definite "nothing arrived" outranks a silent log. Without this the run reports
-  // three inconclusive cells while holding positive evidence that the push never landed
-  // and that the target itself is healthy.
+  // so a definite "nothing arrived" outranks a silent log.
   if (observed.arrived === false) {
     return observed.localProbe === 'absent'
       ? { verdict: 'skip', cause: 'device.notifications_wedged' }
       : { verdict: 'fail', cause: 'runtime.push_never_arrived' };
   }
-  // The app itself says nothing at all: that points at the capture, not at the push.
-  // Accusing the extension here is how a broken log filter got reported three times as
-  // the invisible failure.
+  // The app's processes say nothing at all: that points at the capture, not at the push.
   if (!observed.sawLines) {
     return { verdict: 'skip', cause: 'runtime.no_evidence' };
   }
-  // The metric landing is the assertion; which process reported it is evidence. Judging
-  // on the process first is how a log-parser bug turned three successful deliveries into
-  // three accusations of the invisible failure.
-  if (!observed.accepted) {
-    // Arrival has already been ruled on above, so reaching here means the push did arrive
-    // (or arrival could not be read) and the extension still never woke.
-    if (!observed.extensionRan) {
-      return { verdict: 'fail', cause: 'runtime.nse_did_not_run' };
-    }
-    // Ran but never tried: the extension exists and never forwarded the request. That is a
-    // different defect from a report that was attempted and did not land, and it is the
-    // runtime proof of the static wiring.nse_does_not_forward warning.
-    return observed.tracked
-      ? { verdict: 'fail', cause: 'runtime.metric_not_accepted' }
-      : { verdict: 'fail', cause: 'runtime.nse_did_not_forward' };
+  if (!observed.extensionRan) {
+    // On a simulator the store says the push is there and the capture drops nothing, so an
+    // extension that never logged never ran. On a phone nothing says the push arrived at
+    // all, and the stream may have dropped the very lines that would have.
+    return observed.arrived === true && !observed.lossy
+      ? { verdict: 'fail', cause: 'runtime.nse_did_not_run' }
+      : { verdict: 'skip', cause: 'runtime.push_not_seen' };
   }
   if (observed.loggedIds.length > 0) {
-    const wrongId = observed.sentId
-      ? !observed.loggedIds.includes(observed.sentId)
+    const wrongId = observed.expectedId
+      ? !observed.loggedIds.includes(observed.expectedId)
       : observed.freshIds.length === 0;
     if (wrongId) {
       return { verdict: 'warn', cause: 'runtime.delivery_id_mismatch' };
@@ -518,7 +520,8 @@ async function waitFor(
 }
 
 /**
- * Did the push this cell sent arrive?
+ * Did the push this cell sent arrive? Read from the OS's notification store, which also says
+ * which delivery it is.
  *
  * By title, never by counting. The first version diffed a fingerprint of every app's
  * notification store, so any unrelated system notification read as our push arriving —
@@ -527,17 +530,24 @@ async function waitFor(
  */
 async function waitForArrival(
   target: Target,
-  title: string,
+  titles: string[],
   sinceMs: number,
   evidence: string[],
   timeoutMs = ARRIVAL_TIMEOUT_MS
-): Promise<boolean | undefined> {
-  const arrived = await waitForTitle({ target, title, sinceMs, timeoutMs });
-  if (arrived === undefined) return undefined;
+): Promise<StoredNotification | false | undefined> {
+  const stored = await waitForNotification({
+    target,
+    title: titles,
+    sinceMs,
+    timeoutMs,
+  });
+  if (stored === undefined) return undefined;
   evidence.push(
-    arrived
-      ? 'arrived: the notification is in the delivered store'
+    stored
+      ? `arrived: "${stored.title}" is in the notification store${
+          stored.deliveryId ? `, delivery ${stored.deliveryId}` : ''
+        }`
       : 'nothing with this title reached the notification store'
   );
-  return arrived;
+  return stored;
 }

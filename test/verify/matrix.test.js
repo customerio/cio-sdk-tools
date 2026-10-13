@@ -40,19 +40,50 @@ test('arrived but never processed is a different failure from never arrived', ()
   );
 });
 
-test('the extension running without the metric landing is its own cause', () => {
+test('a report that never landed is not judged on the device', () => {
+  // The extension ran on the push: that is "received". Whether its report reached
+  // Customer.io is Customer.io's to say, and the device's log of it is the evidence most
+  // often missing.
   assert.deepStrictEqual(
     judge({
       available: true,
       arrived: true,
       extensionRan: true,
-      tracked: true,
-      accepted: false,
       sawLines: true,
       loggedIds: [],
       freshIds: [],
     }),
-    { verdict: 'fail', cause: 'runtime.metric_not_accepted' }
+    { verdict: 'pass' }
+  );
+});
+
+test('on a phone, a missing extension line is unproven, never a failure', () => {
+  // idevicesyslog drops lines; a phone has no notification store to say the push arrived.
+  assert.deepStrictEqual(
+    judge({
+      available: true,
+      lossy: true,
+      arrived: undefined,
+      extensionRan: false,
+      sawLines: true,
+      loggedIds: [],
+      freshIds: [],
+    }),
+    { verdict: 'skip', cause: 'runtime.push_not_seen' }
+  );
+  // On a simulator the store says the push is there and nothing is dropped: an extension
+  // that never logged never ran.
+  assert.deepStrictEqual(
+    judge({
+      available: true,
+      lossy: false,
+      arrived: true,
+      extensionRan: false,
+      sawLines: true,
+      loggedIds: [],
+      freshIds: [],
+    }),
+    { verdict: 'fail', cause: 'runtime.nse_did_not_run' }
   );
 });
 
@@ -79,7 +110,7 @@ test('counting somebody else’s delivery is a warning, not a pass', () => {
       extensionRan: true,
       accepted: true,
       sawLines: true,
-      sentId: 'dgS_aaa',
+      expectedId: 'dgS_aaa',
       loggedIds: ['dgS_bbb'],
       freshIds: ['dgS_bbb'],
     }),
@@ -92,7 +123,7 @@ test('counting somebody else’s delivery is a warning, not a pass', () => {
       extensionRan: true,
       accepted: true,
       sawLines: true,
-      sentId: 'dgS_aaa',
+      expectedId: 'dgS_aaa',
       loggedIds: ['dgS_aaa'],
       freshIds: ['dgS_aaa'],
     }),
@@ -100,7 +131,7 @@ test('counting somebody else’s delivery is a warning, not a pass', () => {
   );
 });
 
-test('a send whose id the log never mentions still passes on the metric', () => {
+test('a push whose id the log never mentions still passes on the extension running', () => {
   // The id is absent from plenty of real captures; requiring it would fail correct runs.
   assert.deepStrictEqual(
     judge({
@@ -109,7 +140,7 @@ test('a send whose id the log never mentions still passes on the metric', () => 
       extensionRan: true,
       accepted: true,
       sawLines: true,
-      sentId: 'dgS_aaa',
+      expectedId: 'dgS_aaa',
       loggedIds: [],
       freshIds: [],
     }),
@@ -153,6 +184,24 @@ test('the extension is identified by process, not by message text', () => {
     ]),
     false
   );
+  // An extension named anything else is recognised by the name the project gives it.
+  assert.strictEqual(
+    ranInExtension([line('RichPushExtension', 'anything')], 'RichPushExtension'),
+    true
+  );
+  assert.strictEqual(
+    ranInExtension([line('RichPushExtension', 'anything')]),
+    false
+  );
+});
+
+test('the line only the extension writes stands in when the process name is lost', () => {
+  const { extensionRanIn } = require('../../dist/verify/matrix/logs');
+  assert.strictEqual(
+    extensionRanIn([line('', '[Push] Tracking push message delivered with deliveryId: dgS_x')]),
+    true
+  );
+  assert.strictEqual(extensionRanIn([line('APN UIKit', 'unrelated')]), false);
 });
 
 test('one failing cell fails the run, and the others still report', () => {
@@ -259,21 +308,21 @@ test('a stream that attached and saw nothing blames the capture, not the extensi
   );
 });
 
-test('an extension that runs and never forwards is its own cause, not a failed report', () => {
-  // Arm B3 exactly: the extension is embedded and entitled, the push displays, and the SDK
-  // is never handed the request — so nothing is even attempted.
+test('an extension that runs and never forwards passes on the device; wiring names it', () => {
+  // Arm B3: the extension is embedded and entitled, the push displays, and the SDK is never
+  // handed the request. On the device that is a push received; the static wiring check
+  // (wiring.nse_does_not_forward) names the missing call, and only Customer.io's record can
+  // show that nothing was counted.
   assert.deepStrictEqual(
     judge({
       available: true,
       arrived: true,
       extensionRan: true,
-      tracked: false,
-      accepted: false,
       sawLines: true,
       loggedIds: [],
       freshIds: [],
     }),
-    { verdict: 'fail', cause: 'runtime.nse_did_not_forward' }
+    { verdict: 'pass' }
   );
 });
 
@@ -379,13 +428,13 @@ test('the re-send goes out the same way as the first send, Firebase included', (
     provider: 'fcm',
   };
   const first = deliveredRequest(options, 'cio verify · killed');
-  const retry = deliveredRequest(options, 'cio verify · killed (retry)');
+  const retry = deliveredRequest(options, 'cio verify · killed · 9DG62');
   for (const request of [first, retry]) {
     assert.strictEqual(request.provider, 'fcm');
     assert.strictEqual(request.platform, 'ios');
     assert.strictEqual(request.sandbox, true);
   }
-  assert.strictEqual(retry.title, 'cio verify · killed (retry)');
+  assert.strictEqual(retry.title, 'cio verify · killed · 9DG62');
 });
 
 const { explainNotificationsOff } = require('../../dist/verify/matrix');

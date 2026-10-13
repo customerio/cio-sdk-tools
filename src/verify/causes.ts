@@ -482,21 +482,22 @@ export const CAUSES: Record<string, CauseDefinition> = {
     remedy:
       'This is the invisible failure. The notification displays, the dashboard shows the provider accepted it, and no delivery is ever counted. Check the extension is embedded, entitled to the App Group, and forwarding to the SDK.',
   },
-  'runtime.nse_did_not_forward': {
+  'runtime.push_not_seen': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      "Nothing on the phone showed this push arriving: the extension's process never logged, and the phone's log stream can drop lines.",
+    remedy:
+      'This is unproven, not failed: a phone has no notification list the tool can read, so the extension running is the only sign of arrival, and the stream that would show it loses lines. Check the banner appeared, that notifications are allowed for the app, and run again.',
+  },
+  'runtime.push_not_handled': {
     stage: 'delivered_matrix',
     severity: 'blocker',
     summary:
-      'The extension ran on the push and never handed it to the SDK, so nothing was even attempted.',
+      "The notification is on the device, and the app's SDK never said it received the push.",
     remedy:
-      'Call MessagingPush.shared.didReceive(request, withContentHandler:) from didReceive. The notification still displays, which is what makes this failure invisible from the outside.',
-    docs: IOS_RICH_PUSH_DOCS,
-  },
-  'runtime.metric_not_accepted': {
-    stage: 'delivered_matrix',
-    severity: 'blocker',
-    summary: 'The extension ran and the delivered metric was never accepted.',
-    remedy:
-      'The SDK tried and the report did not land — usually the cdpApiKey the extension initializes with, or no network in the extension process. The pending-delivery queue holds it for the app to retry.',
+      'Something other than the SDK displayed it — usually FCM showing a notification message by itself while the app is in the background, so the SDK never sees the push and nothing is counted. Check that the app’s messaging service hands pushes to the SDK, and that the SDK log level is debug for this check.',
+    docs: ANDROID_PUSH_DOCS,
   },
   'runtime.no_evidence': {
     stage: 'delivered_matrix',
@@ -505,13 +506,6 @@ export const CAUSES: Record<string, CauseDefinition> = {
       'The log was attached and the app said nothing at all, so this cell proves nothing.',
     remedy:
       'Suspect the capture, not the push: check the log tool is streaming (a filter that matches no process name returns silence), and that the app is the build you think it is.',
-  },
-  'runtime.metric_not_tracked': {
-    stage: 'delivered_matrix',
-    severity: 'blocker',
-    summary: 'The SDK received the push and never reported a delivery for it.',
-    remedy:
-      'Check that automatic delivery tracking is on and that the message carries a delivery id. The notification still displays, which is what makes this failure invisible.',
   },
   'runtime.app_force_stopped': {
     stage: 'delivered_matrix',

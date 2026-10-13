@@ -71,22 +71,13 @@ test('judged from the real capture, every cell passes', () => {
   }
 });
 
-test('the metric landing outranks the process attribution', () => {
-  // Defence against exactly the regression above: if the parser loses the process name,
-  // an accepted metric must still read as a pass rather than an accusation.
-  assert.deepStrictEqual(
-    judge({
-      available: true,
-      arrived: undefined,
-      extensionRan: false,
-      tracked: true,
-      accepted: true,
-      sawLines: true,
-      loggedIds: ['dgS_x'],
-      freshIds: ['dgS_x'],
-    }),
-    { verdict: 'pass' }
-  );
+test('the extension running is read from the real capture, by process', () => {
+  const { extensionRanIn } = require('../../dist/verify/matrix/logs');
+  assert.strictEqual(extensionRanIn(lines, 'NotificationServiceExtension'), true);
+  // Defence against the parser regression above: with every process name lost, the line
+  // only the extension writes still shows it ran.
+  const unattributed = lines.map((line) => ({ ...line, process: '' }));
+  assert.strictEqual(extensionRanIn(unattributed), true);
 });
 
 test('the fixture carries no device token and no personal address', () => {

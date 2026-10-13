@@ -224,7 +224,7 @@ test('a cell reports "reported" without its evidence, and expands when it did no
   reporter.cell('background').done({
     state: 'background',
     verdict: 'fail',
-    cause: 'runtime.nse_did_not_forward',
+    cause: 'runtime.nse_did_not_run',
     evidence: ['log: 120 lines'],
     durationMs: 45_000,
   });
@@ -232,7 +232,7 @@ test('a cell reports "reported" without its evidence, and expands when it did no
   const text = out.text();
   assert.match(text, /killed\s+reported\s+12\.4s/);
   assert.ok(!text.includes('79 lines'), 'a passing cell printed its evidence');
-  assert.match(text, /background\s+runtime\.nse_did_not_forward\s+45\.0s/);
+  assert.match(text, /background\s+runtime\.nse_did_not_run\s+45\.0s/);
   assert.match(text, /log: 120 lines/);
 });
 

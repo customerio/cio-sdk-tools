@@ -17,7 +17,7 @@ import { adb } from '../android/adb';
 import { ALL_STATES, AppState } from './states';
 import { stopwatch } from '../clock';
 import { CellHandle, Reporter } from '../report';
-import { deliveredTitle, pushTag } from './identity';
+import { androidIdForTitle, deliveredTitle, pushTag } from './identity';
 
 export interface AndroidMatrixOptions {
   dryRun?: boolean;
@@ -163,58 +163,60 @@ async function runCellBody(
   );
 
   const since = () => capture.since(mark);
-  const seen = (marker: RegExp) =>
-    since().some((line) => marker.test(line.message));
+  const messages = () => since().map((line) => line.message);
   const timeout = options.cellTimeoutMs ?? 45_000;
 
-  // Wait for the end of the sequence, not the middle. `tracked` lands within tens of
-  // milliseconds; the notification follows ~6s later and the handoff worker up to ~40s
-  // after that, so stopping at `tracked` reports a displayed notification as absent.
-  handle?.phase('waiting for the SDK to track it');
-  await waitFor(() => seen(ANDROID_MARKERS.tracked), timeout);
-  handle?.phase('waiting for the notification and the handoff worker');
-  await waitFor(
-    () =>
-      seen(ANDROID_MARKERS.shown) &&
-      (seen(ANDROID_MARKERS.handoffDelivered) ||
-        seen(ANDROID_MARKERS.handoffAlreadyDelivered)),
-    timeout
-  );
+  // Two questions, each settled as soon as it can be. Is the notification on the device —
+  // the OS's notification list, read with dumpsys — and did the app's SDK receive this push,
+  // by its line naming the push's title and delivery id? The handoff worker that reports
+  // the delivery to Customer.io is not waited for: what it reports is Customer.io's to
+  // confirm, and it runs up to forty seconds later.
+  handle?.phase('waiting for the push to arrive');
+  let listed = false;
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    const now = messages();
+    if (!listed) listed = (await postedTitles(options.serial)).includes(title);
+    if (receivedBySdk(now, title) && (listed || shownBySdk(now, title))) break;
+    if (Date.now() >= deadline) break;
+    await sleep(1_500);
+  }
 
   const lines = since();
-  const received = lines.some((line) =>
-    ANDROID_MARKERS.received.test(line.message)
-  );
-  const tracked = lines.some((line) =>
-    ANDROID_MARKERS.tracked.test(line.message)
-  );
-  const shown = lines.some((line) => ANDROID_MARKERS.shown.test(line.message));
-  const duplicate = lines.some((line) =>
-    ANDROID_MARKERS.duplicate.test(line.message)
-  );
-  const accepted = lines.some(
-    (line) =>
-      ANDROID_MARKERS.handoffDelivered.test(line.message) ||
-      ANDROID_MARKERS.handoffAlreadyDelivered.test(line.message)
-  );
-  const queued = lines.some((line) =>
-    ANDROID_MARKERS.handoffQueued.test(line.message)
-  );
+  const now = lines.map((line) => line.message);
+  const titledId = androidIdForTitle(now, title);
+  const received = receivedBySdk(now, title);
+  const shown = shownBySdk(now, title);
+  const has = (marker: RegExp) => now.some((message) => marker.test(message));
+  const duplicate = has(ANDROID_MARKERS.duplicate);
+  // Kept as evidence of what the SDK did, never judged.
+  const tracked = has(ANDROID_MARKERS.tracked);
+  const reported =
+    has(ANDROID_MARKERS.handoffDelivered) ||
+    has(ANDROID_MARKERS.handoffAlreadyDelivered);
+  const queued = has(ANDROID_MARKERS.handoffQueued);
   const ids = androidDeliveryIds(lines);
   const freshIds = ids.filter((id) => !seenIds.has(id));
   for (const id of ids) seenIds.add(id);
+  const expectedId = sent.deliveryId ?? titledId;
 
+  evidence.push(
+    listed
+      ? 'the notification list (dumpsys) shows it'
+      : 'the notification list (dumpsys) does not show it'
+  );
   if (capture.available) {
     evidence.push(
-      `log: ${lines.length} lines, received: ${received}, tracked: ${tracked}, ` +
-        `notification shown: ${shown}${duplicate ? ', deduplicated' : ''}`
+      `log: ${lines.length} lines, SDK received it: ${received}, SDK showed it: ${shown}` +
+        (duplicate ? ', deduplicated' : '')
     );
     evidence.push(
-      accepted
-        ? 'handoff worker confirmed the delivery was reported'
-        : queued
-        ? 'queued for the handoff worker; no confirmation within the window'
-        : 'no handoff queue activity seen'
+      `SDK lines, not judged: tracking delivered ${tracked}, ` +
+        (reported
+          ? 'handoff worker reported it'
+          : queued
+          ? 'queued for the handoff worker'
+          : 'no handoff queue activity')
     );
     if (ids.length > 0) evidence.push(`delivery ids in log: ${ids.join(', ')}`);
   } else {
@@ -224,14 +226,14 @@ async function runCellBody(
   return {
     state,
     title,
-    deliveryId: sent.deliveryId,
+    deliveryId: expectedId ?? (freshIds.length === 1 ? freshIds[0] : undefined),
     ...judgeAndroid({
       available: capture.available,
       sawLines: lines.length > 0,
       stopped: Boolean(stopped),
+      posted: listed || shown,
       received,
-      tracked,
-      accepted,
+      expectedId,
       loggedIds: ids,
       freshIds,
     }),
@@ -240,21 +242,43 @@ async function runCellBody(
 }
 
 /**
+ * Did the SDK receive this push? Its line naming the push's title says so exactly; an SDK
+ * that prints only "Received new message with deliveryId" still counts, matched by
+ * freshness instead.
+ */
+function receivedBySdk(messages: string[], title: string): boolean {
+  return (
+    androidIdForTitle(messages, title) !== undefined ||
+    messages.some((message) => ANDROID_MARKERS.received.test(message))
+  );
+}
+
+function shownBySdk(messages: string[], title: string): boolean {
+  return (
+    androidIdForTitle(
+      messages.filter((message) => ANDROID_MARKERS.shown.test(message)),
+      title
+    ) !== undefined
+  );
+}
+
+/**
  * What the Android evidence adds up to.
  *
- * `tracked` is the assertion: the SDK counted the delivery. The handoff worker's
- * confirmation is stronger, but it arrives up to forty seconds later, so its absence inside
- * the window belongs in the evidence rather than in the verdict — a slow worker is not a
- * broken integration.
+ * "Received" means the push is on the device — the OS's notification list has it, or the
+ * SDK said it showed it — and the app's SDK received it. Whether the delivery report then
+ * reached Customer.io is not decided here: that is Customer.io's to say.
  */
 export function judgeAndroid(observed: {
   available: boolean;
   sawLines: boolean;
   stopped: boolean;
+  /** The OS's notification list has this push, or the SDK said it showed it. */
+  posted: boolean;
+  /** The SDK said it received this push. */
   received: boolean;
-  tracked: boolean;
-  /** The handoff worker's confirmation, which can lag the tracking line by ~40s. */
-  accepted?: boolean;
+  /** This push's delivery id, from the line that names its title. */
+  expectedId?: string;
   loggedIds: string[];
   freshIds: string[];
 }): { verdict: Verdict; cause?: string } {
@@ -262,33 +286,27 @@ export function judgeAndroid(observed: {
   if (!observed.sawLines)
     return { verdict: 'skip', cause: 'runtime.no_evidence' };
 
-  if (!observed.received) {
+  if (!observed.posted && !observed.received) {
     // The stopped state explains a silence completely, and blaming the integration for it
     // is the misdiagnosis this whole check exists to prevent.
     return observed.stopped
       ? { verdict: 'skip', cause: 'runtime.app_force_stopped' }
       : { verdict: 'fail', cause: 'runtime.push_never_arrived' };
   }
-  if (!observed.tracked) {
-    return { verdict: 'fail', cause: 'runtime.metric_not_tracked' };
+  // On the device, and the SDK never said it received it: shown by something else — FCM
+  // displays a notification message on its own while the app is in the background.
+  if (!observed.received) {
+    return { verdict: 'fail', cause: 'runtime.push_not_handled' };
   }
-  if (observed.loggedIds.length > 0 && observed.freshIds.length === 0) {
-    return { verdict: 'warn', cause: 'runtime.delivery_id_mismatch' };
+  if (observed.loggedIds.length > 0) {
+    const wrongId = observed.expectedId
+      ? !observed.loggedIds.includes(observed.expectedId)
+      : observed.freshIds.length === 0;
+    if (wrongId) {
+      return { verdict: 'warn', cause: 'runtime.delivery_id_mismatch' };
+    }
   }
   return { verdict: 'pass' };
-}
-
-async function waitFor(
-  predicate: () => boolean,
-  timeoutMs: number,
-  intervalMs = 400
-): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return true;
-    await sleep(intervalMs);
-  }
-  return predicate();
 }
 
 /** Titles of the notifications posted on the target, from `dumpsys notification --noredact`. */
