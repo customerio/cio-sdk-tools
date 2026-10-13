@@ -235,6 +235,11 @@ async function verifyPush(
   // down to "nothing was proven".
   if (options.opened) options.send = true;
 
+  // One evidence folder per sending run, settled here so every matrix writes into it. The
+  // opened matrix used to keep its log only with --evidence, so the one run that most
+  // needed reading afterwards — a tap the tool said it never saw — left nothing behind.
+  if (options.send) options.evidence = evidenceDirectoryFor(options);
+
   const level = levelFrom(options);
   const reporter = createReporter({ level });
 
