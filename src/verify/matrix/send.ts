@@ -177,4 +177,48 @@ export async function eachState(
   return cells;
 }
 
+/** Causes that mean a push was not seen to arrive within its cell's window. */
+const NOT_SEEN = ['runtime.push_never_arrived', 'runtime.no_evidence'];
+
+/**
+ * A push that missed its window but is on the target when the run ends was slow, not lost.
+ *
+ * An emulator resumed from a snapshot held three pushes for about four minutes and then
+ * delivered them together, and the run called two of them "never arrived". Each push's title
+ * is unique, so after the last cell the target is asked whether a "not seen" cell's push is
+ * there after all; if it is, the cell is re-judged as late — a warning, because delivery
+ * works and the slowness belongs to the target. Re-judged cells are printed again, so the
+ * line streamed earlier is not the last word.
+ */
+export async function markLateArrivals(
+  cells: MatrixCell[],
+  arrivedLate: (title: string) => Promise<boolean>,
+  reporter?: Reporter
+): Promise<MatrixCell[]> {
+  const out: MatrixCell[] = [];
+  for (const cell of cells) {
+    if (!cell.title || !cell.cause || !NOT_SEEN.includes(cell.cause)) {
+      out.push(cell);
+      continue;
+    }
+    if (!(await arrivedLate(cell.title))) {
+      out.push(cell);
+      continue;
+    }
+    const late: MatrixCell = {
+      ...cell,
+      verdict: 'warn',
+      cause: 'runtime.push_arrived_late',
+      summary: undefined,
+      evidence: [
+        ...cell.evidence,
+        `"${cell.title}" was on the target when the run ended, so it arrived after this cell stopped waiting (was: ${cell.cause})`,
+      ],
+    };
+    reporter?.cell(`${cell.state}, late`).done(late);
+    out.push(late);
+  }
+  return out;
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

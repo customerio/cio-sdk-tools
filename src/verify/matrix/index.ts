@@ -7,7 +7,13 @@ import {
   ranInExtension,
   startCapture,
 } from './logs';
-import { SendRequest, eachState, rejectedCell, sendVerifyPush } from './send';
+import {
+  SendRequest,
+  eachState,
+  markLateArrivals,
+  rejectedCell,
+  sendVerifyPush,
+} from './send';
 import { ALL_STATES, AppState, setAppState } from './states';
 import { stopwatch } from '../clock';
 import { CellHandle, Reporter } from '../report';
@@ -94,6 +100,7 @@ export async function runDeliveredMatrix(
     // push in one cell is not going to deliver one in the next, and re-proving it costs a
     // full arrival window every time.
     const known: RunState = {};
+    const startedAt = Date.now();
     section.cells = await eachState(
       states,
       (state) => runCell(state, options, capture, seenIds, known),
@@ -101,6 +108,20 @@ export async function runDeliveredMatrix(
       // nothing and removes a whole class of confusing near-misses.
       { pauseMs: 8_000, reporter: options.reporter }
     );
+    // Only a simulator has a notification store to read afterwards; a phone has none.
+    if (options.target.kind === 'simulator') {
+      section.cells = await markLateArrivals(
+        section.cells,
+        async (title) =>
+          (await waitForTitle({
+            target: options.target,
+            title,
+            timeoutMs: 1_500,
+            sinceMs: startedAt,
+          })) === true,
+        options.reporter
+      );
+    }
   } finally {
     await capture.stop();
     section.durationMs = sectionTimer();
@@ -355,6 +376,7 @@ async function runCellBody(
 
   return {
     state,
+    title,
     deliveryId: sent.deliveryId,
     ...judge({
       localProbe,

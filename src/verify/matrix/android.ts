@@ -7,7 +7,13 @@ import {
 } from './android_logs';
 import { setAndroidState } from './android_states';
 import { LogCapture } from './logs';
-import { eachState, rejectedCell, sendVerifyPush } from './send';
+import {
+  eachState,
+  markLateArrivals,
+  rejectedCell,
+  sendVerifyPush,
+} from './send';
+import { adb } from '../android/adb';
 import { ALL_STATES, AppState } from './states';
 import { stopwatch } from '../clock';
 import { CellHandle, Reporter } from '../report';
@@ -62,6 +68,15 @@ export async function runAndroidDeliveredMatrix(
       (state) => runCell(state, options, capture, seenIds),
       { pauseMs: 5_000, reporter: options.reporter }
     );
+    // One dumpsys lists every posted notification, so it is read once, and only if a cell
+    // needs it.
+    let posted: string[] | undefined;
+    section.cells = await markLateArrivals(
+      section.cells,
+      async (title) =>
+        (posted ??= await postedTitles(options.serial)).includes(title),
+      options.reporter
+    );
   } finally {
     await capture.stop();
     section.durationMs = sectionTimer();
@@ -110,6 +125,9 @@ async function runCellBody(
   }
 
   const mark = capture.mark();
+  const title = `cio verify · ${state} · ${new Date()
+    .toISOString()
+    .slice(11, 19)}`;
   handle?.phase('sending');
   const sent = await sendVerifyPush({
     dryRun: options.dryRun,
@@ -121,7 +139,7 @@ async function runCellBody(
     sandbox: false,
     platform: 'android',
     provider: 'fcm',
-    title: `cio verify · ${state} · ${new Date().toISOString().slice(11, 19)}`,
+    title,
     body: 'Sent by cio-sdk-tools verify push.',
   });
 
@@ -206,6 +224,7 @@ async function runCellBody(
 
   return {
     state,
+    title,
     deliveryId: sent.deliveryId,
     ...judgeAndroid({
       available: capture.available,
@@ -271,4 +290,20 @@ async function waitFor(
     await sleep(intervalMs);
   }
   return predicate();
+}
+
+/** Titles of the notifications posted on the target, from `dumpsys notification --noredact`. */
+export function postedTitlesFrom(dumpsys: string): string[] {
+  return [...dumpsys.matchAll(/android\.title=String \((.*)\)$/gm)].map(
+    (match) => match[1]
+  );
+}
+
+async function postedTitles(serial: string): Promise<string[]> {
+  const { stdout, code } = await adb(
+    serial,
+    ['shell', 'dumpsys', 'notification', '--noredact'],
+    30_000
+  );
+  return code === 0 ? postedTitlesFrom(stdout) : [];
 }

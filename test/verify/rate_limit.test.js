@@ -186,7 +186,7 @@ test('a rate-limited run is inconclusive, and the report carries the cause with 
 });
 
 test('the catalog holds the rate-limit cause', () => {
-  assert.strictEqual(Object.keys(CAUSES).length, 59);
+  assert.strictEqual(Object.keys(CAUSES).length, 60);
   assert.strictEqual(CAUSES[RATE_LIMITED_CAUSE].stage, 'delivered_matrix');
 });
 
@@ -211,4 +211,89 @@ test('a send that cannot happen names what is missing, and why the workspace is'
     whyNoSend({ target: 'x', app: 'a', workspaceId: '1', token: 't' }),
     undefined
   );
+});
+
+const { markLateArrivals } = require('../../dist/verify/matrix/send');
+const { postedTitlesFrom } = require('../../dist/verify/matrix/android');
+
+test('a push that missed its window but is on the target at the end is late, not lost', async () => {
+  // The resumed emulator of 2026-10-13: killed and background "never arrived", and both
+  // notifications were on the device minutes later, delivered together with foreground.
+  const cells = [
+    {
+      state: 'killed',
+      verdict: 'fail',
+      cause: 'runtime.push_never_arrived',
+      title: 'cio verify · killed · 23:25:36',
+      evidence: [],
+    },
+    {
+      state: 'background',
+      verdict: 'skip',
+      cause: 'runtime.no_evidence',
+      title: 'cio verify · background · 23:27:23',
+      evidence: [],
+    },
+    {
+      state: 'foreground',
+      verdict: 'pass',
+      title: 'cio verify · foreground · 23:29:07',
+      evidence: [],
+    },
+  ];
+  const posted = postedTitlesFrom(
+    [
+      '      android.title=String (cio verify · killed · 23:25:36)',
+      '      android.text=String (Sent by cio-sdk-tools verify push.)',
+      '      android.title=String (cio verify · background · 23:27:23)',
+      '      android.title=String (cio verify · foreground · 23:29:07)',
+    ].join('\n')
+  );
+  assert.strictEqual(posted.length, 3);
+
+  const asked = [];
+  const judged = await markLateArrivals(cells, async (title) => {
+    asked.push(title);
+    return posted.includes(title);
+  });
+  assert.deepStrictEqual(
+    judged.map((cell) => [cell.state, cell.verdict, cell.cause]),
+    [
+      ['killed', 'warn', 'runtime.push_arrived_late'],
+      ['background', 'warn', 'runtime.push_arrived_late'],
+      ['foreground', 'pass', undefined],
+    ]
+  );
+  assert.strictEqual(
+    asked.length,
+    2,
+    'a passing cell was checked for lateness'
+  );
+  assert.match(judged[0].evidence.at(-1), /was: runtime\.push_never_arrived/);
+
+  const ladder = new Ladder();
+  ladder.addMatrix({ metric: 'delivered', cells: judged });
+  assert.strictEqual(ladder.verdict, 'warn', 'slow delivery still works');
+  assert.match(ladder.causes()[0].remedy, /resumed from a snapshot/);
+});
+
+test('a push still missing at the end stays never-arrived', async () => {
+  const cells = [
+    {
+      state: 'killed',
+      verdict: 'fail',
+      cause: 'runtime.push_never_arrived',
+      title: 't',
+      evidence: [],
+    },
+    {
+      state: 'background',
+      verdict: 'fail',
+      cause: 'runtime.nse_did_not_run',
+      title: 'u',
+      evidence: [],
+    },
+  ];
+  const judged = await markLateArrivals(cells, async () => false);
+  assert.deepStrictEqual(judged, cells);
 });

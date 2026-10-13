@@ -74,6 +74,8 @@ export interface MatrixCell {
   durationMs?: number;
   /** One short phrase for the roll-up line. */
   summary?: string;
+  /** The pushed title, unique per send: how a push that turns up late is recognised. */
+  title?: string;
 }
 
 /**

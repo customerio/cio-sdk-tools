@@ -352,6 +352,14 @@ export const CAUSES: Record<string, CauseDefinition> = {
     remedy:
       'Read the error: it is usually the token, the credential, or a sandbox/production mismatch. Nothing about the SDK is proven either way until a send is accepted.',
   },
+  'runtime.push_arrived_late': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      'The push arrived, but only after this run had stopped waiting for it.',
+    remedy:
+      'Delivery works; it was slow. An emulator or simulator that was just started or resumed from a snapshot can take minutes to reconnect to the push service, then delivers everything at once — run again once it has been up a few minutes. On a phone, check that battery saver and Doze are off.',
+  },
   'device.notifications_disabled': {
     stage: 'delivered_matrix',
     severity: 'blocker',
