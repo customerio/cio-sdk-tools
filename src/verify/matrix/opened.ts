@@ -4,7 +4,7 @@ import { run } from '../exec';
 import { waitForNotification } from './notifications';
 import { probeLocalDelivery } from './probe';
 import { Target } from '../ios/device';
-import { Asker } from '../prompt';
+import { Asker, TapAnswer } from '../prompt';
 import { CellHandle, Reporter } from '../report';
 import { MatrixCell, MatrixSection, Verdict } from '../types';
 import {
@@ -243,6 +243,7 @@ async function runOpenedCell(
     };
   }
   let expectedId = sent.deliveryId ?? (stored ? stored.deliveryId : undefined);
+  let arrivalSeen = Boolean(stored);
   if (stored) {
     evidence.push(
       `arrived: in the notification store${
@@ -261,6 +262,7 @@ async function runOpenedCell(
         .filter((line) => ranInExtension([line], options.extensionName))
     );
     expectedId ??= ids.length === 1 ? ids[0] : undefined;
+    arrivalSeen = ran;
     evidence.push(
       ran
         ? `the extension ran on it${
@@ -284,7 +286,7 @@ async function runOpenedCell(
   // The spinner has to come down first: it repaints over the question, and a prompt
   // nobody can read is a prompt nobody answers.
   options.reporter?.pause();
-  const tapped = await options.asker.confirm(
+  const answer = await options.asker.askTap(
     [
       `Tap the "${title}" notification on ${options.target.name}.`,
       'If the banner has gone, swipe down from the top edge to find it in Notification Centre.',
@@ -293,13 +295,8 @@ async function runOpenedCell(
     { timeoutMs: options.tapTimeoutMs ?? TAP_TIMEOUT_MS }
   );
   options.reporter?.resume();
-  if (!tapped) {
-    return {
-      state,
-      verdict: 'skip',
-      cause: 'runtime.tap_not_confirmed',
-      evidence: [...evidence, 'nobody confirmed the tap'],
-    };
+  if (answer !== 'tapped') {
+    return untappedCell(state, answer, evidence, arrivalSeen);
   }
 
   // The SDK's click path runs after the OS hands over the notification, which takes a
@@ -367,6 +364,39 @@ async function runOpenedCell(
     linesAfterTap: capture.since(afterTap).length,
     lastLineAt: all.length > 0 ? all[all.length - 1].at : undefined,
   });
+}
+
+/**
+ * The cell for a tap prompt that did not end in a tap. "It never showed up" is only as
+ * strong as the arrival evidence behind it: with the OS holding the push, delivery worked
+ * and the banner is what went missing; with nothing showing arrival, the push may simply
+ * never have come.
+ */
+export function untappedCell(
+  state: AppState,
+  answer: Exclude<TapAnswer, 'tapped'>,
+  evidence: string[],
+  arrivalSeen: boolean
+): MatrixCell {
+  if (answer === 'not_shown') {
+    return {
+      state,
+      verdict: 'skip',
+      cause: arrivalSeen ? 'runtime.banner_not_seen' : 'runtime.push_not_seen',
+      evidence: [...evidence, 'the person asked to tap it saw no banner'],
+    };
+  }
+  return {
+    state,
+    verdict: 'skip',
+    cause: 'runtime.tap_not_confirmed',
+    evidence: [
+      ...evidence,
+      answer === 'skipped'
+        ? 'skipped at the prompt'
+        : 'nobody answered the tap prompt',
+    ],
+  };
 }
 
 /**

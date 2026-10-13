@@ -22,16 +22,21 @@ export interface Choice<T> {
   hint?: string;
 }
 
+/** What a person said about a tap they were asked for. */
+export type TapAnswer = 'tapped' | 'not_shown' | 'skipped' | 'no_answer';
+
 export interface Asker {
   readonly interactive: boolean;
   /**
-   * Wait for a person to do something and say they did. Returns false when nobody
-   * answered — a tap nobody confirmed must never read as a tap that happened.
+   * Ask for a tap, and what came of it. "Press Enter when done" left a person who never saw
+   * the banner two answers, both wrong: Enter (a tap that did not happen) or ctrl-c (the
+   * whole run). Silence is `no_answer`: a tap nobody confirmed must never read as a tap
+   * that happened.
    */
-  confirm(
+  askTap(
     instruction: string,
     options?: { timeoutMs?: number }
-  ): Promise<boolean>;
+  ): Promise<TapAnswer>;
   /**
    * A yes/no question whose answer defaults to no. Only an explicit yes counts: Enter,
    * silence, a closed stdin and a run that cannot ask all read as no, because this is the
@@ -85,16 +90,44 @@ export function createAsker(options: {
   return {
     interactive,
 
-    async confirm(
+    async askTap(
       instruction: string,
-      confirmOptions: { timeoutMs?: number } = {}
-    ): Promise<boolean> {
-      if (!interactive) return false;
+      tapOptions: { timeoutMs?: number } = {}
+    ): Promise<TapAnswer> {
+      if (!interactive) return 'no_answer';
+      const answers: [TapAnswer, string][] = [
+        ['tapped', 'I tapped it'],
+        ['not_shown', 'It never showed up'],
+        ['skipped', 'Skip this state'],
+      ];
       output.write(`\n${chalk.bold(instruction)}\n`);
-      output.write(chalk.dim('  press Enter when done, or ctrl-c to stop '));
-      const answer = await reader?.next(confirmOptions.timeoutMs ?? timeoutMs);
-      output.write('\n');
-      return answer !== undefined;
+      answers.forEach(([, label], index) => {
+        const marker = index === 0 ? chalk.cyan('›') : ' ';
+        output.write(
+          `${marker} ${chalk.dim(String(index + 1).padStart(2))}  ${label}\n`
+        );
+      });
+      for (let attempt = 0; attempt < ATTEMPTS; attempt += 1) {
+        output.write(`${chalk.dim(`1-${answers.length}`)} [1] `);
+        const answer = await reader?.next(tapOptions.timeoutMs ?? timeoutMs);
+        if (answer === undefined) {
+          output.write('\n');
+          return 'no_answer';
+        }
+        const trimmed = answer.trim();
+        // Enter still means "tapped", as it did before there was a choice.
+        if (trimmed === '') return 'tapped';
+        const picked = Number(trimmed);
+        if (
+          Number.isInteger(picked) &&
+          picked >= 1 &&
+          picked <= answers.length
+        ) {
+          return answers[picked - 1][0];
+        }
+        output.write(chalk.yellow(`  not one of 1-${answers.length}\n`));
+      }
+      return 'no_answer';
     },
 
     async agree(question: string, context?: string): Promise<boolean> {

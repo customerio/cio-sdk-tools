@@ -60,7 +60,7 @@ const scripted = (answer) => {
         asked.push({ question, context });
         return answer;
       },
-      confirm: async () => false,
+      askTap: async () => 'no_answer',
       select: async () => {
         throw new Error('not expected');
       },

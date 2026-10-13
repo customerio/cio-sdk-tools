@@ -5,7 +5,7 @@ import { CellHandle, Reporter } from '../report';
 import { MatrixCell, MatrixSection } from '../types';
 import { LogCapture, SDK_PUSH_LINE, explainSdkSilence } from './logs';
 import { ANDROID_MARKERS, startAndroidCapture } from './android_logs';
-import { OPENED_STATES, judgeOpened } from './opened';
+import { OPENED_STATES, judgeOpened, untappedCell } from './opened';
 import { eachState, rejectedCell, sendVerifyPush } from './send';
 import { AppState } from './states';
 import { setAndroidState } from './android_states';
@@ -15,7 +15,7 @@ import {
   pushTag,
   tapTitle,
 } from './identity';
-import { postedTitles } from './android';
+import { LIST_CATCH_UP_MS, listedWithin, postedTitles } from './android';
 
 /**
  * `opened` on Android: the same claim, a different set of sentences.
@@ -170,6 +170,9 @@ async function runCell(
     if (listed || shownBySdk() || Date.now() >= deadline) break;
     await sleep(1_500);
   }
+  if (!listed && shownBySdk()) {
+    listed = await listedWithin(options.serial, title, LIST_CATCH_UP_MS);
+  }
   if (listed) known.listed = true;
   if (!listed && !shownBySdk()) {
     return {
@@ -202,7 +205,7 @@ async function runCell(
   if (shot) evidence.push(`screen at the prompt: ${shot}`);
 
   options.reporter?.pause();
-  const tapped = await options.asker.confirm(
+  const answer = await options.asker.askTap(
     [
       `Tap the "${title}" notification on ${options.serial}.`,
       'If the banner has gone, pull down the notification shade to find it.',
@@ -211,14 +214,8 @@ async function runCell(
     { timeoutMs: options.tapTimeoutMs ?? TAP_TIMEOUT_MS }
   );
   options.reporter?.resume();
-  if (!tapped) {
-    return {
-      state,
-      verdict: 'skip',
-      cause: 'runtime.tap_not_confirmed',
-      evidence: [...evidence, 'nobody confirmed the tap'],
-    };
-  }
+  // The prompt is only reached once the list or the SDK showed the push, so arrival is known.
+  if (answer !== 'tapped') return untappedCell(state, answer, evidence, true);
 
   // Wait for the end of the sequence, as on iOS: the open, then the deep link's outcome —
   // or a refusal. A fixed wait either cut a slow cold start short or wasted time.

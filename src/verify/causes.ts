@@ -382,7 +382,7 @@ export const CAUSES: Record<string, CauseDefinition> = {
     summary:
       'Not one log line arrived after the tap, so this cell could not be judged.',
     remedy:
-      'Either the tap did not happen, or the log stream from the phone stopped. If the app opened when you tapped, it was the stream: unplug and replug the phone, then run again.',
+      'Either the tap did not reach the app, or the log stream stopped delivering. If the app opened when you tapped, it was the stream: on a phone, unplug and replug it; on a simulator, close any other log viewer attached to it. Then run again.',
   },
   'runtime.deep_link_outcome_unseen': {
     stage: 'delivered_matrix',
@@ -453,12 +453,20 @@ export const CAUSES: Record<string, CauseDefinition> = {
     remedy:
       'The tap did not arrive: the banner may have gone before it was tapped, or a different notification was tapped. Run the cell again and tap the notification whose title the run printed.',
   },
+  'runtime.banner_not_seen': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      'The push reached the device, and the person asked to tap it saw no banner.',
+    remedy:
+      'Delivery worked — the OS has the notification — so what is missing is the banner. Check that banners are on for the app and no Focus or Do Not Disturb is hiding them, and that the simulator window or the phone screen was in view. A banner shows for a few seconds and then lives only in Notification Centre, so look there too, and run the state again.',
+  },
   'runtime.tap_not_confirmed': {
     stage: 'delivered_matrix',
     severity: 'warning',
-    summary: 'Nobody confirmed the tap, so this cell proved nothing.',
+    summary: 'No tap was confirmed, so this cell proved nothing.',
     remedy:
-      'The run waited for a tap and moved on. `opened` cannot be verified without one — there is no way to synthesise a notification tap — so run it again when you can tap.',
+      'The state was skipped at the prompt, or nobody answered it. `opened` cannot be verified without a tap — there is no way to synthesise one — so run it again when you can tap.',
   },
   'runtime.deep_link_not_handled': {
     stage: 'delivered_matrix',

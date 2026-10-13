@@ -202,6 +202,9 @@ async function runCellBody(
     if (Date.now() >= deadline) break;
     await sleep(1_500);
   }
+  if (!listed && shownBySdk(messages(), title)) {
+    listed = await listedWithin(options.serial, title, LIST_CATCH_UP_MS);
+  }
 
   if (listed) known.listed = true;
   const lines = since();
@@ -337,6 +340,28 @@ export function postedTitlesFrom(dumpsys: string): string[] {
     (match) => match[1]
   );
 }
+
+/**
+ * Is this push in the OS's notification list? The SDK says "Showing notification" a moment
+ * before Android lists it, so a read just before that line misses it — which is how an S24
+ * run said the list did not show four notifications that were on screen. A few seconds of
+ * re-reading after the SDK says it showed one settles it.
+ */
+export async function listedWithin(
+  serial: string,
+  title: string,
+  ms: number
+): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    if ((await postedTitles(serial)).includes(title)) return true;
+    if (Date.now() >= deadline) return false;
+    await sleep(1_000);
+  }
+}
+
+/** How long the list gets to catch up with the SDK's "Showing notification". */
+export const LIST_CATCH_UP_MS = 5_000;
 
 export async function postedTitles(serial: string): Promise<string[]> {
   const { stdout, code } = await adb(

@@ -195,7 +195,7 @@ test('every cell closes its handle, or the result never reaches the screen', asy
     asker: {
       interactive: false,
       select: async () => undefined,
-      confirm: async () => false,
+      askTap: async () => 'no_answer',
     },
     reporter,
   });
@@ -536,5 +536,82 @@ test('a capture that stopped explains lost tap lines too', () => {
     explainUnseenTap(lost, { linesAfterTap: 0, lastLineAt: 'x' }),
     lost,
     'iOS logged the tap, so the stream was not silent'
+  );
+});
+
+// --- the tap prompt ---------------------------------------------------------
+
+const { PassThrough } = require('stream');
+const { createAsker } = require('../../dist/verify/prompt');
+const { untappedCell } = require('../../dist/verify/matrix/opened');
+
+const tapAsker = (lines, timeoutMs = 200) => {
+  const input = new PassThrough();
+  for (const line of lines) input.write(`${line}\n`);
+  const written = [];
+  const asker = createAsker({
+    interactive: true,
+    input,
+    output: { write: (chunk) => written.push(String(chunk)) },
+    timeoutMs,
+  });
+  return { asker, text: () => written.join('') };
+};
+
+test('the tap prompt offers tapped, never showed up, and skip', async () => {
+  const { asker, text } = tapAsker(['2']);
+  assert.strictEqual(await asker.askTap('Tap the "x" notification.'), 'not_shown');
+  assert.match(text(), /1\s+I tapped it/);
+  assert.match(text(), /2\s+It never showed up/);
+  assert.match(text(), /3\s+Skip this state/);
+  assert.doesNotMatch(text(), /press Enter when done/);
+
+  assert.strictEqual(await tapAsker(['3']).asker.askTap('x'), 'skipped');
+  assert.strictEqual(await tapAsker(['1']).asker.askTap('x'), 'tapped');
+  // Enter still means tapped, as it did before there was a choice.
+  assert.strictEqual(await tapAsker(['']).asker.askTap('x'), 'tapped');
+});
+
+test('silence or nonsense at the tap prompt is no answer, never a tap', async () => {
+  assert.strictEqual(await tapAsker([]).asker.askTap('x'), 'no_answer');
+  assert.strictEqual(
+    await tapAsker(['9', 'yes', 'tapped']).asker.askTap('x'),
+    'no_answer'
+  );
+  const quiet = createAsker({ interactive: false });
+  assert.strictEqual(await quiet.askTap('x'), 'no_answer');
+});
+
+test('"never showed up" is as strong as the arrival evidence behind it', () => {
+  // The simulator run of 2026-10-13: the store held the push, the screen had no banner.
+  assert.deepStrictEqual(
+    untappedCell('background', 'not_shown', ['arrived: in the notification store'], true),
+    {
+      state: 'background',
+      verdict: 'skip',
+      cause: 'runtime.banner_not_seen',
+      evidence: [
+        'arrived: in the notification store',
+        'the person asked to tap it saw no banner',
+      ],
+    }
+  );
+  // On a phone whose log never showed the push landing, it may never have come.
+  assert.strictEqual(
+    untappedCell('killed', 'not_shown', [], false).cause,
+    'runtime.push_not_seen'
+  );
+  assert.deepStrictEqual(
+    untappedCell('killed', 'skipped', [], true),
+    {
+      state: 'killed',
+      verdict: 'skip',
+      cause: 'runtime.tap_not_confirmed',
+      evidence: ['skipped at the prompt'],
+    }
+  );
+  assert.match(
+    untappedCell('killed', 'no_answer', [], true).evidence[0],
+    /nobody answered/
   );
 });
