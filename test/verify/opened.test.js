@@ -763,3 +763,24 @@ test('a capture that stopped explains a held launch that looks unhandled', () =>
   assert.strictEqual(explained.cause, 'runtime.capture_stopped');
   assert.strictEqual(explained.verdict, 'skip');
 });
+
+test('a held launch is complete only when the held stream missed nothing the other one saw', () => {
+  const { describeHeldLaunch } = require('../../dist/verify/areas/push/on_device/opened');
+  const result = {
+    launch: { pid: 1236, stoppedIn: '__mmap in dyld' },
+    stream: { connected: true, how: 'idevicesyslog -p 1236' },
+  };
+  const rescued = describeHeldLaunch(result, { both: 300, onlyFollowed: 42, onlyMain: 0 });
+  assert.strictEqual(rescued.complete, true);
+  assert.match(rescued.evidence, /42 only the held one \(the whole-log stream dropped them\)/);
+
+  const leaky = describeHeldLaunch(result, { both: 300, onlyFollowed: 0, onlyMain: 2 });
+  assert.strictEqual(leaky.complete, false);
+  assert.match(leaky.evidence, /held stream missed lines too/);
+
+  assert.strictEqual(
+    describeHeldLaunch({ ...result, stream: { connected: false, how: 'x', reason: 'no connection after 5s' } }).complete,
+    false
+  );
+  assert.strictEqual(describeHeldLaunch(undefined).complete, false);
+});

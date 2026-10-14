@@ -82,26 +82,47 @@ test('the fixture carries no device token and no personal address', () => {
   assert.ok(!/@(?!example\.com)[\w-]+\.[\w.]+/.test(text), 'an address is in the fixture');
 });
 
-test('two streams of one phone give each line once, and unparsed lines are kept as they come', () => {
+test('two streams of one phone give each line once, and a repeat within one stream twice', () => {
   const { createLineSink } = require('../../dist/verify/platform/ios/logs');
   const sink = createLineSink();
-  const line = { at: 'Oct 14 17:01:46.563720', process: 'APN UIKit', message: '[Push] Clicked CIO push message' };
+  const line = (at, message = '[Push] Clicked CIO push message') => ({ at: `Oct 14 17:01:${at}`, process: 'APN UIKit', message });
   // One stream alone is never thinned: a line logged twice is two lines.
-  sink.add(line);
-  sink.add({ ...line });
+  sink.add(line('46.563720'));
+  sink.add(line('46.563720'));
   assert.strictEqual(sink.lines.length, 2);
 
-  // A second stream on the same process repeats what the first already has.
+  // Once a pid is followed, the two streams stamp the same line some microseconds apart.
   sink.dedupe();
   const mark = sink.mark();
-  sink.add({ ...line });
-  const next = { ...line, at: 'Oct 14 17:01:46.563901' };
-  sink.add(next);
-  sink.add({ ...next });
-  sink.add({ at: '', process: '', message: '\tMain bundle   : [<null>]' });
-  sink.add({ at: '', process: '', message: '\tMain bundle   : [<null>]' });
+  sink.add(line('47.000000'), 'followed');
+  sink.add(line('47.000042'), 'main');
+  // The app logging the same sentence again is a second line, in both streams.
+  sink.add(line('47.000300'), 'followed');
+  sink.add(line('47.000342'), 'main');
+  // Further apart than any two copies have been is a different line.
+  sink.add(line('47.010000'), 'main');
+  sink.add({ at: '', process: '', message: '\tMain bundle   : [<null>]' }, 'followed');
+  sink.add({ at: '', process: '', message: '\tMain bundle   : [<null>]' }, 'main');
   assert.deepStrictEqual(
-    sink.since(mark).map((kept) => kept.at),
-    ['Oct 14 17:01:46.563901', '', '']
+    sink.since(mark).map((kept) => kept.at.slice(-9)),
+    ['47.000000', '47.000300', '47.010000', '', '']
   );
+});
+
+test('a run can tell which stream dropped a line, and leaves the last second out', () => {
+  const { createLineSink } = require('../../dist/verify/platform/ios/logs');
+  const sink = createLineSink();
+  const at = (s) => `Oct 14 17:30:${s}`;
+  const app = (s, message) => ({ at: at(s), process: 'APN UIKit', message });
+  // Before a pid is followed, nothing is compared.
+  sink.add(app('01.000000', 'before the hold'));
+  sink.dedupe();
+  sink.add(app('02.000000', 'both'), 'followed');
+  sink.add(app('02.000051', 'both'), 'main');
+  sink.add(app('02.100000', 'dropped by the whole log'), 'followed');
+  sink.add(app('02.200000', 'dropped by the held stream'), 'main');
+  sink.add({ at: at('02.300000'), process: 'NotificationServiceExtension', message: 'another process' }, 'main');
+  // Within a second of the newest line: possibly still on its way through the other stream.
+  sink.add(app('04.500000', 'only just arrived'), 'followed');
+  assert.deepStrictEqual(sink.compare('APN UIKit'), { both: 1, onlyFollowed: 1, onlyMain: 1 });
 });

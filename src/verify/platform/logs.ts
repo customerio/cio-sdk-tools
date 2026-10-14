@@ -51,6 +51,12 @@ export interface LogCapture {
    * Only a phone's capture has it.
    */
   followProcess?(pid: number): Promise<FollowedProcess>;
+  /**
+   * Which stream delivered one process's lines since the first `followProcess`. Lines only the
+   * followed stream has are what the whole-log stream dropped, which is the hold doing its
+   * job; a line only the whole-log stream has means the followed stream dropped one too.
+   */
+  compareStreams?(process: string): StreamAgreement;
 }
 
 export interface FollowedProcess {
@@ -58,6 +64,12 @@ export interface FollowedProcess {
   connected: boolean;
   how: string;
   reason?: string;
+}
+
+export interface StreamAgreement {
+  both: number;
+  onlyFollowed: number;
+  onlyMain: number;
 }
 
 /**

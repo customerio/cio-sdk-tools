@@ -3,7 +3,13 @@ import { createWriteStream, WriteStream } from 'fs';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { isCommandAvailable, run } from '../../core/exec';
-import { FollowedProcess, LogCapture, LogLine, trackCapture } from '../logs';
+import {
+  FollowedProcess,
+  LogCapture,
+  LogLine,
+  StreamAgreement,
+  trackCapture,
+} from '../logs';
 import { Target } from './device';
 
 /**
@@ -149,22 +155,40 @@ async function existingSimulatorStream(
 
 /** Bounded so an unfiltered device log cannot exhaust memory mid-run. */
 const MAX_RETAINED_LINES = 40_000;
-/** Lines remembered for telling a repeat from a new line, once two streams overlap. */
+/** Lines remembered for comparing two streams, once a second one reads the same process. */
 const MAX_REMEMBERED_LINES = 20_000;
+/**
+ * How far apart two streams stamp the same line. They do not agree to the microsecond: over
+ * 3,800 lines from an iPhone 15 the two copies were 30 to 512µs apart, so a copy within this
+ * window of the other stream's is the same line, and a repeat within one stream is two.
+ */
+const SAME_LINE_SECONDS = 0.002;
 
 /**
  * Where every stream of one capture puts its lines: a bounded window in memory, everything on
- * disk, and, once a second stream reads the same process, each line once. A phone's
- * timestamps carry microseconds, so a line that arrives twice is the same line twice.
+ * disk, and, once a second stream reads the same process, each line once.
  */
 export interface LineSink {
   lines: LogLine[];
-  add(line: LogLine): void;
-  /** From now on, a line already taken is not taken again. */
+  /** Take a line from the whole-log stream (`main`) or a stream for one pid (`followed`). */
+  add(line: LogLine, from?: 'main' | 'followed'): void;
+  /** From now on, a line the other stream already delivered is not taken again. */
   dedupe(): void;
+  /**
+   * Which stream delivered one process's lines since `dedupe()`. The last second is left out:
+   * one stream can be a moment behind the other, and a line still on its way is not missing.
+   */
+  compare(process: string): StreamAgreement;
   mark(): number;
   since(mark: number): LogLine[];
   end(): Promise<void>;
+}
+
+interface Remembered {
+  line: LogLine;
+  time: number;
+  /** The streams that delivered it: 1 the whole log, 2 a pid. */
+  from: number;
 }
 
 export function createLineSink(evidencePath?: string): LineSink {
@@ -172,23 +196,47 @@ export function createLineSink(evidencePath?: string): LineSink {
   /** How many lines the retention window has discarded, so a mark stays meaningful. */
   let dropped = 0;
   let deduping = false;
-  const remembered = new Set<string>();
+  /** Every line since `dedupe()`, in arrival order, for `compare`. */
+  let remembered: Remembered[] = [];
+  /** The last two seconds of lines by text, where another stream's copy can still match. */
+  const recent = new Map<string, Remembered[]>();
   const evidence: WriteStream | undefined = evidencePath
     ? createWriteStream(evidencePath, { flags: 'a' })
     : undefined;
+
+  /** The other stream's copy of this line, if it has already delivered one. */
+  const matchCopy = (text: string, time: number, bit: number) => {
+    const copies = (recent.get(text) ?? []).filter(
+      (copy) => copy.time >= time - 2
+    );
+    recent.set(text, copies);
+    let nearest: Remembered | undefined;
+    for (const copy of copies) {
+      const apart = Math.abs(copy.time - time);
+      if (copy.from & bit || apart > SAME_LINE_SECONDS) continue;
+      if (!nearest || apart < Math.abs(nearest.time - time)) nearest = copy;
+    }
+    return { copies, nearest };
+  };
+
   return {
     lines,
-    add(line) {
+    add(line, from = 'main') {
+      const bit = from === 'main' ? 1 : 2;
       // A line the reader could not parse has no time, so it cannot be told from another.
-      if (line.at) {
-        const key = `${line.at}\u0000${line.process}\u0000${line.message}`;
-        if (deduping && remembered.has(key)) return;
-        remembered.add(key);
-        if (remembered.size > MAX_REMEMBERED_LINES) {
-          const oldest = remembered.values();
-          for (let i = 0; i < MAX_REMEMBERED_LINES / 4; i++) {
-            remembered.delete(oldest.next().value as string);
-          }
+      if (deduping && line.at) {
+        const time = secondOfDay(line.at);
+        const text = `${line.process}\u0000${line.message}`;
+        const { copies, nearest } = matchCopy(text, time, bit);
+        if (nearest) {
+          nearest.from |= bit;
+          return;
+        }
+        const entry = { line, time, from: bit };
+        copies.push(entry);
+        remembered.push(entry);
+        if (remembered.length > MAX_REMEMBERED_LINES) {
+          remembered = remembered.slice(MAX_REMEMBERED_LINES / 4);
         }
       }
       lines.push(line);
@@ -204,6 +252,20 @@ export function createLineSink(evidencePath?: string): LineSink {
     dedupe() {
       deduping = true;
     },
+    compare(process) {
+      const entries = remembered.filter(
+        (entry) => entry.line.process === process
+      );
+      const latest = Math.max(...entries.map((entry) => entry.time));
+      const agreement = { both: 0, onlyFollowed: 0, onlyMain: 0 };
+      for (const entry of entries) {
+        if (entry.time > latest - 1) continue;
+        if (entry.from === 3) agreement.both += 1;
+        else if (entry.from === 2) agreement.onlyFollowed += 1;
+        else agreement.onlyMain += 1;
+      }
+      return agreement;
+    },
     mark: () => dropped + lines.length,
     since: (mark: number) => lines.slice(Math.max(0, mark - dropped)),
     end: () =>
@@ -211,6 +273,14 @@ export function createLineSink(evidencePath?: string): LineSink {
         evidence ? evidence.end(resolve) : resolve()
       ),
   };
+}
+
+/** `Oct 14 17:30:07.358078` as seconds since midnight; a run never spans one. */
+function secondOfDay(at: string): number {
+  const clock = /(\d+):(\d+):([\d.]+)$/.exec(at);
+  return clock
+    ? Number(clock[1]) * 3600 + Number(clock[2]) * 60 + Number(clock[3])
+    : 0;
 }
 
 async function streamProcess(
@@ -283,6 +353,7 @@ async function streamProcess(
     since: sink.since,
     evidencePath,
     stoppedReason: () => stoppedReason,
+    compareStreams: phone ? sink.compare : undefined,
     followProcess: phone
       ? (pid: number) =>
           followOnPhone(phone, pid, sink, followers, (reason) => {
@@ -300,15 +371,14 @@ async function streamProcess(
 
 /** How long a stream for one pid gets to reach the phone. */
 const FOLLOW_CONNECT_TIMEOUT_MS = 5_000;
-/** After the relay says it is connected, a moment before the process is let go. */
-const FOLLOW_SETTLE_MS = 300;
 
 /**
  * A numeric `-p` is sent to the phone as the relay's own pid filter, so the phone sends only
  * that process's lines and has nothing to drop: 0 of 75 SDK lines lost over seven launches,
  * against up to 45 lost by the name-filtered stream in the same minutes. A name is matched on
  * the Mac and changes nothing. Resolves once the relay is connected, which is the moment a
- * held process can be let go.
+ * held process can be let go: idevicesyslog prints `[connected:…]` only after the phone has
+ * answered the request that sets the filter, so nothing the process writes after it is missed.
  */
 function followOnPhone(
   udid: string,
@@ -344,10 +414,10 @@ function followOnPhone(
         if (part.startsWith('[connected:')) {
           connected = true;
           clearTimeout(timer);
-          setTimeout(() => resolve({ connected: true, how }), FOLLOW_SETTLE_MS);
+          resolve({ connected: true, how });
           continue;
         }
-        for (const line of parseSyslog(part)) sink.add(line);
+        for (const line of parseSyslog(part)) sink.add(line, 'followed');
       }
     });
     child.stderr?.on('data', (chunk: Buffer) => {

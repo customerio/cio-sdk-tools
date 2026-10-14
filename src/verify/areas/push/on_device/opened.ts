@@ -5,8 +5,12 @@ import { Asker, TapAnswer } from '../../../core/prompt';
 import { CellHandle, Reporter } from '../../../core/report/render';
 import { Verdict } from '../../../core/report/types';
 import { MatrixCell } from '../types';
-import { LogCapture } from '../../../platform/logs';
-import { armLaunchHold } from '../../../platform/ios/launch_hold';
+import {
+  FollowedProcess,
+  LogCapture,
+  StreamAgreement,
+} from '../../../platform/logs';
+import { HeldLaunch, armLaunchHold } from '../../../platform/ios/launch_hold';
 import { blameStoppedCapture } from './sdk_lines';
 import { AppState } from '../../../platform/app_state';
 
@@ -281,6 +285,7 @@ async function holdColdLaunch(
   handle?: CellHandle
 ): Promise<ColdLaunch | undefined> {
   const follow = capture.followProcess;
+  const appProcess = options.appProcess;
   if (
     state !== 'killed' ||
     options.target.kind !== 'device' ||
@@ -316,28 +321,56 @@ async function holdColdLaunch(
     finish: async () => {
       if (hold.state() === 'waiting') await hold.release();
       const result = await followed;
-      if (!result) {
-        return {
-          complete: false,
-          evidence:
-            'no launch of the app came while the tap was asked for, so none was held',
-        };
-      }
-      const at = `pid ${result.launch.pid}${
-        result.launch.stoppedIn ? `, stopped in ${result.launch.stoppedIn}` : ''
-      }`;
-      if (!result.stream.connected) {
-        return {
-          complete: false,
-          evidence: `the launch from the tap was held (${at}), but the stream for it did not open: ${result.stream.reason}`,
-        };
-      }
-      return {
-        complete: true,
-        evidence: `the launch from the tap was held (${at}) until \`${result.stream.how}\` was reading it, so every line the app wrote is here`,
-      };
+      return describeHeldLaunch(
+        result,
+        appProcess ? capture.compareStreams?.(appProcess) : undefined
+      );
     },
   };
+}
+
+/**
+ * What a hold proved. Complete only when the held stream was reading before the app ran and
+ * then missed nothing the whole-log stream saw. Every run checks the second part itself: a
+ * line only the whole-log stream has means the held stream dropped one, and then a missing
+ * SDK line is unproven again rather than a failure. Lines only the held stream has are the
+ * whole-log stream's losses, which is how a run shows the hold mattered.
+ */
+export function describeHeldLaunch(
+  result: { launch: HeldLaunch; stream: FollowedProcess } | undefined,
+  agreement?: StreamAgreement
+): { complete: boolean; evidence: string } {
+  if (!result) {
+    return {
+      complete: false,
+      evidence:
+        'no launch of the app came while the tap was asked for, so none was held',
+    };
+  }
+  const at = `pid ${result.launch.pid}${
+    result.launch.stoppedIn ? `, stopped in ${result.launch.stoppedIn}` : ''
+  }`;
+  if (!result.stream.connected) {
+    return {
+      complete: false,
+      evidence: `the launch from the tap was held (${at}), but the stream for it did not open: ${result.stream.reason}`,
+    };
+  }
+  const held = `the launch from the tap was held (${at}) until \`${result.stream.how}\` was reading it`;
+  if (!agreement) {
+    return {
+      complete: true,
+      evidence: `${held}, so every line the app wrote is here`,
+    };
+  }
+  const tally = `of the app's lines since, ${agreement.both} reached both streams, ${agreement.onlyFollowed} only the held one (the whole-log stream dropped them), ${agreement.onlyMain} only the whole-log one`;
+  if (agreement.onlyMain > 0) {
+    return {
+      complete: false,
+      evidence: `${held}, but the held stream missed lines too, so a missing line proves nothing: ${tally}`,
+    };
+  }
+  return { complete: true, evidence: `${held}; ${tally}` };
 }
 
 /**
