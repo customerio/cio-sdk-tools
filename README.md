@@ -204,6 +204,8 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
    > **Note**
    >
    > On a workspace with more than one app, test sends close together can hit Apple's limit of one token change every 20 minutes (`429 TooManyProviderTokenUpdates`). The tool stops sending and says so. Wait 20 minutes, or send one state with `--app-states killed`.
+   >
+   > A simulator can lose its connection to Apple's push servers and not get it back. Apple still accepts every send, and nothing arrives. The tool reads the simulator's push service log: when it is offline, nothing is sent (or, if it drops mid-run, the push is marked unproven, not failed), and the fix is to restart the simulator.
 
    View all options:
 

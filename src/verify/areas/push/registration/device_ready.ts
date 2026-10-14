@@ -10,6 +10,12 @@ import {
   selectTarget,
   tokenFreshness,
 } from '../../../platform/ios/device';
+import {
+  PushServiceState,
+  describePushService,
+  restartSimulator,
+  simulatorPushService,
+} from '../../../platform/ios/push_service';
 import { fail, pass, skipped, warn } from '../../../core/report/ladder';
 import { Check, Rung } from '../../../core/report/types';
 import { RUNG_TITLES } from '../types';
@@ -27,6 +33,8 @@ export interface DeviceFacts {
   /** Entitlements of the build actually installed; absent when they cannot be read. */
   entitlements?: Record<string, string>;
   freshness?: Freshness;
+  /** A simulator's connection to Apple's push servers, when its log says. */
+  pushService?: PushServiceState;
   cleanup?: () => Promise<void>;
 }
 
@@ -60,6 +68,9 @@ export async function gatherDevice(options: {
 
   if (located.appPath) {
     facts.entitlements = await installedEntitlements(located.appPath);
+  }
+  if (target.kind === 'simulator') {
+    facts.pushService = await simulatorPushService(target.udid);
   }
   if (located.preferences) {
     facts.sdk = await readSdkState(located.preferences, options.bundleId);
@@ -151,6 +162,8 @@ export function deviceReady(facts: DeviceFacts, bundleId?: string): Rung {
   const fresh = freshnessCheck(facts);
   if (fresh) rung.checks.push(fresh);
   rung.checks.push(identityCheck(facts));
+  const service = pushServiceCheck(facts);
+  if (service) rung.checks.push(service);
   rung.summary = [
     facts.target?.name,
     facts.sdk?.pushDeviceToken
@@ -188,6 +201,23 @@ function installedBuildCheck(facts: DeviceFacts): Check | undefined {
         'device.installed_build_cannot_register',
         ['the installed binary declares no aps-environment']
       );
+}
+
+/**
+ * A simulator cut off from Apple's push servers can receive nothing, whatever the app does.
+ * Said here, before anything is sent, rather than after three pushes that could not arrive.
+ * A warning, not a failure: the integration is not what is wrong.
+ */
+function pushServiceCheck(facts: DeviceFacts): Check | undefined {
+  const state = facts.pushService;
+  if (!state || !facts.target) return undefined;
+  const label = "Simulator is connected to Apple's push servers";
+  return state.connected
+    ? pass('push_service_connected', label, [describePushService(state)])
+    : warn('push_service_connected', label, 'device.apns_offline', [
+        describePushService(state),
+        `restart it: ${restartSimulator(facts.target.udid)}`,
+      ]);
 }
 
 function freshnessCheck(facts: DeviceFacts): Check | undefined {

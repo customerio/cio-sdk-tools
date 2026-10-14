@@ -21,6 +21,11 @@ import {
   sendVerifyPush,
 } from './send';
 import { setAppState } from '../../../platform/ios/app_state';
+import {
+  describePushService,
+  restartSimulator,
+  simulatorPushService,
+} from '../../../platform/ios/push_service';
 import { ALL_STATES, AppState } from '../../../platform/app_state';
 import { stopwatch } from '../../../core/clock';
 import { CellHandle, Reporter } from '../../../core/report/render';
@@ -434,6 +439,32 @@ async function runCellBody(
   }
 
   if (stored !== false) await awaitExtension(timeout);
+
+  // Nothing arrived. A simulator whose push service has lost Apple's servers can receive
+  // nothing, and a re-send would only be held with the first, so it is said as that rather
+  // than blamed on the integration. The connection can drop mid-run, so it is read again here.
+  if (stored === false && !ranNow() && options.target.kind === 'simulator') {
+    handle?.phase("nothing arrived — reading the simulator's push connection");
+    const service = await simulatorPushService(options.target.udid);
+    if (service && !service.connected) {
+      known.nothingArrives = true;
+      return {
+        cell: {
+          state,
+          title,
+          verdict: 'skip',
+          cause: 'device.apns_offline',
+          evidence: [
+            ...evidence,
+            describePushService(service),
+            `restart it: ${restartSimulator(options.target.udid)}`,
+          ],
+        },
+        noPush:
+          "the simulator has no connection to Apple's push servers, so nothing arrived to tap",
+      };
+    }
+  }
 
   // Nothing arrived and the extension never woke: on a simulator that is as often APNs
   // being slow as it is a real failure, and the tool has no business calling a delayed

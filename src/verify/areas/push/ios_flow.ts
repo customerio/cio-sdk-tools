@@ -150,21 +150,33 @@ export async function climb(
         ? await deviceLogUnavailable(device.target)
         : undefined;
     if (unreadable) skipUnreadable(ladder, options, unreadable);
+    // Nor is a simulator cut off from Apple's push servers: whatever is sent is held by Apple,
+    // and only the last push ever arrives, once the simulator reconnects.
+    const offline =
+      options.send && !unreadable && device.pushService?.connected === false;
+    if (offline) {
+      skipSending(
+        ladder,
+        options,
+        "no push was sent: the simulator has no connection to Apple's push servers, so none could arrive — restart it and run again"
+      );
+    }
 
-    const consent = unreadable
-      ? undefined
-      : await askToSend(ladder, options, reporter, asker, {
-          target:
-            device.target &&
-            `${describeTarget(device.target)} · ${device.target.udid}`,
-          app: wiring.bundleId,
-          workspace: workspace.resolution?.workspace,
-          login: cio.profile,
-          token: device.sdk?.pushDeviceToken,
-          delivered: selection.states,
-          retries: options.resend !== false,
-        });
-    if (!unreadable && consent?.granted !== false) {
+    const consent =
+      unreadable || offline
+        ? undefined
+        : await askToSend(ladder, options, reporter, asker, {
+            target:
+              device.target &&
+              `${describeTarget(device.target)} · ${device.target.udid}`,
+            app: wiring.bundleId,
+            workspace: workspace.resolution?.workspace,
+            login: cio.profile,
+            token: device.sdk?.pushDeviceToken,
+            delivered: selection.states,
+            retries: options.resend !== false,
+          });
+    if (!unreadable && !offline && consent?.granted !== false) {
       await matrix(ladder, options, reporter, asker, selection.states, {
         target: device.target,
         pushDisabled: profile.checks.some(

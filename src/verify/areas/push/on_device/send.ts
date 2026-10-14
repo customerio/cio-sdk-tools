@@ -225,7 +225,11 @@ export async function eachState(
 }
 
 /** Causes that mean a push was not seen to arrive within its cell's window. */
-const NOT_SEEN = ['runtime.push_never_arrived', 'runtime.no_evidence'];
+const NOT_SEEN = [
+  'runtime.push_never_arrived',
+  'runtime.no_evidence',
+  'device.apns_offline',
+];
 
 /**
  * A push that missed its window but is on the target when the run ends was slow, not lost.

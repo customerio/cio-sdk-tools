@@ -179,6 +179,14 @@ export const CAUSES: Record<string, PushCause> = {
     remedy:
       'Check the emulator or device has a working connection before reading anything into a silent send.',
   },
+  'device.apns_offline': {
+    stage: 'device_ready',
+    severity: 'warning',
+    summary:
+      "The simulator has no connection to Apple's push servers, so no push can reach it.",
+    remedy:
+      'Restart the simulator: the command is in the evidence, or use Device > Restart in Simulator. Its push service then reconnects, which its log shows as "Connected on 1 interfaces". Apple accepts a send whether or not the device is connected and keeps only the latest push for an app until it reconnects, so nothing about the send gives this away.',
+  },
   'device.dns_unresolved': {
     stage: 'device_ready',
     severity: 'blocker',
