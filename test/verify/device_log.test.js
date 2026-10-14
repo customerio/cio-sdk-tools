@@ -126,3 +126,10 @@ test('a run can tell which stream dropped a line, and leaves the last second out
   sink.add(app('04.500000', 'only just arrived'), 'followed');
   assert.deepStrictEqual(sink.compare('APN UIKit'), { both: 1, onlyFollowed: 1, onlyMain: 1 });
 });
+
+test("idevicesyslog's connect and disconnect banners are not log lines", () => {
+  // As a line, the banner was all a silent stream delivered, and it read as the app talking.
+  assert.deepStrictEqual(parseSyslog('[connected:00008120-0014694A3E32601E]'), []);
+  assert.deepStrictEqual(parseSyslog('[disconnected:00008120-0014694A3E32601E]'), []);
+  assert.strictEqual(parseSyslog('\tMain bundle   : [<null>]').length, 1);
+});

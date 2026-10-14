@@ -782,6 +782,10 @@ test('a caught launch is complete only from its first line, and when its stream 
   assert.strictEqual(missed.complete, false);
   assert.match(missed.evidence, /outside the pids watched for it \(1240–1247\)/);
   assert.strictEqual(describeCaughtLaunch({}).complete, false);
+  // A stream that brought nothing of a process that launched was not reading it.
+  const silent = describeCaughtLaunch({ caught }, { both: 0, onlyFollowed: 0, onlyMain: 0 });
+  assert.strictEqual(silent.complete, false);
+  assert.match(silent.evidence, /not one of its lines arrived/);
 });
 
 test("Customer.io's record of the open settles what the phone's log could not", () => {

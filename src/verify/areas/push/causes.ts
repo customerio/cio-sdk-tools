@@ -541,7 +541,7 @@ export const CAUSES: Record<string, PushCause> = {
     summary:
       'The log was attached and the app said nothing at all, so this cell proves nothing.',
     remedy:
-      'Suspect the capture, not the push: check the log tool is streaming (a filter that matches no process name returns silence), and that the app is the build you think it is.',
+      'Suspect the capture, not the push: check the log tool is streaming (a filter that matches no process name returns silence), and that the app is the build you think it is. On a phone, make sure nothing else is reading its log (`pgrep -fl idevicesyslog` on the Mac): streams left running load the phone until its log stops delivering to anyone, and unplugging and replugging it resets the log relay.',
   },
   'runtime.app_force_stopped': {
     stage: 'delivered_matrix',

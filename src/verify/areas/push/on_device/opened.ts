@@ -428,6 +428,13 @@ export function describeCaughtLaunch(
     };
   }
   if (!agreement) return { complete: true, evidence: caught };
+  // A stream that brought not one line of a process that launched was not reading it.
+  if (agreement.both + agreement.onlyFollowed === 0) {
+    return {
+      complete: false,
+      evidence: `the app launched as pid ${pid}, and not one of its lines arrived through \`${how}\`, so the stream was not delivering`,
+    };
+  }
   const tally = `of the app's lines since, ${agreement.both} reached both streams, ${agreement.onlyFollowed} only the pid's (the whole-log stream dropped them), ${agreement.onlyMain} only the whole-log one`;
   if (agreement.onlyMain > 0) {
     return {

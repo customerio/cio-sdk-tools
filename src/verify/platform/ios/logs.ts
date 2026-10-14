@@ -501,6 +501,10 @@ export function parseNdjson(raw: string): LogLine[] {
 export function parseSyslog(raw: string): LogLine[] {
   const line = raw.trimEnd();
   if (!line) return [];
+  // idevicesyslog's own word that it reached the phone or lost it. Kept as a line, it was
+  // the only line of a run whose stream delivered nothing, and it read as the app talking:
+  // the run then blamed the SDK's log level for a log that never arrived.
+  if (/^\[(?:connected|disconnected):/.test(line)) return [];
   const match = line.match(
     /^(\w{3}\s+\d+\s[\d:.]+)\s+([^[(]+?)(?:\([^)]*\))?\[(\d+)\]\s*(?:<[^>]*>)?:\s?(.*)$/
   );
