@@ -7,6 +7,7 @@ export const PUSH_VOICE: Voice = {
   command: 'verify push',
   firstSection: 'delivered',
   sectionName: (section: Section) => (section as MatrixSection).metric,
+  matrixTitle: () => 'Pushes',
 
   cellSummary(cell: Cell, section: string): string {
     // What a cell proves happened on the device: the push was received, or the tap opened
@@ -14,7 +15,8 @@ export const PUSH_VOICE: Voice = {
     const done = section === 'opened' ? 'opened' : 'received';
     switch (cell.verdict) {
       case 'pass':
-        return done;
+        // An opened cell's time includes the person finding and tapping the push.
+        return section === 'opened' ? 'opened · tapped' : done;
       case 'fail':
         return cell.cause ?? `not ${done}`;
       case 'warn':
@@ -49,9 +51,9 @@ export const PUSH_VOICE: Voice = {
     const opened = ran.some((section) => section.metric === 'opened');
     return [
       opened
-        ? 'push works on the device: it arrived and the tap reached the SDK.'
-        : 'push works on the device: it arrived and the app handled it.',
-      "whether Customer.io recorded it isn't checked yet.",
+        ? 'push works on the device: each push arrived and each tap reached the SDK.'
+        : 'push works on the device: each push arrived and the app handled it.',
+      "Customer.io's record of them isn't checked yet.",
     ];
   },
 };

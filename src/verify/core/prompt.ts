@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { emitKeypressEvents } from 'readline';
+import { visibleLength } from './report/render';
 
 /**
  * The four questions this command has no business answering on its own.
@@ -115,7 +116,8 @@ export function createAsker(options: {
   const pick = async (
     rows: { label: string; hint?: string }[],
     initial: number,
-    wait: number
+    wait: number,
+    collapse?: Collapse
   ): Promise<number | undefined> => {
     // The line reader stays attached to stdin, and would pause it after the first keypress
     // and keep the keystrokes as a line for the next question. It sits this one out.
@@ -126,12 +128,19 @@ export function createAsker(options: {
         output,
         rows,
         initial,
-        wait
+        wait,
+        collapse
       );
     } finally {
       reader?.hold(false);
     }
   };
+  const columns = () => (output as { columns?: number }).columns;
+  /** An answered question, as the one line it collapses to. */
+  const answered = (question: string, answer: string, done = true) =>
+    `${done ? chalk.green('✔') : chalk.dim('–')} ${question} ${chalk.dim(
+      '·'
+    )} ${answer}\n`;
 
   let asked = 0;
 
@@ -151,13 +160,24 @@ export function createAsker(options: {
       const hint = askOptions.hint
         ? ` ${chalk.dim(`(${askOptions.hint})`)}`
         : '';
-      output.write(`\n${chalk.bold(question)}${hint}\n${chalk.dim('›')} `);
+      // On a terminal the answered question collapses to one line, so a run that asked four
+      // things reads as four lines rather than twelve.
+      const shown = `${chalk.bold(question)}${hint}`;
+      output.write(`${arrows ? '' : '\n'}${shown}\n${chalk.dim('›')} `);
       const answer = await reader?.next(timeoutMs);
       if (answer === undefined) {
         output.write('\n');
         return undefined;
       }
-      return answer.trim() || undefined;
+      const trimmed = answer.trim() || undefined;
+      if (arrows) {
+        const height =
+          rowsOf(shown, columns()) + rowsOf(`› ${answer}`, columns());
+        output.write(
+          `${ESC}${height}A${ESC}0J${answered(question, trimmed ?? 'none')}`
+        );
+      }
+      return trimmed;
     },
 
     async askTap(
@@ -172,10 +192,13 @@ export function createAsker(options: {
       ];
       output.write(`\n${chalk.bold(instruction)}\n`);
       if (arrows) {
+        // Once answered, the instructions go: the result row that follows says what came of
+        // the tap, and instructions left between result rows read as results themselves.
         const index = await pick(
           answers.map(([, label]) => ({ label })),
           0,
-          tapOptions.timeoutMs ?? timeoutMs
+          tapOptions.timeoutMs ?? timeoutMs,
+          { above: 1 + rowsOf(instruction, columns()) }
         );
         return index === undefined ? 'no_answer' : answers[index][0];
       }
@@ -217,13 +240,20 @@ export function createAsker(options: {
       asked += 1;
       if (context) output.write(`\n${context}`);
       if (arrows) {
-        output.write(`${chalk.bold(question)}\n`);
+        output.write(`\n${chalk.bold(question)}\n`);
         // The cursor starts on no: Enter alone must never be the yes.
         const index = await pick(
           [{ label: answers.yes }, { label: answers.no }],
           1,
-          timeoutMs
+          timeoutMs,
+          {
+            above: rowsOf(question, columns()),
+            line: (label, at) => answered(question, label, at === 0),
+          }
         );
+        // A yes goes on to the results, which want a blank line above them; a no ends the
+        // run, whose summary brings its own.
+        if (index === 0) output.write('\n');
         return index === 0;
       }
       for (let attempt = 0; attempt < ATTEMPTS; attempt += 1) {
@@ -264,9 +294,12 @@ export function createAsker(options: {
 
       const fallback = selectOptions.defaultIndex ?? 0;
       asked += 1;
-      output.write(`\n${chalk.bold(question)}\n`);
+      output.write(`${arrows ? '' : '\n'}${chalk.bold(question)}\n`);
       if (arrows) {
-        const index = await pick(choices, fallback, timeoutMs);
+        const index = await pick(choices, fallback, timeoutMs, {
+          above: rowsOf(question, columns()),
+          line: (label) => answered(question, label),
+        });
         if (index === undefined) {
           throw new MissingInput(
             `no answer in ${Math.round(timeoutMs / 1000)}s — pass ${
@@ -424,12 +457,20 @@ const ESC = '\u001b[';
  * the run as it does anywhere else. Once picked, the list collapses to the one line chosen.
  * `undefined` means no answer in time.
  */
+export interface Collapse {
+  /** Rows written above the list, the question or instructions, to take down with it. */
+  above: number;
+  /** The line the answer leaves; none, and nothing is left. */
+  line?: (label: string, index: number) => string;
+}
+
 export function pickWithArrows(
   input: RawInput,
   output: { write(chunk: string): unknown },
   rows: { label: string; hint?: string }[],
   initial: number,
-  timeoutMs: number
+  timeoutMs: number,
+  collapse?: Collapse
 ): Promise<number | undefined> {
   let index = Math.min(Math.max(initial, 0), rows.length - 1);
   const height = rows.length + 1;
@@ -461,12 +502,14 @@ export function pickWithArrows(
       input.setRawMode?.(wasRaw);
       input.pause();
       // Collapse the list to the answer, so the scrollback reads like a log.
-      output.write(`${ESC}${height}A${ESC}0J`);
-      output.write(
-        picked === undefined
-          ? `  ${chalk.dim(interrupted ? 'stopped' : 'no answer')}\n`
-          : `  ${chalk.green('✔')} ${rows[picked].label}\n`
-      );
+      output.write(`${ESC}${height + (collapse?.above ?? 0)}A${ESC}0J`);
+      if (picked === undefined) {
+        output.write(`  ${chalk.dim(interrupted ? 'stopped' : 'no answer')}\n`);
+      } else if (!collapse) {
+        output.write(`  ${chalk.green('✔')} ${rows[picked].label}\n`);
+      } else if (collapse.line) {
+        output.write(collapse.line(rows[picked].label, picked));
+      }
       output.write(`${ESC}?25h`);
       resolve(picked);
       // Raw mode swallows ctrl-c as a keypress; hand it back as the signal it would have
@@ -499,6 +542,18 @@ export function pickWithArrows(
     const timer = setTimeout(() => finish(undefined), timeoutMs);
     input.on('keypress', onKey);
   });
+}
+
+/** How many terminal rows text takes once its long lines wrap. */
+export function rowsOf(text: string, columns?: number): number {
+  const width = columns && columns > 0 ? columns : 80;
+  return text
+    .split('\n')
+    .reduce(
+      (rows, part) =>
+        rows + Math.max(1, Math.ceil(visibleLength(part) / width)),
+      0
+    );
 }
 
 /** The message a non-interactive run gets: what was needed, and what to pass. */

@@ -653,7 +653,11 @@ test('on a terminal, the arrow keys move and Enter picks', async () => {
   press(input, '\u001b[B', '\r');
   assert.strictEqual(await asker.askTap('Tap the "x" notification.'), 'not_shown');
   assert.match(text(), /↑\/↓ to move/);
-  assert.match(text(), /✔.*It never showed up/);
+  // Answered, the list and the instruction above it are taken down together: the result
+  // row that follows says what came of the tap. Four rows of list, one of instruction, one
+  // blank line before it.
+  assert.match(text(), /\u001b\[6A\u001b\[0J\u001b\[\?25h$/);
+  assert.doesNotMatch(text(), /✔.*It never showed up/);
   assert.strictEqual(input.isRaw, false, 'raw mode was left on');
 });
 

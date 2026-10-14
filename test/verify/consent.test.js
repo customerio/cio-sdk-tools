@@ -305,7 +305,7 @@ test('declining sends nothing and skips every section that would have sent', asy
     summary.text(),
     /the send was not confirmed, so nothing was sent/
   );
-  assert.match(summary.text(), /nothing was proven/);
+  assert.match(summary.text(), /Nothing was proven/);
 });
 
 test('taps are on the pushes sent while the app was killed or in the background', () => {

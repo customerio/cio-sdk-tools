@@ -151,7 +151,7 @@ test('quiet prints the verdict and what to do about it, and nothing else', () =>
   );
   assert.match(text, /The profile has devices, but not this one\./);
   assert.match(text, /Re-identify after the token was issued\./);
-  assert.match(text, /stopped at rung 1 — Profile linked\./);
+  assert.match(text, /Stopped at rung 1 — Profile linked\./);
 });
 
 test('json mode writes nothing — stdout belongs to the report', () => {
@@ -164,10 +164,10 @@ test('json mode writes nothing — stdout belongs to the report', () => {
   assert.strictEqual(out.text(), '');
 });
 
-test('the closing line carries the total, the provenance and the evidence path', () => {
-  for (const [provenance, expected] of [
-    ['read', /5\.3s · read/],
-    ['observed', /5\.3s · observed/],
+test('the closing facts carry the time, the evidence path and, when watched, that', () => {
+  for (const [provenance, watched] of [
+    ['read', false],
+    ['observed', true],
   ]) {
     const out = sink();
     reporterOn('human', out).summary(
@@ -183,13 +183,14 @@ test('the closing line carries the total, the provenance and the evidence path',
       })
     );
     const text = out.text();
-    assert.match(text, expected);
-    assert.match(text, /evidence \/tmp\/ev\.log/);
+    assert.match(text, /took\s+5\.3s/);
+    assert.match(text, /evidence\s+\/tmp\/ev\.log/);
+    assert.strictEqual(/watched\s+the install/.test(text), watched);
     assert.match(
       text,
-      /push works on the device: it arrived and the app handled it\./
+      /✔ Push works on the device: each push arrived and the app handled it\./
     );
-    assert.match(text, /whether Customer\.io recorded it isn't checked yet\./);
+    assert.match(text, /Customer\.io's record of them isn't checked yet\./);
   }
 });
 
@@ -205,7 +206,7 @@ test('the closing line names the tap when opened ran too, and claims nothing was
   );
   assert.match(
     out.text(),
-    /push works on the device: it arrived and the tap reached the SDK\./
+    /Push works on the device: each push arrived and each tap reached the SDK\./
   );
   // Only what the device showed: no claim that Customer.io accepted or counted anything.
   assert.doesNotMatch(out.text(), /counted|accepted|reported/);
@@ -215,14 +216,14 @@ test('the closing line names the tap when opened ran too, and claims nothing was
 test('a registration run that passed says what it proved, and that nothing was sent', () => {
   const out = sink();
   reporterOn('human', out).summary(report());
-  assert.match(out.text(), /the device is registered for push\./);
-  assert.match(out.text(), /nothing was sent, so delivery is not proven: --depth on-device sends real pushes\./);
+  assert.match(out.text(), /✔ The device is registered for push\./);
+  assert.match(out.text(), /Nothing was sent, so delivery is not proven: --depth on-device sends real pushes\./);
 });
 
 test('a failed run says a push was tried, not that a metric went uncounted', () => {
   const out = sink();
   reporterOn('human', out).summary(report({ verdict: 'fail' }));
-  assert.match(out.text(), /a real push was tried and did not pass\./);
+  assert.match(out.text(), /✖ A real push was tried and did not pass\./);
   assert.doesNotMatch(out.text(), /counted/);
 });
 
@@ -255,7 +256,7 @@ test('a cell says "received" or "opened" without its evidence, and expands when 
 
   const text = out.text();
   assert.match(text, /killed\s+received\s+12\.4s/);
-  assert.match(text, /killed\s+opened\s+20\.1s/);
+  assert.match(text, /killed\s+opened · tapped\s+20\.1s/);
   assert.ok(!text.includes('79 lines'), 'a passing cell printed its evidence');
   assert.match(text, /background\s+runtime\.nse_did_not_run\s+45\.0s/);
   assert.match(text, /log: 120 lines/);
@@ -315,8 +316,26 @@ test('a matrix that never ran still says why', () => {
   const text = out.text();
   // Streaming output only prints sections that ran, so a skipped one has to be reported
   // in the summary or its reason disappears.
-  assert.match(text, /delivered matrix\n\s+no push was sent — pass --send/);
-  assert.match(text, /opened matrix\n\s+opened needs a real tap/);
+  assert.match(text, /- delivered: no push was sent — pass --send/);
+  assert.match(text, /- opened: opened needs a real tap/);
+});
+
+test('sections skipped for the same reason share one line', () => {
+  const out = sink();
+  const declined = 'the send was not confirmed, so nothing was sent';
+  reporterOn('human', out).summary(
+    report({
+      verdict: 'skip',
+      exitCode: 21,
+      matrices: [
+        { metric: 'delivered', cells: [], skipped: declined },
+        { metric: 'opened', cells: [], skipped: declined },
+      ],
+    })
+  );
+  const text = out.text();
+  assert.match(text, /- delivered, opened: the send was not confirmed/);
+  assert.strictEqual(text.split(declined).length, 2, 'the reason was said twice');
 });
 
 test('a prompt gets the terminal to itself', () => {

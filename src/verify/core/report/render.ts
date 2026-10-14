@@ -31,6 +31,8 @@ export interface Voice {
   firstSection: string;
   /** How a section is named in the summary when it never ran. */
   sectionName(section: Section): string;
+  /** The heading over a section's cells, e.g. `Pushes`. */
+  matrixTitle?(section: string): string;
   /** A cell's roll-up phrase, when the cell did not write its own. */
   cellSummary(cell: Cell, section: string): string;
   /** A cell named in a sentence about the whole run: "killed opened". */
@@ -257,11 +259,8 @@ export function createReporter(options: {
 
     matrix(how?: string, section = voice.firstSection) {
       currentSection = section;
-      line(
-        `${chalk.bold(`  ${section} matrix`)}${
-          how ? chalk.dim(`   (${how})`) : ''
-        }`
-      );
+      const title = voice.matrixTitle?.(section) ?? `${section} matrix`;
+      line(`${chalk.bold(title)}${how ? chalk.dim(`   (${how})`) : ''}`);
     },
 
     cell(state: string, section?: string): CellHandle {
@@ -273,7 +272,7 @@ export function createReporter(options: {
           cell.durationMs = cell.durationMs ?? ms;
           line(
             row(
-              `   ${glyph(cell.verdict)}`,
+              `  ${glyph(cell.verdict)}`,
               state,
               cell.summary ??
                 voice.cellSummary(cell, section ?? currentSection),
@@ -339,52 +338,70 @@ export function createReporter(options: {
         (section): section is Extract<typeof section, { kind: 'cells' }> =>
           section.kind === 'cells'
       );
+      // Sections skipped for the same reason share one line: a declined go-ahead skips every
+      // section, and saying so once per section read as several problems.
+      const skippedFor = new Map<string, string[]>();
       for (const section of cells) {
         if (!section.skipped) continue;
-        body.push(`  ${chalk.bold(`${voice.sectionName(section)} matrix`)}`);
-        body.push(`     ${chalk.dim(section.skipped)}`);
-        body.push('');
+        const names = skippedFor.get(section.skipped) ?? [];
+        names.push(voice.sectionName(section));
+        skippedFor.set(section.skipped, names);
       }
-
-      for (const note of report.advice ?? []) {
-        body.push(`  ${chalk.dim('fyi')}  ${chalk.dim(note)}`);
-        body.push('');
+      for (const [reason, names] of skippedFor) {
+        body.push(
+          `  ${chalk.dim('-')} ${names.join(', ')}: ${chalk.dim(reason)}`
+        );
       }
+      if (skippedFor.size > 0) body.push('');
 
+      // The verdict comes first and stands alone: the one line a reader looks for.
       const failing = rungs.find((rung) =>
         rung.checks.some((check) => check.verdict === 'fail')
       );
       if (failing) {
         body.push(
           chalk.red(
-            `  stopped at rung ${rungs.indexOf(failing) + 1} — ${
-              failing.title
-            }.`
+            `${glyph('fail')} ${sentence(
+              `stopped at rung ${rungs.indexOf(failing) + 1} — ${
+                failing.title
+              }.`
+            )}`
           )
         );
       } else if (report.verdict === 'fail') {
-        body.push(chalk.red(`  ${voice.failed}`));
+        body.push(chalk.red(`${glyph('fail')} ${sentence(voice.failed)}`));
       } else if (report.verdict === 'skip') {
-        body.push(chalk.yellow(`  ${unprovenLine(cells, voice)}`));
+        body.push(chalk.yellow(`- ${sentence(unprovenLine(cells, voice))}`));
       } else {
         // Only the area knows what its run proved, and it says that and nothing more.
         const [claim, ...caveats] = voice.conclusion(report);
-        body.push(chalk.green(`  ${claim}`));
-        for (const caveat of caveats) body.push(chalk.dim(`  ${caveat}`));
+        body.push(`${glyph('pass')} ${chalk.green(sentence(claim))}`);
+        for (const caveat of caveats) {
+          body.push(chalk.dim(`  ${sentence(caveat)}`));
+        }
       }
 
+      // Then the facts about the run, each under its own label.
       const totalMs =
         new Date(report.finishedAt).getTime() -
         new Date(report.startedAt).getTime();
-      const facts = [formatMs(totalMs), provenanceOf(report)];
       const evidencePath = cells.find((section) => section.logs?.evidencePath)
         ?.logs?.evidencePath;
-      if (evidencePath) facts.push(`evidence ${evidencePath}`);
-      body.push(chalk.dim(`  ${facts.join(' · ')}`));
-      if (level === 'human' && report.causes.length === 0) {
-        body.push(chalk.dim('  detail  re-run with --verbose'));
+      const facts: [string, string][] = [
+        ...(report.advice ?? []).map((note): [string, string] => [
+          'note',
+          note,
+        ]),
+      ];
+      if (report.provenance === 'observed') {
+        facts.push(['watched', 'the install, push token and login happen']);
       }
-      body.push('');
+      facts.push(['took', formatMs(totalMs)]);
+      if (evidencePath) facts.push(['evidence', evidencePath]);
+      if (level === 'human' && report.causes.length === 0) {
+        facts.push(['detail', 're-run with --verbose']);
+      }
+      body.push('', ...factLines(facts), '');
       write(out, body.join('\n'));
     },
   };
@@ -410,7 +427,7 @@ export function unprovenLine(
   const proven = cells.filter(
     ({ cell }) => cell.verdict === 'pass' || cell.verdict === 'warn'
   );
-  if (proven.length === 0) return 'nothing was proven. skipped is not passed.';
+  if (proven.length === 0) return 'nothing was proven. Skipped is not passed.';
   const parts = [`${proven.length} of ${cells.length} proven`];
   const unproven = cells.filter(({ cell }) => cell.verdict === 'skip');
   if (unproven.length > 0) {
@@ -429,7 +446,7 @@ export function unprovenLine(
     .filter((section) => section.skipped)
     .map((section) => voice.sectionName(section));
   if (notRun.length > 0) parts.push(`${notRun.join(', ')} did not run`);
-  return `${parts.join('; ')}. skipped is not passed.`;
+  return `${parts.join('; ')}. Skipped is not passed.`;
 }
 
 function write(stream: { write(chunk: string): unknown }, text: string): void {
@@ -443,9 +460,9 @@ export function factLines(facts: [string, string][]): string[] {
   );
 }
 
-/** `read` says the facts came out of storage; `observed` says we watched them happen. */
-function provenanceOf(report: Report): string {
-  return report.provenance === 'observed' ? 'observed' : 'read';
+/** A closing line reads as a sentence: it starts with a capital. */
+function sentence(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function row(

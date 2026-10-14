@@ -1,3 +1,4 @@
+import chalk from 'chalk';
 import { Command } from 'commander';
 import { promises as fs } from 'fs';
 import * as path from 'path';
@@ -172,6 +173,8 @@ function toolError(
 
 function printCommand(title: string, command: string): void {
   process.stdout.write(
-    [`  ${title}`, ...wrapCommand(command), '', ''].join('\n')
+    ['', chalk.bold(title), ...wrapCommand(command, 78, '  '), '', ''].join(
+      '\n'
+    )
   );
 }

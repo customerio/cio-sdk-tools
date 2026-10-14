@@ -320,7 +320,8 @@ test('on a terminal the go-ahead is two rows, and Enter alone is no', async () =
   assert.strictEqual(await asker.agree('Send 3 real pushes?', 'context\n', answers), false);
   assert.match(terminal.text(), /Send 3 real pushes\?/);
   assert.match(terminal.text(), /Yes, send 3 pushes/);
-  assert.match(terminal.text(), /✔.*No, send nothing/);
+  // Answered, the question and its answer collapse to one line, marked as not sent.
+  assert.match(terminal.text(), /– Send 3 real pushes\? · No, send nothing/);
   assert.doesNotMatch(terminal.text(), /\(y\/N\)/, 'the typed form showed on a terminal');
   assert.strictEqual(terminal.input.isRaw, false, 'raw mode was left on');
 });
@@ -330,7 +331,7 @@ test('the arrow up to yes and Enter is the only way to send', async () => {
   const asker = createAsker({ interactive: true, input: terminal.input, output: terminal.output, timeoutMs: 2_000 });
   press(terminal.input, '\u001b[A', '\r');
   assert.strictEqual(await asker.agree('Send 3 real pushes?', undefined, answers), true);
-  assert.match(terminal.text(), /✔.*Yes, send 3 pushes/);
+  assert.match(terminal.text(), /✔ Send 3 real pushes\? · Yes, send 3 pushes/);
 
   const silent = fakeTerminal();
   const waiting = createAsker({ interactive: true, input: silent.input, output: silent.output, timeoutMs: 50 });
@@ -360,18 +361,18 @@ const iphone = [
 test('a run with one cell it could not read says how much was proven and names that cell', () => {
   assert.strictEqual(
     unprovenLine(iphone, PUSH_VOICE),
-    '4 of 5 proven; not proven: killed opened (runtime.tap_lines_lost). skipped is not passed.'
+    '4 of 5 proven; not proven: killed opened (runtime.tap_lines_lost). Skipped is not passed.'
   );
   assert.strictEqual(
     unprovenLine(
       [iphone[0], { kind: 'cells', metric: 'opened', cells: [], skipped: 'a dry run sends nothing' }],
       PUSH_VOICE
     ),
-    '3 of 3 proven; opened did not run. skipped is not passed.'
+    '3 of 3 proven; opened did not run. Skipped is not passed.'
   );
   assert.strictEqual(
     unprovenLine([{ kind: 'cells', metric: 'delivered', cells: [], skipped: 'nothing confirmed' }], PUSH_VOICE),
-    'nothing was proven. skipped is not passed.'
+    'nothing was proven. Skipped is not passed.'
   );
 });
 
