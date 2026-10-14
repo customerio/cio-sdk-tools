@@ -59,11 +59,12 @@ export async function climb(
   wiringRung.done(wiring.rung);
   ladder.adopt(wiring.rung);
   if (ladder.halted) {
-    skipRest(ladder, reporter, [
-      'workspace_ready',
-      'device_ready',
-      'profile_linked',
-    ]);
+    skipRest(
+      ladder,
+      reporter,
+      ['workspace_ready', 'device_ready', 'profile_linked'],
+      options.send
+    );
     return { projectName: wiring.model.projectName };
   }
 
@@ -113,7 +114,12 @@ export async function climb(
     ladder.adopt(ready, workspaceTimer());
     workspaceRung.done(ready);
     if (ladder.halted) {
-      skipRest(ladder, reporter, ['device_ready', 'profile_linked']);
+      skipRest(
+        ladder,
+        reporter,
+        ['device_ready', 'profile_linked'],
+        options.send
+      );
       return { projectName: wiring.model.projectName };
     }
 
@@ -121,7 +127,7 @@ export async function climb(
     ladder.adopt(deviceRungResult, deviceMs);
     deviceRung.done(deviceRungResult);
     if (ladder.halted) {
-      skipRest(ladder, reporter, ['profile_linked']);
+      skipRest(ladder, reporter, ['profile_linked'], options.send);
       return { projectName: wiring.model.projectName };
     }
 
@@ -285,9 +291,9 @@ async function observeIos(input: {
 }
 
 /**
- * Sending is opt-in, and its absence is reported rather than omitted: a preflight that
- * passes proves the integration *could* report a delivery, which is not the same claim as
- * one that did. Without --send the verdict stays inconclusive on purpose.
+ * Pushes are sent only at a level that sends them. A registration run proves the
+ * integration could report a delivery and its closing line says exactly that, which is a
+ * different claim from one that did.
  */
 async function matrix(
   ladder: PushLadder,
@@ -309,15 +315,9 @@ async function matrix(
     pushDisabled?: boolean;
   }
 ): Promise<void> {
-  if (!options.send) {
-    ladder.addMatrix({
-      metric: 'delivered',
-      cells: [],
-      skipped:
-        'no push was sent — pass --send to send one per app state and follow it until the app receives it',
-    });
-    return;
-  }
+  // Registration sends nothing, and says so in its closing line rather than as a skipped
+  // section: nothing it asked for was left unproven.
+  if (!options.send) return;
 
   if (
     !inputs.target ||

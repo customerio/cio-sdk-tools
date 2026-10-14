@@ -29,10 +29,15 @@ export const PUSH_VOICE: Voice = {
   failed: 'a real push was tried and did not pass.',
 
   conclusion(report: Report): string[] {
-    const ran = ((report.matrices ?? []) as MatrixSection[]).filter(
-      (section) => !section.skipped
-    );
-    if (ran.length === 0) return ['preflight passed.'];
+    const ran = report.sections.filter(
+      (section) => section.kind === 'cells' && !section.skipped
+    ) as unknown as MatrixSection[];
+    if (ran.length === 0) {
+      return [
+        'the device is registered for push.',
+        'nothing was sent, so delivery is not proven: --depth on-device sends real pushes.',
+      ];
+    }
     // Name what was actually proven, and only that. On the device: the push arrived and,
     // when the tap test ran, the tap reached the SDK. Whether Customer.io recorded either
     // is not checked — a test send has no stored delivery to read back yet.

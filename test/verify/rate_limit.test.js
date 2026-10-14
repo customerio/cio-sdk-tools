@@ -183,7 +183,7 @@ test('a rate-limited run is inconclusive, and the report carries the cause with 
     [RATE_LIMITED_CAUSE]
   );
   assert.match(causes[0].remedy, /20 minutes/);
-  assert.match(causes[0].remedy, /--states killed/);
+  assert.match(causes[0].remedy, /--app-states killed/);
 });
 
 test('the catalog holds the rate-limit cause', () => {

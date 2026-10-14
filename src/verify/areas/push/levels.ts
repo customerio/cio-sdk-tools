@@ -25,17 +25,26 @@ const onDevice = [...registration, 'received', 'opened'];
 export const PUSH_LEVELS: Level[] = [
   {
     id: 'registration',
-    title: 'the device is registered for push; nothing is sent',
+    label: 'Registration only',
+    hint: 'nothing is sent',
+    title:
+      'the device is registered for push: project, credentials, permission, token, profile. Nothing is sent',
     steps: registration,
   },
   {
     id: 'on-device',
-    title: 'real pushes, checked on the device',
+    label: 'On the device',
+    hint: 'sends real pushes and checks the app handles them',
+    title:
+      "registration, plus a real push in each app state, checked on the device: its notifications and the SDK's logs",
     steps: onDevice,
   },
   {
     id: 'end-to-end',
-    title: 'Customer.io recorded each push',
+    label: 'End to end',
+    hint: 'also checks Customer.io recorded them',
+    title:
+      'on-device, plus Customer.io recorded each push as delivered, and opened when tapped',
     steps: [...onDevice, 'recorded'],
     unavailable:
       "Customer.io doesn't record test pushes yet, so there is nothing to read back",

@@ -29,6 +29,19 @@ export type TapAnswer = 'tapped' | 'not_shown' | 'skipped' | 'no_answer';
 export interface Asker {
   readonly interactive: boolean;
   /**
+   * How many questions a person has answered so far. Taps are not counted: they are the
+   * check itself, not an answer a flag could have given.
+   */
+  readonly asked: number;
+  /**
+   * A free-text answer that may be left empty. Enter, silence, a closed stdin and a run that
+   * cannot ask all read as no answer, because whatever asks this has a way to do without.
+   */
+  ask(
+    question: string,
+    options?: { hint?: string }
+  ): Promise<string | undefined>;
+  /**
    * Ask for a tap, and what came of it. "Press Enter when done" left a person who never saw
    * the banner two answers, both wrong: Enter (a tap that did not happen) or ctrl-c (the
    * whole run). Silence is `no_answer`: a tap nobody confirmed must never read as a tap
@@ -115,8 +128,32 @@ export function createAsker(options: {
     }
   };
 
+  let asked = 0;
+
   return {
     interactive,
+
+    get asked() {
+      return asked;
+    },
+
+    async ask(
+      question: string,
+      askOptions: { hint?: string } = {}
+    ): Promise<string | undefined> {
+      if (!interactive) return undefined;
+      asked += 1;
+      const hint = askOptions.hint
+        ? ` ${chalk.dim(`(${askOptions.hint})`)}`
+        : '';
+      output.write(`\n${chalk.bold(question)}${hint}\n${chalk.dim('›')} `);
+      const answer = await reader?.next(timeoutMs);
+      if (answer === undefined) {
+        output.write('\n');
+        return undefined;
+      }
+      return answer.trim() || undefined;
+    },
 
     async askTap(
       instruction: string,
@@ -168,6 +205,7 @@ export function createAsker(options: {
 
     async agree(question: string, context?: string): Promise<boolean> {
       if (!interactive) return false;
+      asked += 1;
       if (context) output.write(`\n${context}`);
       for (let attempt = 0; attempt < ATTEMPTS; attempt += 1) {
         output.write(`${chalk.bold(question)} ${chalk.dim('(y/N)')} `);
@@ -206,6 +244,7 @@ export function createAsker(options: {
       }
 
       const fallback = selectOptions.defaultIndex ?? 0;
+      asked += 1;
       output.write(`\n${chalk.bold(question)}\n`);
       if (arrows) {
         const index = await pick(choices, fallback, timeoutMs);

@@ -298,7 +298,7 @@ test('a workspace holding the device outranks one holding only the name', async 
 
 const { selectionFacts } = require('../../dist/verify/areas/push/select');
 
-test('the facts name a picked target and say when a run is a dry run', () => {
+test('the facts name the device, say how each answer was settled, and say when a run is a dry run', () => {
   const selection = {
     resolution: {
       how: 'explicit',
@@ -306,15 +306,26 @@ test('the facts name a picked target and say when a run is a dry run', () => {
       workspace: { id: '122175', name: 'Native' },
     },
     appTargetName: 'APN UIKit',
+    appTargetSource: 'only one',
     targetSelector: 'BAC485BA',
     targetName: 'cio-verify-poc',
+    targetSource: 'picked',
     states: ['killed', 'background', 'foreground'],
   };
-  const facts = Object.fromEntries(selectionFacts(selection));
-  assert.strictEqual(facts.target, 'cio-verify-poc (BAC485BA)');
+  const facts = Object.fromEntries(
+    selectionFacts(selection, {
+      depth: 'on-device',
+      depthSource: 'flag',
+      taps: ['killed', 'background'],
+    })
+  );
+  assert.strictEqual(facts.device, 'cio-verify-poc (BAC485BA)  picked');
+  assert.strictEqual(facts.workspace, 'Native (122175)  --workspace');
+  assert.strictEqual(facts.app, 'APN UIKit', 'the only app target needs no note');
+  assert.strictEqual(facts.depth, 'on-device  --depth');
   assert.strictEqual(
     facts.sending,
-    '3 pushes · killed, background, foreground'
+    '3 pushes · killed, background, foreground · tap killed, background'
   );
 
   const dry = Object.fromEntries(selectionFacts(selection, { dryRun: true }));
@@ -325,7 +336,17 @@ test('the facts name a picked target and say when a run is a dry run', () => {
   );
 
   const typed = Object.fromEntries(
-    selectionFacts({ ...selection, targetName: undefined })
+    selectionFacts({ ...selection, targetName: undefined, targetSource: 'flag' })
   );
-  assert.strictEqual(typed.target, 'BAC485BA', 'a --target is shown as typed');
+  assert.strictEqual(typed.device, 'BAC485BA  --device', 'a --device is shown as typed');
+
+  const alone = Object.fromEntries(
+    selectionFacts({
+      ...selection,
+      targetSource: 'only one',
+      resolution: { ...selection.resolution, how: 'only_environment' },
+    })
+  );
+  assert.strictEqual(alone.device, 'cio-verify-poc (BAC485BA)  only one');
+  assert.strictEqual(alone.workspace, 'Native (122175)  only one');
 });

@@ -218,7 +218,7 @@ export function deliveredRequest(
   >,
   title: string,
   /** The push will be tapped: it carries the link, and its body says to tap it. */
-  tap?: { link: string; state: AppState }
+  tap?: { link?: string; state: AppState }
 ): SendRequest {
   return {
     dryRun: options.dryRun,

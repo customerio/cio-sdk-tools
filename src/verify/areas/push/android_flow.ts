@@ -58,11 +58,12 @@ export async function climbAndroid(
   wiringRung.done(wiring.rung);
   ladder.adopt(wiring.rung);
   if (ladder.halted || !wiring.model) {
-    skipRest(ladder, reporter, [
-      'workspace_ready',
-      'device_ready',
-      'profile_linked',
-    ]);
+    skipRest(
+      ladder,
+      reporter,
+      ['workspace_ready', 'device_ready', 'profile_linked'],
+      options.send
+    );
     return { projectName: wiring.model?.appModuleName };
   }
 
@@ -103,7 +104,12 @@ export async function climbAndroid(
   ladder.adopt(ready, workspaceTimer());
   workspaceRung.done(ready);
   if (ladder.halted) {
-    skipRest(ladder, reporter, ['device_ready', 'profile_linked']);
+    skipRest(
+      ladder,
+      reporter,
+      ['device_ready', 'profile_linked'],
+      options.send
+    );
     return { projectName: wiring.model.appModuleName };
   }
 
@@ -111,7 +117,7 @@ export async function climbAndroid(
   ladder.adopt(deviceRungResult, deviceMs);
   deviceRung.done(deviceRungResult);
   if (ladder.halted) {
-    skipRest(ladder, reporter, ['profile_linked']);
+    skipRest(ladder, reporter, ['profile_linked'], options.send);
     return { projectName: wiring.model.appModuleName };
   }
 
@@ -272,15 +278,9 @@ async function androidMatrix(
     token?: string;
   }
 ): Promise<void> {
-  if (!options.send) {
-    ladder.addMatrix({
-      metric: 'delivered',
-      cells: [],
-      skipped:
-        'no push was sent — pass --send to send one per app state and follow it until the app receives it',
-    });
-    return;
-  }
+  // Registration sends nothing, and says so in its closing line rather than as a skipped
+  // section: nothing it asked for was left unproven.
+  if (!options.send) return;
   if (
     !inputs.serial ||
     !inputs.packageName ||

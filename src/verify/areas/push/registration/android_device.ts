@@ -75,7 +75,7 @@ export function androidDeviceReady(
     if (facts.selector) {
       rung.checks.push(
         fail('target_available', 'Target is usable', 'device.not_available', [
-          `--target ${facts.selector} matched no connected device or running emulator`,
+          `--device ${facts.selector} matched no connected device or running emulator`,
           ...facts.usable.map((t) => `available: ${describeAndroidTarget(t)}`),
         ])
       );
@@ -83,7 +83,7 @@ export function androidDeviceReady(
     }
     rung.skipped =
       facts.usable.length > 1
-        ? `several targets are available; pass --target to choose one (${facts.usable
+        ? `several devices are available; pass --device to choose one (${facts.usable
             .map((t) => t.serial)
             .join(', ')})`
         : 'no connected device and no running emulator';

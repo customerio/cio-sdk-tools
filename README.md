@@ -112,17 +112,21 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
 </details>
 
 <details>
-   <summary>verify push: Prove that push works end to end, and name the step that breaks when it doesn't</summary>
+   <summary>verify push: Prove that push works, and name the step that breaks when it doesn't</summary>
 
    ## What It Does
 
+   `verify` proves a Customer.io SDK integration works, one area at a time. `push` is the first area; each area checks only what it needs, so `verify push` never looks at anything an app without push would lack.
+
    `verify push` checks an iOS or Android app's push setup, then sends real pushes and follows each one until the app receives it and, with a tap, opens it. When something breaks, it names the step and the fix. It catches failures a dashboard doesn't show: the push displays, but the app's notification extension never runs on it, or the SDK never handles the tap.
 
-   1. **Preflight** (every run): project wiring, workspace, device, and profile, in that order. The first failure stops the run.
-   2. **Real pushes** (with `--send`): one push per app state (killed, background, foreground), each followed until it reaches the device and the app handles it.
-   3. **Opened** (with `--opened`): you tap the same push in the killed and background states, and the tool checks the SDK handled the open and the deep link. One push per state serves both checks.
+   `--depth` says how far to go:
 
-   A pass means what the device showed: the push arrived and the app handled it, and for a tap, the SDK handled the open of that exact push. Arrival is read from the OS (the notification list, or the extension's own process) wherever it can be, and SDK log lines only where the OS has no answer. Whether Customer.io recorded the metric isn't checked: test pushes have no stored delivery to read back yet, so every cell reports `recorded: "not_checked"`.
+   1. **`registration`**: project wiring, workspace, device, and profile, in that order. The first failure stops the run. Nothing is sent.
+   2. **`on-device`**: registration, plus one real push per app state (killed, background, foreground), each followed until it reaches the device and the app handles it. With `--check-opens`, you tap the killed and background pushes and the tool checks the SDK handled the open, and the deep link when the push carries one.
+   3. **`end-to-end`**: on-device, plus Customer.io recorded each push as delivered and opened. Not available yet: test pushes have no stored delivery to read back, so it stops and says so.
+
+   A pass means what the device showed: the push arrived and the app handled it, and for a tap, the SDK handled the open of that exact push. Arrival is read from the OS (the notification list, or the extension's own process) wherever it can be, and SDK log lines only where the OS has no answer. Every cell reports `recorded: "not_checked"`.
 
    The SDK's push lines are debug lines, so the build you verify needs the SDK's log level set to debug. On a phone, the log stream can drop lines; a missing line there makes a cell inconclusive, never failed.
 
@@ -132,68 +136,66 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
    - The [Customer.io CLI](https://www.npmjs.com/package/@customerio/cli), logged in: `npm install -g @customerio/cli`, then `cio auth login`.
    - iOS: macOS with Xcode, and a booted simulator or a connected device. Reading a physical iPhone's logs also needs `idevicesyslog` (`brew install libimobiledevice`).
    - Android: `adb` (on your `PATH` or in the Android SDK) and a running emulator or connected device.
-   - The app built and run on that target, with a logged-in user, so the SDK has registered a token.
+   - The app built and run on that device, with a logged-in user, so the SDK has registered a token.
 
    ## Usage
 
-   Preflight only. Nothing is sent. The tool asks which workspace and target to use, and which app when the project builds several:
+   Run it with no options in a terminal and it asks for everything it needs: how far to go, which pushes, the workspace, and the device when more than one is connected. It ends by printing the command that repeats the run without a question:
 
    ```bash
    npx cio-sdk-tools@latest verify push /path/to/project
    ```
 
-   Send real pushes and follow them to delivered:
+   Send real pushes, and tap them to check opens and a deep link:
 
    ```bash
-   npx cio-sdk-tools@latest verify push /path/to/project --send
+   npx cio-sdk-tools@latest verify push /path/to/project --depth on-device \
+     --check-opens --deep-link myapp://some/screen
    ```
 
-   Before the first push, the tool shows the target, app, workspace, `cio` login, token prefix, and push count, then asks `Send 3 real pushes? (y/N)`. The default is no.
+   Use a deep link your app actually routes. Any other URL makes the SDK log "Deep link was not handled", which reads as a failure. Without `--deep-link` the open is still checked.
 
-   Also verify opened and a deep link. This needs a tap per state, so it only runs in a terminal:
+   ### Sending real pushes
 
-   ```bash
-   npx cio-sdk-tools@latest verify push /path/to/project --opened --link myapp://some/screen
-   ```
-
-   Use a URL your app actually routes. Any other URL makes the SDK log "Deep link was not handled", which reads as a failure.
+   Pushes go out without a question when `--depth`, `--workspace`, and `--device` are all on the command line: naming where they go is the go-ahead. If the run picked any of them itself, it shows the device, app, workspace, `cio` login, token prefix, and push count, then asks `Send 3 real pushes? (y/N)`. The default is no.
 
    ### In CI or a script
 
-   Every question has a flag. A run that can't ask (`--non-interactive`, `--json`, or no terminal) exits with code 2 and names the flag it needs. Real pushes also need `--yes`:
+   Every question has a flag. A run that can't ask (`--non-interactive`, `--json`, or no terminal) exits with code 2 and names the flag it needs. A run that sends must name the workspace and the device:
 
    ```bash
-   npx cio-sdk-tools@latest verify push /path/to/project --non-interactive --send --yes \
-     --workspace WORKSPACE_ID --target SIMULATOR_NAME_UDID_OR_SERIAL
+   npx cio-sdk-tools@latest verify push /path/to/project --depth on-device --json \
+     --workspace WORKSPACE_ID --device SIMULATOR_NAME_UDID_OR_SERIAL > verify.json
    ```
 
-   `--json` prints only the report on stdout, with errors on stderr. `--report FILE` also writes the report to a file. `--dry-run` does everything except send.
+   `--json` prints only the report on stdout, with errors on stderr. `--report FILE` also writes the report to a file. `--dry-run` does everything except send. The report carries `area`, `level`, its sections in order, and `rerun`, the command that repeats the run.
 
    ### Exit Codes
 
    | Code | Meaning |
    |------|---------|
-   | 0 | Everything checked passed. |
-   | 1 | The tool itself failed. |
+   | 0 | Everything asked for passed. |
+   | 1, 3, 4, 5 | The tool couldn't run (an error, the login, a permission, the API). |
    | 2 | A flag is missing or wrong. The message names it. |
    | 20 | A check failed. The integration is broken, and the report names the cause and the fix. |
-   | 21 | Nothing was proven, because something was skipped (for example, no `--send`). |
+   | 21 | Nothing failed, but something asked for couldn't be proven. |
 
    ### Useful Options
 
    | Option | What it does |
    |--------|--------------|
    | `--workspace ID` | The workspace the app should report to. |
-   | `--target NAME\|UDID\|SERIAL` | The simulator, device, or emulator to use. |
-   | `--app-target NAME` / `--package ID` | The iOS app target, or the Android application id, when there are several. |
-   | `--states killed` | Send one push instead of three. |
-   | `--evidence DIR` | Keep the captured logs. |
-   | `--observe` | Watch the install, token, and login happen, instead of reading what they left behind. |
+   | `-d, --device NAME\|UDID\|SERIAL` | The simulator, phone, or emulator to use. |
+   | `--ios-target NAME` / `--android-app-id ID` | The iOS app target, or the Android application id, when there are several. |
+   | `--app-states killed` | Send one push instead of three. |
+   | `--evidence-dir DIR` | Keep the captured logs and screenshots here. |
+   | `--watch-registration` | Watch the install, token, and login happen, instead of reading what they left behind. |
+   | `--cio-profile NAME` | The `cio` CLI login to use. |
    | `--verbose` / `--quiet` | Print every check and command, or only the verdict. |
 
    > **Note**
    >
-   > On a workspace with more than one app, test sends close together can hit Apple's limit of one token change every 20 minutes (`429 TooManyProviderTokenUpdates`). The tool stops sending and says so. Wait 20 minutes, or send one state with `--states killed`.
+   > On a workspace with more than one app, test sends close together can hit Apple's limit of one token change every 20 minutes (`429 TooManyProviderTokenUpdates`). The tool stops sending and says so. Wait 20 minutes, or send one state with `--app-states killed`.
 
    View all options:
 

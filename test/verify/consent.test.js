@@ -6,8 +6,8 @@ const { createAsker } = require('../../dist/verify/core/prompt');
 const {
   consentToSend,
   openedStatesToSend,
-  refusalWithoutConsent,
 } = require('../../dist/verify/areas/push/consent');
+const { refusalUnattended } = require('../../dist/verify/core/consent');
 const { Ladder } = require('../../dist/verify/core/report/ladder');
 const { createReporter } = require('../../dist/verify/core/report/render');
 const { PUSH_VOICE } = require('../../dist/verify/areas/push/voice');
@@ -116,24 +116,28 @@ test('a run that cannot ask never prompts and never agrees', async () => {
 
 // --- what the question shows -----------------------------------------------
 
-test('the question names the target, app, workspace, login, token prefix and count', async () => {
+test('the question names the device, app, workspace, login, token prefix and count', async () => {
   const { asker: fake, asked } = scripted(true);
   const consent = await consentToSend({
     plan: plan(),
-    yes: false,
+    named: false,
     opened: false,
     asker: fake,
     reporter: reporterOn(sink()),
     ladder: new Ladder(),
   });
 
-  assert.deepStrictEqual(consent, { granted: true, by: 'prompt', pushes: 3 });
+  assert.deepStrictEqual(consent, {
+    granted: true,
+    by: 'prompt',
+    writes: ['3 real pushes to cio-verify-poc (simulator iOS 18.4, booted) · 6F1C2A9E through Mobile: Native iOS & Android (122175)'],
+  });
   assert.strictEqual(asked.length, 1, 'one question per run');
   const { question, context } = asked[0];
   assert.strictEqual(question, 'Send 3 real pushes?');
   for (const expected of [
     /Ready to send real pushes/,
-    /target\s+cio-verify-poc \(simulator iOS 18\.4, booted\) · 6F1C2A9E/,
+    /device\s+cio-verify-poc \(simulator iOS 18\.4, booted\) · 6F1C2A9E/,
     /app\s+io\.customer\.ios-sample\.apn-spm\.APN-UIKit/,
     /workspace\s+Mobile: Native iOS & Android \(122175\)/,
     /cio login\s+default/,
@@ -147,11 +151,11 @@ test('the question names the target, app, workspace, login, token prefix and cou
   assert.doesNotMatch(context, /opened/);
 });
 
-test('--opened adds taps on the same pushes, not more pushes, and one push reads in the singular', async () => {
+test('--check-opens adds taps on the same pushes, not more pushes, and one push reads in the singular', async () => {
   const opened = scripted(true);
   await consentToSend({
     plan: plan({ opened: ['killed', 'background'] }),
-    yes: false,
+    named: false,
     opened: true,
     asker: opened.asker,
     reporter: reporterOn(sink()),
@@ -167,7 +171,7 @@ test('--opened adds taps on the same pushes, not more pushes, and one push reads
   const single = scripted(true);
   await consentToSend({
     plan: plan({ delivered: ['killed'], retries: false }),
-    yes: false,
+    named: false,
     opened: false,
     asker: single.asker,
     reporter: reporterOn(sink()),
@@ -177,36 +181,40 @@ test('--opened adds taps on the same pushes, not more pushes, and one push reads
   assert.doesNotMatch(single.asked[0].context, /retries/);
 });
 
-// --- --yes -----------------------------------------------------------------
+// --- naming where the pushes go ---------------------------------------------
 
-test('--yes skips the question but still prints where the pushes go', async () => {
+test('naming the depth, workspace and device skips the question but still prints where the pushes go', async () => {
   const { asker: fake, asked } = scripted(false);
   const out = sink();
   const consent = await consentToSend({
     plan: plan(),
-    yes: true,
+    named: true,
     opened: false,
     asker: fake,
     reporter: reporterOn(out),
     ladder: new Ladder(),
   });
 
-  assert.deepStrictEqual(consent, { granted: true, by: '--yes', pushes: 3 });
+  assert.deepStrictEqual(consent, {
+    granted: true,
+    by: 'named',
+    writes: ['3 real pushes to cio-verify-poc (simulator iOS 18.4, booted) · 6F1C2A9E through Mobile: Native iOS & Android (122175)'],
+  });
   assert.strictEqual(asked.length, 0, 'it asked anyway');
   assert.match(out.text(), /Sending real pushes/);
   assert.match(
     out.text(),
     /workspace\s+Mobile: Native iOS & Android \(122175\)/
   );
-  assert.match(out.text(), /consent\s+--yes/);
+  assert.match(out.text(), /go-ahead\s+named on the command line/);
   assert.ok(!out.text().includes(TOKEN), 'the whole token was printed');
 });
 
-test('--yes under --json prints nothing on stdout', async () => {
+test('a named send under --json prints nothing on stdout', async () => {
   const out = sink();
   await consentToSend({
     plan: plan(),
-    yes: true,
+    named: true,
     opened: false,
     asker: scripted(false).asker,
     reporter: reporterOn(out, 'json'),
@@ -217,31 +225,32 @@ test('--yes under --json prints nothing on stdout', async () => {
 
 // --- a run that cannot ask -------------------------------------------------
 
-test('a run that cannot ask is refused a real send unless --yes is passed', () => {
+test('a run that cannot ask sends only where the command line named', () => {
   const base = {
-    send: true,
-    opened: false,
-    dryRun: false,
-    yes: false,
+    sends: true,
     interactive: false,
+    what: 'real pushes',
+    destinations: [
+      { flag: '--depth <level>', named: true },
+      { flag: '--workspace <id>', named: false },
+      { flag: '--device <id|name>', named: false },
+    ],
   };
-  assert.match(refusalWithoutConsent(base), /^--send .* pass --yes$/);
+  const refused = refusalUnattended(base);
   assert.match(
-    refusalWithoutConsent({ ...base, opened: true }),
-    /^--opened .* pass --yes$/
+    refused.message,
+    /real pushes and nobody can be asked, .* pass --workspace <id> and --device <id\|name>$/
   );
-  assert.strictEqual(refusalWithoutConsent({ ...base, yes: true }), undefined);
+  assert.deepStrictEqual(refused.flags, ['--workspace <id>', '--device <id|name>']);
+  const named = base.destinations.map((d) => ({ ...d, named: true }));
+  assert.strictEqual(refusalUnattended({ ...base, destinations: named }), undefined);
   assert.strictEqual(
-    refusalWithoutConsent({ ...base, dryRun: true }),
+    refusalUnattended({ ...base, sends: false }),
     undefined,
-    'a dry run sends nothing, so it needs no consent'
+    'a level or a dry run that sends nothing needs no go-ahead'
   );
   assert.strictEqual(
-    refusalWithoutConsent({ ...base, send: false }),
-    undefined
-  );
-  assert.strictEqual(
-    refusalWithoutConsent({ ...base, interactive: true }),
+    refusalUnattended({ ...base, interactive: true }),
     undefined,
     'a run that can ask asks later instead'
   );
@@ -254,26 +263,33 @@ test('declining sends nothing and skips every section that would have sent', asy
   const out = sink();
   const consent = await consentToSend({
     plan: plan({ opened: ['killed', 'background'] }),
-    yes: false,
+    named: false,
     opened: true,
     asker: asker([''], out),
     reporter: reporterOn(sink()),
     ladder,
   });
 
-  assert.deepStrictEqual(consent, { granted: false, by: 'prompt', pushes: 3 });
+  assert.deepStrictEqual(consent, {
+    granted: false,
+    by: 'prompt',
+    writes: ['3 real pushes to cio-verify-poc (simulator iOS 18.4, booted) · 6F1C2A9E through Mobile: Native iOS & Android (122175)'],
+  });
   const built = ladder.toReport({
     schema: 1,
     provenance: 'read',
     consent,
     tool: { name: 'cio-sdk-tools', version: '0.0.0' },
     command: 'verify push',
+    area: 'push',
     startedAt: '2026-09-17T00:00:00.000Z',
     finishedAt: '2026-09-17T00:00:01.000Z',
     project: { path: '/p', framework: 'iOS' },
   });
   assert.deepStrictEqual(
-    built.matrices.map((section) => [section.metric, section.skipped]),
+    built.sections
+      .filter((section) => section.kind === 'cells')
+      .map((section) => [section.metric, section.skipped]),
     [
       ['delivered', 'the send was not confirmed, so nothing was sent'],
       ['opened', 'the send was not confirmed, so nothing was sent'],
@@ -292,26 +308,23 @@ test('declining sends nothing and skips every section that would have sent', asy
   assert.match(summary.text(), /nothing was proven/);
 });
 
-test('the count only includes tap-test pushes that will actually be sent', () => {
-  const asked = {
-    opened: true,
-    link: 'apn-uikit://settings',
-    interactive: true,
-  };
+test('taps are on the pushes sent while the app was killed or in the background', () => {
+  const asked = { opened: true, interactive: true };
   assert.deepStrictEqual(openedStatesToSend(asked), ['killed', 'background']);
-  assert.deepStrictEqual(openedStatesToSend({ ...asked, states: ['killed'] }), [
-    'killed',
-  ]);
   assert.deepStrictEqual(
     openedStatesToSend({ ...asked, interactive: false }),
     [],
-    'nobody can tap, so the opened matrix skips itself and sends nothing'
+    'nobody can tap, so the opened section skips itself'
   );
-  assert.deepStrictEqual(openedStatesToSend({ ...asked, link: undefined }), []);
   assert.deepStrictEqual(openedStatesToSend({ ...asked, opened: false }), []);
-  // A tap is only ever on a push the run sends.
+  // A tap is only ever on a push the run sends, and never on the foreground one, whatever
+  // --app-states asked for.
   assert.deepStrictEqual(
     openedStatesToSend({ ...asked, delivered: ['killed', 'foreground'] }),
     ['killed']
+  );
+  assert.deepStrictEqual(
+    openedStatesToSend({ ...asked, delivered: ['foreground'] }),
+    []
   );
 });

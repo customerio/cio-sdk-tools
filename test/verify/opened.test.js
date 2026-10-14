@@ -44,6 +44,16 @@ test('a push with no link is a warning, because the open itself is fine', () => 
   );
 });
 
+test('a push sent without a deep link passes on the open alone: where it goes was not asked', () => {
+  const noLink = { ...tapped, linkSent: false, linkAttempted: false, linkHandled: false };
+  assert.deepStrictEqual(judgeOpened(noLink), { verdict: 'pass' });
+  // The open still has to be there: no link does not excuse a missing open.
+  assert.deepStrictEqual(judgeOpened({ ...noLink, tracked: false }), {
+    verdict: 'fail',
+    cause: 'runtime.opened_not_tracked',
+  });
+});
+
 test('a click the SDK never turned into an open fails, unless the log can drop lines', () => {
   assert.deepStrictEqual(judgeOpened({ ...tapped, tracked: false }), {
     verdict: 'fail',
@@ -187,17 +197,18 @@ test('every tapped state gets a line, even one whose push was never sent', () =>
   assert.deepStrictEqual(notTappedCell('killed', 'why').evidence, ['why']);
 });
 
-test('a run that cannot ask for a tap, or has no link, says so instead of tapping', () => {
+test('a run that cannot ask for a tap says so instead of tapping; a missing deep link does not stop it', () => {
   assert.match(
-    openedSkipReason({ dryRun: false, interactive: false, link: 'x://' }),
+    openedSkipReason({ dryRun: false, interactive: false }),
     /needs a real tap/
   );
   assert.match(
-    openedSkipReason({ dryRun: false, interactive: true, link: '' }),
-    /pass --link/
+    openedSkipReason({ dryRun: true, interactive: true }),
+    /dry run sends nothing/
   );
+  // Without --deep-link the open is still checked; only where the tap goes is not.
   assert.strictEqual(
-    openedSkipReason({ dryRun: false, interactive: true, link: 'x://' }),
+    openedSkipReason({ dryRun: false, interactive: true }),
     undefined
   );
 });

@@ -109,7 +109,7 @@ test('a named target that is not there fails; nothing named and nothing there sk
   assert.match(none.skipped, /no booted simulator/);
 });
 
-test('several usable targets skip rather than picking one', () => {
+test('several usable devices skip rather than picking one', () => {
   const rung = deviceReady(
     {
       usable: [
@@ -122,7 +122,7 @@ test('several usable targets skip rather than picking one', () => {
     'io.example.app'
   );
   assert.strictEqual(Ladder.verdictOf(rung), 'skip');
-  assert.match(rung.skipped, /--target/);
+  assert.match(rung.skipped, /--device/);
 });
 
 test('an app that was never installed fails before the token is looked for', () => {

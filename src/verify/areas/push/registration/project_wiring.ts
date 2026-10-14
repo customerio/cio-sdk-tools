@@ -119,7 +119,7 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
         ? `no application target in ${path.basename(model.projectPath)}`
         : `${apps.length} application targets (${apps
             .map((t) => t.name)
-            .join(', ')}); pass --app-target to choose one`;
+            .join(', ')}); pass --ios-target to choose one`;
     return { rung, model, signals, provider: providerFrom(signals.sdkImports) };
   }
 

@@ -20,6 +20,17 @@ import { XcodeProjectModel, appTargets } from './ios/xcode';
  * off whatever happens to be plugged in, and each names the flag that answers it, so a
  * session answered by hand can be turned into a CI job by copying it.
  */
+
+/** Where an answer came from, for the facts: `--device`, `picked` or `only one`. */
+export type AnswerSource = 'flag' | 'picked' | 'only one';
+
+export interface Picked {
+  selector?: string;
+  /** Set when the device came from the list, so the facts can name it. */
+  name?: string;
+  source?: AnswerSource;
+}
+
 export interface PickInput {
   cio: CioContext;
   asker: Asker;
@@ -50,23 +61,21 @@ export async function chooseIosApp(input: {
   asker: Asker;
   model: XcodeProjectModel;
   appTarget?: string;
-}): Promise<string | undefined> {
+}): Promise<{ name?: string; source?: AnswerSource }> {
+  if (input.appTarget) return { name: input.appTarget, source: 'flag' };
   const apps = appTargets(input.model);
-  return input.appTarget
-    ? input.appTarget
-    : apps.length === 0
-    ? undefined
-    : apps.length === 1
-    ? apps[0].name
-    : await input.asker.select(
-        'Which app target should be verified?',
-        apps.map((target) => ({
-          value: target.name,
-          label: target.name,
-          hint: target.settings.PRODUCT_BUNDLE_IDENTIFIER,
-        })),
-        { flag: '--app-target <name>' }
-      );
+  if (apps.length === 0) return {};
+  if (apps.length === 1) return { name: apps[0].name, source: 'only one' };
+  const name = await input.asker.select(
+    'Which app target should be verified?',
+    apps.map((target) => ({
+      value: target.name,
+      label: target.name,
+      hint: target.settings.PRODUCT_BUNDLE_IDENTIFIER,
+    })),
+    { flag: '--ios-target <name>' }
+  );
+  return { name, source: 'picked' };
 }
 
 /**
@@ -78,14 +87,24 @@ export async function chooseAndroidVariant(input: {
   asker: Asker;
   model?: AndroidProjectModel;
   packageName?: string;
-}): Promise<{ variant?: BuildVariant; packageName?: string }> {
+}): Promise<{
+  variant?: BuildVariant;
+  packageName?: string;
+  source?: AnswerSource;
+}> {
   const moduleDirectory = input.model?.appModulePath;
   const variants = moduleDirectory ? await buildVariants(moduleDirectory) : [];
 
+  if (input.packageName) {
+    return { packageName: input.packageName, source: 'flag' };
+  }
   let variant: BuildVariant | undefined;
-  let packageName = input.packageName;
-  if (!packageName && variants.length === 1) variant = variants[0];
-  else if (!packageName && variants.length > 1) {
+  let source: AnswerSource | undefined;
+  if (variants.length === 1) {
+    variant = variants[0];
+    source = 'only one';
+  } else if (variants.length > 1) {
+    source = 'picked';
     variant = await input.asker.select(
       'Which build variant is installed on the target?',
       variants.map((candidate) => ({
@@ -93,53 +112,61 @@ export async function chooseAndroidVariant(input: {
         label: `${candidate.variantName}`,
         hint: candidate.applicationId,
       })),
-      { flag: '--package <applicationId>' }
+      { flag: '--android-app-id <id>' }
     );
   }
-  packageName = packageName ?? variant?.applicationId;
-
-  return { variant, packageName };
+  return { variant, packageName: variant?.applicationId, source };
 }
 
 /**
- * The target is asked for even when there is only one.
+ * The device, taken without a question when only one is connected.
  *
- * Every other question is disambiguation; this one is consent. A phone plugged into this
- * machine is not necessarily a test phone, and the run launches, kills and sends pushes to
- * whatever it picks.
+ * Picking it is not consent: anything that sends to it or drives the app on it asks first
+ * — or, when nobody can be asked, refuses — unless the command line named it, because a
+ * phone plugged into this machine is not necessarily a test phone.
  */
-export async function chooseIosTarget(
-  input: PickInput
-): Promise<{ selector?: string; name?: string }> {
-  if (input.target) return { selector: input.target };
+export async function chooseIosTarget(input: PickInput): Promise<Picked> {
+  if (input.target) return { selector: input.target, source: 'flag' };
   const usable = (await listTargets()).filter(isUsable);
   if (usable.length === 0) return {};
+  if (usable.length === 1) {
+    return {
+      selector: usable[0].udid,
+      name: usable[0].name,
+      source: 'only one',
+    };
+  }
   const picked = await input.asker.select(
-    'Which target should be verified?',
+    'Which device?',
     usable.map((target) => ({
       value: target,
       label: describeTarget(target),
       hint: target.udid,
     })),
-    { flag: '--target <name|udid>' }
+    { flag: '--device <name|udid>' }
   );
-  return { selector: picked.udid, name: picked.name };
+  return { selector: picked.udid, name: picked.name, source: 'picked' };
 }
 
-export async function chooseAndroidTarget(
-  input: PickInput
-): Promise<{ selector?: string; name?: string }> {
-  if (input.target) return { selector: input.target };
+export async function chooseAndroidTarget(input: PickInput): Promise<Picked> {
+  if (input.target) return { selector: input.target, source: 'flag' };
   const targets = await listAndroidTargets();
   if (targets.length === 0) return {};
+  if (targets.length === 1) {
+    return {
+      selector: targets[0].serial,
+      name: targets[0].model,
+      source: 'only one',
+    };
+  }
   const picked = await input.asker.select(
-    'Which target should be verified?',
+    'Which device?',
     targets.map((target: AndroidTarget) => ({
       value: target,
       label: describeAndroidTarget(target),
       hint: target.serial,
     })),
-    { flag: '--target <serial>' }
+    { flag: '--device <serial>' }
   );
-  return { selector: picked.serial, name: picked.model };
+  return { selector: picked.serial, name: picked.model, source: 'picked' };
 }

@@ -88,13 +88,15 @@ export async function tapAndroidPush(
   // Wait for the end of the sequence, as on iOS: the open, then the deep link's outcome —
   // or a refusal. A fixed wait either cut a slow cold start short or wasted time.
   handle?.phase('reading what the SDK did with the tap');
+  // Without a link the open is the end of the sequence.
+  const linkSent = Boolean(options.tap.link);
   await waitFor(
     () =>
       seen(ANDROID_OPENED_MARKERS.skippedNoId) ||
       seen(ANDROID_OPENED_MARKERS.failedClick) ||
       seen(ANDROID_OPENED_MARKERS.linkUnhandled) ||
       (seen(ANDROID_OPENED_MARKERS.tracked) &&
-        seen(ANDROID_OPENED_MARKERS.linkHandled)),
+        (!linkSent || seen(ANDROID_OPENED_MARKERS.linkHandled))),
     TAP_SEQUENCE_TIMEOUT_MS
   );
 
@@ -137,6 +139,11 @@ export async function tapAndroidPush(
             }`
       );
     }
+    if (!linkSent) {
+      evidence.push(
+        'no deep link was sent, so where the tap goes was not checked'
+      );
+    }
     const behaviour = lines
       .map((line) => ANDROID_OPENED_MARKERS.linkHandling.exec(line)?.[1])
       .find(Boolean);
@@ -162,6 +169,7 @@ export async function tapAndroidPush(
       linkAttempted,
       linkHandled: seen(ANDROID_OPENED_MARKERS.linkHandled),
       linkUnhandled: seen(ANDROID_OPENED_MARKERS.linkUnhandled),
+      linkSent,
     }),
     evidence,
   };

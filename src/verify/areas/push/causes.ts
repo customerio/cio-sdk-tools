@@ -240,7 +240,7 @@ export const CAUSES: Record<string, PushCause> = {
     severity: 'blocker',
     summary: 'The requested simulator or device is not usable.',
     remedy:
-      'Boot the simulator or connect and unlock the device, then run again. Pass --target with a name or udid to choose between several.',
+      'Boot the simulator or connect and unlock the device, then run again. Pass --device with a name or udid to choose between several.',
   },
   'device.app_not_installed': {
     stage: 'device_ready',
@@ -410,7 +410,7 @@ export const CAUSES: Record<string, PushCause> = {
     summary:
       'The push provider refused the send as too frequent (429), so nothing was proven and the remaining states were not sent.',
     remedy:
-      'Apple allows one APNs token change every 20 minutes, and on a workspace with more than one app each test send asks Apple for a new token, so sends close together come back TooManyProviderTokenUpdates. Pushes from campaigns and broadcasts reuse a cached token and are not affected. Wait 20 minutes and run again, or send a single state with --states killed.',
+      'Apple allows one APNs token change every 20 minutes, and on a workspace with more than one app each test send asks Apple for a new token, so sends close together come back TooManyProviderTokenUpdates. Pushes from campaigns and broadcasts reuse a cached token and are not affected. Wait 20 minutes and run again, or send a single state with --app-states killed.',
   },
   'device.notifications_wedged': {
     stage: 'delivered_matrix',

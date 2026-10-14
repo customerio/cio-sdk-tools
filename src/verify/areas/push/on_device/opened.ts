@@ -51,23 +51,19 @@ export const OPENED_STATES: AppState[] = ['killed', 'background'];
 
 /**
  * Why the tap test does not run though it was asked for, if it does not. A dry run comes
- * first: it skips the consent question because it sends nothing, so a tap test that went
- * ahead would send real pushes nobody agreed to. A tap needs someone to ask, and a link to
- * judge where the tap goes.
+ * first: it skips the go-ahead because it sends nothing, so a tap test that went ahead
+ * would send real pushes nobody agreed to. A tap needs someone to ask; a deep link is
+ * optional, and without one the open is still checked.
  */
 export function openedSkipReason(options: {
   dryRun: boolean;
   rateLimited?: boolean;
   interactive?: boolean;
-  link?: string;
 }): string | undefined {
   if (options.dryRun)
     return 'a dry run sends nothing, so there is nothing to tap';
   if (options.interactive === false) {
     return 'opened needs a real tap, and this run cannot ask for one — run it in a terminal';
-  }
-  if (options.link === '') {
-    return 'pass --link <url> with a URL this app routes, so the deep link half can be judged';
   }
   if (options.rateLimited) {
     return 'the provider was refusing sends, so no tap test was sent';
@@ -82,8 +78,11 @@ export function openedSkipReason(options: {
  */
 export interface TapPlan {
   asker: Asker;
-  /** The URL the app is expected to route. Must be one the app actually claims. */
-  link: string;
+  /**
+   * The URL the pushes carry, which the app is expected to route. Without one the open is
+   * checked and where the tap goes is not.
+   */
+  link?: string;
   /** The states that get a tap; always a subset of the states that get a push. */
   states: AppState[];
   /** How long to leave the tap prompt open. Longer than a picker: a person has to look. */
@@ -173,7 +172,7 @@ export async function tapIosPush(
       !openedSequenceComplete(
         observeOpened(capture.since(push.mark).map((line) => line.message))
           .observed,
-        { linkSent: true }
+        { linkSent: Boolean(options.tap.link) }
       )
     ) {
       await sleep(TAP_POLL_MS);
@@ -192,6 +191,11 @@ export async function tapIosPush(
     evidence.push(
       `log: ${lines.length} lines, click seen: ${observed.clicked}, opened tracked: ${observed.tracked}, deep link handled: ${observed.linkHandled}`
     );
+    if (!options.tap.link) {
+      evidence.push(
+        'no deep link was sent, so where the tap goes was not checked'
+      );
+    }
     if (deliveryId) {
       evidence.push(
         matched === false
@@ -221,6 +225,7 @@ export async function tapIosPush(
       available: capture.available,
       lossy: capture.lossy,
       matched,
+      linkSent: Boolean(options.tap.link),
       ...observed,
     }),
     evidence,
@@ -391,6 +396,11 @@ export function judgeOpened(observed: {
   linkAttempted: boolean;
   linkHandled: boolean;
   linkUnhandled: boolean;
+  /**
+   * The push carried a deep link. Without one, where the tap goes is not judged: the open is
+   * the whole claim. Absent counts as sent, the way every push used to carry one.
+   */
+  linkSent?: boolean;
   /** iOS logged handing the tap to the app (phone captures only). */
   osDelivered?: boolean;
 }): { verdict: Verdict; cause?: string } {
@@ -418,6 +428,8 @@ export function judgeOpened(observed: {
       ? { verdict: 'skip', cause: 'runtime.tap_lines_lost' }
       : { verdict: 'fail', cause: 'runtime.opened_not_tracked' };
   }
+  // No link was sent, so the open is everything this cell claims.
+  if (observed.linkSent === false) return { verdict: 'pass' };
   // The open was handled. The deep link is a second, independent claim: a push that opens
   // but routes nowhere is a real defect, and a common one — when the SDK says so.
   if (observed.linkUnhandled) {

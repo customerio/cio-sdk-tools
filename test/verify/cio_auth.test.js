@@ -32,7 +32,7 @@ test('a profile that is not in the config is named, with the ones that are', () 
   };
   assert.match(
     unknownProfile(stored, 'stagin'),
-    /no profile "stagin" — the profiles here are default, staging; pass one of them to --profile/
+    /no profile "stagin" — the profiles here are default, staging; pass one of them to --cio-profile/
   );
   assert.strictEqual(unknownProfile(stored, 'staging'), undefined);
   assert.strictEqual(unknownProfile(stored, undefined), undefined);

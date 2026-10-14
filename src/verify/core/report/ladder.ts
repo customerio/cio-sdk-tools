@@ -4,28 +4,44 @@ import {
   Check,
   EXIT,
   Report,
+  ReportSection,
   ReportedCause,
   Rung,
   Section,
   Verdict,
 } from './types';
 
+type Entry<S> = { kind: 'checks'; rung: Rung } | { kind: 'cells'; section: S };
+
 /**
  * A ladder, not a checklist: rungs run in order and the first failure stops the climb,
  * because a later rung's answer is meaningless once an earlier one is broken. "The device
  * never registered a token" is not news when the extension isn't in the bundle.
  *
- * The matrix that follows preflight has the opposite rule and does not live here.
+ * Sections of cells are recorded here too, with the opposite rule: every cell runs, and
+ * nothing in a section halts the climb.
  */
 export class Ladder<S extends Section = Section> {
-  private readonly rungs: Rung[] = [];
-  private readonly matrices: S[] = [];
+  /** Rungs and sections, in the order they ran: the report keeps that order. */
+  private readonly entries: Entry<S>[] = [];
   private stopped = false;
+
+  get rungs(): Rung[] {
+    return this.entries.flatMap((entry) =>
+      entry.kind === 'checks' ? [entry.rung] : []
+    );
+  }
+
+  get matrices(): S[] {
+    return this.entries.flatMap((entry) =>
+      entry.kind === 'cells' ? [entry.section] : []
+    );
+  }
 
   /** Start a rung. Returns it so checks can be pushed as they are learned. */
   open(id: string, title: string): Rung {
     const rung: Rung = { id, title, checks: [] };
-    this.rungs.push(rung);
+    this.entries.push({ kind: 'checks', rung });
     return rung;
   }
 
@@ -35,7 +51,7 @@ export class Ladder<S extends Section = Section> {
    */
   adopt(rung: Rung, durationMs?: number): Rung {
     if (durationMs !== undefined) rung.durationMs = durationMs;
-    this.rungs.push(rung);
+    this.entries.push({ kind: 'checks', rung });
     if (Ladder.verdictOf(rung) === 'fail') this.halt();
     return rung;
   }
@@ -43,7 +59,7 @@ export class Ladder<S extends Section = Section> {
   /** Record a rung that never ran. Skipped is a verdict of its own, never a pass. */
   skip(id: string, title: string, reason: string): Rung {
     const rung: Rung = { id, title, checks: [], skipped: reason };
-    this.rungs.push(rung);
+    this.entries.push({ kind: 'checks', rung });
     return rung;
   }
 
@@ -73,7 +89,7 @@ export class Ladder<S extends Section = Section> {
     // A cell says whether Customer.io's record was read, rather than leaving a reader to
     // assume it was.
     for (const cell of section.cells) cell.recorded ??= 'not_checked';
-    this.matrices.push(section);
+    this.entries.push({ kind: 'cells', section });
   }
 
   static verdictOfMatrix(section: Section): Verdict {
@@ -120,19 +136,23 @@ export class Ladder<S extends Section = Section> {
         if (!earlier.evidence.includes(line)) earlier.evidence.push(line);
       }
     };
-    for (const rung of this.rungs) {
-      for (const check of rung.checks) {
-        if (!check.cause) continue;
-        if (check.verdict !== 'fail' && check.verdict !== 'warn') continue;
-        add(check.cause, check.evidence ?? []);
+    for (const entry of this.entries) {
+      if (entry.kind === 'checks') {
+        for (const check of entry.rung.checks) {
+          if (!check.cause) continue;
+          if (check.verdict !== 'fail' && check.verdict !== 'warn') continue;
+          add(check.cause, check.evidence ?? []);
+        }
+        continue;
       }
-    }
-    // A skipped cell that names a cause is inconclusive for a known reason — a rate limit,
-    // a wedged simulator — and that cause's remedy is the one thing the reader can act on.
-    for (const cell of this.matrices.flatMap((section) => section.cells)) {
-      if (!cell.cause) continue;
-      if (cell.verdict === 'pass') continue;
-      add(cell.cause, cell.evidence);
+      // A skipped cell that names a cause is inconclusive for a known reason — a rate
+      // limit, a wedged simulator — and that cause's remedy is the one thing the reader
+      // can act on.
+      for (const cell of entry.section.cells) {
+        if (!cell.cause) continue;
+        if (cell.verdict === 'pass') continue;
+        add(cell.cause, cell.evidence);
+      }
     }
     return out;
   }
@@ -156,12 +176,16 @@ export class Ladder<S extends Section = Section> {
   }
 
   toReport(
-    meta: Omit<Report, 'rungs' | 'verdict' | 'causes' | 'exitCode'>
+    meta: Omit<Report, 'sections' | 'verdict' | 'causes' | 'exitCode'>
   ): Report {
+    const sections: ReportSection[] = this.entries.map((entry) =>
+      entry.kind === 'checks'
+        ? { kind: 'checks', ...entry.rung }
+        : { kind: 'cells', ...entry.section }
+    );
     return {
       ...meta,
-      rungs: this.rungs,
-      matrices: this.matrices.length > 0 ? this.matrices : undefined,
+      sections,
       verdict: this.verdict,
       causes: this.causes(),
       exitCode: this.exitCode,

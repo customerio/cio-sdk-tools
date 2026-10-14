@@ -89,7 +89,7 @@ export function deviceReady(facts: DeviceFacts, bundleId?: string): Rung {
           'Simulator or device is usable',
           'device.not_available',
           [
-            `--target ${facts.selector} matched nothing usable`,
+            `--device ${facts.selector} matched nothing usable`,
             ...facts.usable.map((t) => `available: ${describeTarget(t)}`),
           ]
         )
@@ -98,7 +98,7 @@ export function deviceReady(facts: DeviceFacts, bundleId?: string): Rung {
     }
     rung.skipped =
       facts.usable.length > 1
-        ? `several targets are usable; pass --target to choose one (${facts.usable
+        ? `several devices are usable; pass --device to choose one (${facts.usable
             .map((t) => t.name)
             .join(', ')})`
         : 'no booted simulator and no connected device';

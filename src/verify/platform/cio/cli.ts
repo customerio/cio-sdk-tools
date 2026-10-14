@@ -47,7 +47,7 @@ export function setActiveProfile(name?: string): void {
   activeProfile = name?.trim() || undefined;
 }
 
-/** `--profile` → `CIO_PROFILE` → stored `current_profile` → `default`, exactly as `cio` resolves it. */
+/** `--cio-profile` → `CIO_PROFILE` → stored `current_profile` → `default`, exactly as `cio` resolves it. */
 function resolveProfileName(stored?: StoredConfig): string {
   const explicit = activeProfile ?? process.env.CIO_PROFILE?.trim();
   if (explicit) return explicit;
@@ -117,7 +117,7 @@ export function statusFacts(
   };
 }
 
-/** The profile asked for by name — `--profile` or `CIO_PROFILE` — if any. */
+/** The profile asked for by name — `--cio-profile` or `CIO_PROFILE` — if any. */
 function requestedProfile(): string | undefined {
   return activeProfile ?? (process.env.CIO_PROFILE?.trim() || undefined);
 }
@@ -142,7 +142,7 @@ export function unknownProfile(
     : [DEFAULT_PROFILE];
   return `the cio CLI has no profile "${name}" — the profiles here are ${names.join(
     ', '
-  )}; pass one of them to --profile`;
+  )}; pass one of them to --cio-profile`;
 }
 
 /**
@@ -161,7 +161,7 @@ export function authStatusProblem(status: {
 }): string | undefined {
   const output = `${status.stdout}\n${status.stderr}`;
   if (/unknown flag: --profile/.test(output)) {
-    return 'this cio CLI has no profiles — drop --profile and CIO_PROFILE, or update it with `npm install -g @customerio/cli`';
+    return 'this cio CLI has no profiles — drop --cio-profile and CIO_PROFILE, or update it with `npm install -g @customerio/cli`';
   }
   if (status.code !== 0) {
     return 'the cio CLI is not authenticated — run `cio auth login`';

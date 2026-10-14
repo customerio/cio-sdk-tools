@@ -24,15 +24,20 @@ const rung = (title, checks, extra = {}) => ({
   ...extra,
 });
 
-const report = (overrides = {}) => ({
+/** A report as the ladder builds it: rungs, then sections of cells, in one ordered list. */
+const report = ({ rungs = [], matrices = [], ...overrides } = {}) => ({
   schema: 1,
   provenance: 'read',
   tool: { name: 'cio-sdk-tools', version: '1.8.0' },
   command: 'verify push',
+  area: 'push',
   startedAt: '2026-09-17T00:00:00.000Z',
   finishedAt: '2026-09-17T00:00:05.300Z',
   project: { path: '/p', framework: 'iOS' },
-  rungs: [],
+  sections: [
+    ...rungs.map((rung) => ({ kind: 'checks', ...rung })),
+    ...matrices.map((section) => ({ kind: 'cells', ...section })),
+  ],
   verdict: 'pass',
   causes: [],
   exitCode: 0,
@@ -205,6 +210,13 @@ test('the closing line names the tap when opened ran too, and claims nothing was
   // Only what the device showed: no claim that Customer.io accepted or counted anything.
   assert.doesNotMatch(out.text(), /counted|accepted|reported/);
   assert.match(out.text(), /isn't checked yet/);
+});
+
+test('a registration run that passed says what it proved, and that nothing was sent', () => {
+  const out = sink();
+  reporterOn('human', out).summary(report());
+  assert.match(out.text(), /the device is registered for push\./);
+  assert.match(out.text(), /nothing was sent, so delivery is not proven: --depth on-device sends real pushes\./);
 });
 
 test('a failed run says a push was tried, not that a metric went uncounted', () => {

@@ -63,6 +63,8 @@ export interface Cell {
 }
 
 export interface Section {
+  /** Named by the area, when it names its sections. */
+  id?: string;
   cells: Cell[];
   /** Set when no cell ran at all. */
   skipped?: string;
@@ -86,18 +88,32 @@ export interface ReportedCause {
   evidence: string[];
 }
 
+/**
+ * One entry in a report, in the order it ran: a rung of checks, where the first failure stops
+ * the climb, or a section of cells, where every cell runs.
+ */
+export type ReportSection =
+  | (Rung & { kind: 'checks' })
+  | (Section & { kind: 'cells' });
+
 export interface Report {
   schema: 1;
   tool: { name: string; version: string };
   command: string;
+  /** What was verified: `push`, and later others. */
+  area: string;
+  /** How far the run went, in the area's own words; absent for an area without levels. */
+  level?: string;
   startedAt: string;
   finishedAt: string;
   project: { path: string; framework: string; name?: string };
-  rungs: Rung[];
+  /** Everything the run checked, in order. */
+  sections: ReportSection[];
   /**
-   * One section per metric, in the order they ran. Absent until a real push is sent.
+   * The command that repeats this run without asking anything: every answer, picked or
+   * given, as a flag.
    */
-  matrices?: Section[];
+  rerun?: string;
   /**
    * How the facts were obtained. `read` means they were recovered from storage and the
    * server after the fact, so the moment they were written is unknown; `observed` means
@@ -112,9 +128,8 @@ export interface Report {
    */
   advice?: string[];
   /**
-   * Who allowed the real pushes, and how many first sends that covered (a re-send of a
-   * push that never arrived is not counted). Absent when nothing real was due to be sent:
-   * no `--send`, a dry run, or a run that stopped before the send.
+   * Who allowed what the run sent or wrote, and what that was. Absent when nothing real was
+   * due to be sent: a level that sends nothing, a dry run, or a run that stopped before.
    */
   consent?: Consent;
   /** `warn` means every assertion passed but something is worth a developer's attention. */
@@ -126,9 +141,13 @@ export interface Report {
 
 export interface Consent {
   granted: boolean;
-  /** `prompt` when a person answered the question, `--yes` when the flag answered it. */
-  by: 'prompt' | '--yes';
-  pushes: number;
+  /**
+   * `prompt` when a person answered the question; `named` when the command line named where
+   * everything goes, which is the go-ahead.
+   */
+  by: 'prompt' | 'named';
+  /** What it covered, one line each: "3 real pushes to … through …". */
+  writes: string[];
 }
 
 /**

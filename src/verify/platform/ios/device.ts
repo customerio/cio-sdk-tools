@@ -39,7 +39,7 @@ export function describeTarget(target: Target): string {
 /**
  * Whether a phone `devicectl` lists can be used, from its connection properties. The tunnel
  * state alone said "unavailable" for a phone plugged in by cable whose tunnel had idled, so
- * it was left out of the picker while `--target` with its udid worked. A paired phone with a
+ * it was left out of the picker while `--device` with its udid worked. A paired phone with a
  * transport is reachable; one without is not there.
  */
 export function deviceReachability(connection?: {

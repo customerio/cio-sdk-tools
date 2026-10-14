@@ -5,12 +5,12 @@ import { ALL_STATES, AppState } from '../../platform/app_state';
 import { consentToSend, openedStatesToSend } from './consent';
 import { Consent } from '../../core/report/types';
 import { MatrixSection, PushLadder } from './types';
-import { VerifyPushOptions, parseStates } from './options';
+import { VerifyPushOptions } from './options';
 
 /**
- * Which states get a tap, on the push each already gets for the delivered check. `--opened`
- * asks for it; a dry run, a run nobody can answer, or a missing `--link` makes the opened
- * section a skip with the reason instead.
+ * Which states get a tap, on the push each already gets for the delivered check.
+ * `--check-opens` asks for it; a dry run or a run nobody can answer makes the opened section
+ * a skip with the reason instead. Without `--deep-link` the open is still checked.
  */
 export function tapPlanFor(
   options: VerifyPushOptions,
@@ -21,17 +21,14 @@ export function tapPlanFor(
   const skipped = openedSkipReason({
     dryRun: Boolean(options.dryRun),
     interactive: asker.interactive,
-    link: options.link ?? '',
   });
   if (skipped) return { skipped };
   const states = openedStatesToSend({
     opened: options.opened,
-    link: options.link,
     interactive: asker.interactive,
-    states: parseStates(options.states),
     delivered,
   });
-  if (states.length === 0 || !options.link) {
+  if (states.length === 0) {
     return {
       skipped:
         'none of the states being sent has a banner to tap — add killed or background',
@@ -69,11 +66,11 @@ export function skipUnreadable(
 }
 
 /**
- * The one question before the first real push, asked after preflight because the token it
+ * The go-ahead before the first real push, settled after registration because the token it
  * names only exists once the device has been read. Returns nothing when there is nothing
- * real to send — no `--send`, a dry run, or an input missing, in which case the matrices
- * skip themselves with the reason — and a consent whose `granted` gates the matrices
- * otherwise.
+ * real to send — a level that sends nothing, a dry run, or an input missing, in which case
+ * the sections skip themselves with the reason — and a consent whose `granted` gates the
+ * sections otherwise.
  */
 export async function askToSend(
   ladder: PushLadder,
@@ -106,14 +103,12 @@ export async function askToSend(
       delivered: inputs.delivered ?? ALL_STATES,
       opened: openedStatesToSend({
         opened: options.opened,
-        link: options.link,
         interactive: asker.interactive,
-        states: parseStates(options.states),
         delivered: inputs.delivered ?? ALL_STATES,
       }),
       retries: inputs.retries,
     },
-    yes: options.yes,
+    named: options.named,
     opened: options.opened,
     asker,
     reporter,

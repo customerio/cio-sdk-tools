@@ -37,6 +37,10 @@ export interface Step {
  */
 export interface Level {
   id: string;
+  /** A short name for the question that asks for it: "On the device". */
+  label: string;
+  /** A few words beside the label in that question: "nothing is sent". */
+  hint?: string;
   /** One line, for the help and the question that asks for it. */
   title: string;
   /** Every step this level runs, in order. */

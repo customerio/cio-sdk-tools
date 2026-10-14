@@ -51,7 +51,7 @@ test('a rung of nothing but skips is a skip, not a pass', () => {
   ladder.adopt(
     rung('project_wiring', 'Project wiring', [skipped('a', 'not run', 'no extension')])
   );
-  assert.strictEqual(Ladder.verdictOf(ladder.toReport(meta()).rungs[0]), 'skip');
+  assert.strictEqual(Ladder.verdictOf(ladder.toReport(meta()).sections[0]), 'skip');
   assert.strictEqual(ladder.verdict, 'skip');
 });
 
@@ -91,6 +91,7 @@ function meta() {
     schema: 1,
     tool: { name: 'cio-sdk-tools', version: '0.0.0' },
     command: 'verify push',
+    area: 'push',
     startedAt: '2026-09-17T00:00:00.000Z',
     finishedAt: '2026-09-17T00:00:01.000Z',
     project: { path: '/tmp/App.xcodeproj', framework: 'iOS' },
@@ -114,14 +115,19 @@ test('a rung records the time its evidence cost', () => {
     provenance: 'read',
     tool: { name: 't', version: '0' },
     command: 'verify push',
+    area: 'push',
     startedAt: '2026-09-17T00:00:00.000Z',
     finishedAt: '2026-09-17T00:02:44.000Z',
     project: { path: '/p', framework: 'iOS' },
   });
+  // One list, in the order things ran: the two rungs, then the section of cells.
   assert.deepStrictEqual(
-    report.rungs.map((r) => r.durationMs),
-    [312, 9_040]
+    report.sections.map((section) => [section.kind, section.durationMs]),
+    [
+      ['checks', 312],
+      ['checks', 9_040],
+      ['cells', 151_000],
+    ]
   );
-  assert.strictEqual(report.matrices[0].cells[0].durationMs, 41_200);
-  assert.strictEqual(report.matrices[0].durationMs, 151_000);
+  assert.strictEqual(report.sections[2].cells[0].durationMs, 41_200);
 });

@@ -326,9 +326,17 @@ export function createReporter(options: {
       }
 
       // A section that never ran never streamed a line, so it says so here. Without this
-      // the reason a matrix was skipped — "pass --send", "opened needs a real tap" —
+      // the reason a section was skipped — "opened needs a real tap", "nothing was confirmed" —
       // vanished from the output entirely, leaving only "nothing was proven".
-      for (const section of report.matrices ?? []) {
+      const rungs = report.sections.filter(
+        (section): section is Extract<typeof section, { kind: 'checks' }> =>
+          section.kind === 'checks'
+      );
+      const cells = report.sections.filter(
+        (section): section is Extract<typeof section, { kind: 'cells' }> =>
+          section.kind === 'cells'
+      );
+      for (const section of cells) {
         if (!section.skipped) continue;
         body.push(`  ${chalk.bold(`${voice.sectionName(section)} matrix`)}`);
         body.push(`     ${chalk.dim(section.skipped)}`);
@@ -340,13 +348,13 @@ export function createReporter(options: {
         body.push('');
       }
 
-      const failing = report.rungs.find((rung) =>
+      const failing = rungs.find((rung) =>
         rung.checks.some((check) => check.verdict === 'fail')
       );
       if (failing) {
         body.push(
           chalk.red(
-            `  stopped at rung ${report.rungs.indexOf(failing) + 1} — ${
+            `  stopped at rung ${rungs.indexOf(failing) + 1} — ${
               failing.title
             }.`
           )
@@ -366,9 +374,8 @@ export function createReporter(options: {
         new Date(report.finishedAt).getTime() -
         new Date(report.startedAt).getTime();
       const facts = [formatMs(totalMs), provenanceOf(report)];
-      const evidencePath = (report.matrices ?? []).find(
-        (section) => section.logs?.evidencePath
-      )?.logs?.evidencePath;
+      const evidencePath = cells.find((section) => section.logs?.evidencePath)
+        ?.logs?.evidencePath;
       if (evidencePath) facts.push(`evidence ${evidencePath}`);
       body.push(chalk.dim(`  ${facts.join(' · ')}`));
       if (level === 'human' && report.causes.length === 0) {

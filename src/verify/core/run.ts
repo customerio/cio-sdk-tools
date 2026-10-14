@@ -1,3 +1,4 @@
+import { Command } from 'commander';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { ERROR_CODES, ErrorCode, printError } from './errors';
@@ -9,14 +10,34 @@ import {
 } from './prompt';
 import { Level, Reporter, Voice, createReporter } from './report/render';
 import { Report } from './report/types';
+import { wrapCommand } from './replay';
 
 /** The options every area takes: how the run is shown, and whether it may ask. */
 export interface OutputOptions {
-  json: boolean;
+  json?: boolean;
   report?: string;
-  verbose: boolean;
-  quiet: boolean;
-  nonInteractive: boolean;
+  verbose?: boolean;
+  quiet?: boolean;
+  nonInteractive?: boolean;
+}
+
+/**
+ * The options every area takes, defined once on `verify` and read by each area's command
+ * through `optsWithGlobals()`, so they work before or after the area's name.
+ */
+export function addOutputOptions(command: Command): Command {
+  return command
+    .option('--json', 'print the report as JSON on stdout')
+    .option('--report <file>', 'also write the JSON report to a file')
+    .option(
+      '-v, --verbose',
+      'print every check, command and phase (env: CIO_VERBOSE=1)'
+    )
+    .option('-q, --quiet', 'print only the verdict and what to do about it')
+    .option(
+      '--non-interactive',
+      'never ask; anything missing is an error naming its option (--json implies this)'
+    );
 }
 
 /** What an area is handed to run with. */
@@ -99,6 +120,22 @@ export async function runArea(
   }
 
   await emit(report, reporter, options);
+  // A run that had to ask hands over the command that would not have: the next run, the
+  // CI job, the agent. One that asked nothing was already that command.
+  if (
+    report.rerun &&
+    asker.asked > 0 &&
+    (level === 'human' || level === 'verbose')
+  ) {
+    process.stdout.write(
+      [
+        '  Run it again without the questions:',
+        ...wrapCommand(report.rerun),
+        '',
+        '',
+      ].join('\n')
+    );
+  }
   return report.exitCode;
 }
 
