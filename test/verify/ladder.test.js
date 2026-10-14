@@ -1,9 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { Ladder, fail, pass, warn, skipped } = require('../../dist/verify/ladder');
-const { EXIT } = require('../../dist/verify/types');
-const { resolveCause } = require('../../dist/verify/causes');
+const { Ladder, fail, pass, warn, skipped } = require('../../dist/verify/core/report/ladder');
+const { EXIT } = require('../../dist/verify/core/report/types');
+const { resolveCause } = require('../../dist/verify/areas/push/causes');
 
 const rung = (id, title, checks) => ({ id, title, checks });
 

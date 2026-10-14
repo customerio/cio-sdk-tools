@@ -1,13 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { workspaceReady } = require('../../dist/verify/rungs/workspace_ready');
-const { deviceReady } = require('../../dist/verify/rungs/device_ready');
+const { workspaceReady } = require('../../dist/verify/areas/push/registration/workspace_ready');
+const { deviceReady } = require('../../dist/verify/areas/push/registration/device_ready');
 const {
   profileLinked,
   deviceLinkChecks,
-} = require('../../dist/verify/rungs/profile_linked');
-const { Ladder } = require('../../dist/verify/ladder');
+} = require('../../dist/verify/areas/push/registration/profile_linked');
+const { Ladder } = require('../../dist/verify/core/report/ladder');
 
 const authed = { available: true, authenticated: true, accountId: '1' };
 const causes = (rung) => rung.checks.filter((c) => c.cause).map((c) => c.cause);
@@ -254,7 +254,7 @@ test('the profile rung skips, never fails, when its inputs are missing', async (
 });
 
 test('the push transport comes from the linked SDK product, not an assumption', () => {
-  const { providerFrom } = require('../../dist/verify/rungs/project_wiring');
+  const { providerFrom } = require('../../dist/verify/areas/push/registration/project_wiring');
   // An iOS app delivering push over Firebase needs an FCM credential; assuming APNs
   // convicted a correctly wired app with workspace.apns_credential_missing.
   assert.strictEqual(providerFrom(['CioDataPipelines', 'CioMessagingPushFCM']), 'fcm');

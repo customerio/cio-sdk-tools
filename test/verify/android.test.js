@@ -1,17 +1,18 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { judgeAndroid } = require('../../dist/verify/matrix/android');
-const { parseLogcat, ANDROID_MARKERS, androidDeliveryIds } = require('../../dist/verify/matrix/android_logs');
-const { prefString, decodeXmlEntities } = require('../../dist/verify/android/adb');
+const { judgeAndroid } = require('../../dist/verify/areas/push/on_device/android');
+const { parseLogcat } = require('../../dist/verify/platform/android/logcat');
+const { ANDROID_MARKERS, androidDeliveryIds } = require('../../dist/verify/areas/push/on_device/sdk_lines');
+const { prefString, decodeXmlEntities } = require('../../dist/verify/platform/android/adb');
 const {
   applicationIdFrom,
   sdkModulesFrom,
   resolveInitAtLaunch,
   PUSH_MODULE_NAMES,
-} = require('../../dist/verify/android/project');
-const { androidDeviceReady } = require('../../dist/verify/rungs/android_device');
-const { Ladder } = require('../../dist/verify/ladder');
+} = require('../../dist/verify/platform/android/project');
+const { androidDeviceReady } = require('../../dist/verify/areas/push/registration/android_device');
+const { Ladder } = require('../../dist/verify/core/report/ladder');
 
 const base = {
   available: true,
@@ -217,7 +218,7 @@ test('a missing token and a denied permission are separate failures', () => {
 });
 
 test('a physical Android device is a valid target, and so is an emulator', () => {
-  const { selectAndroidTarget } = require('../../dist/verify/android/device');
+  const { selectAndroidTarget } = require('../../dist/verify/platform/android/device');
   const phone = {
     serial: 'RFCXB0LZRLD',
     model: 'SM-S921B',
@@ -277,7 +278,7 @@ test('the handoff markers match the SDK’s two success phrasings', () => {
 });
 
 test('a mark survives the retention window dropping lines', () => {
-  const { parseLogcat } = require('../../dist/verify/matrix/android_logs');
+  const { parseLogcat } = require('../../dist/verify/platform/android/logcat');
   // The bug this pins: a cell saved `lines.length`, the window later dropped the oldest
   // 10,000 lines, and every saved index silently pointed somewhere else. On an S24 that
   // made a cell read the wrong slice and report a tap it had actually recorded.

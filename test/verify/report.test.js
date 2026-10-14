@@ -1,8 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { createReporter, visibleLength } = require('../../dist/verify/report');
-const { run, setTracer } = require('../../dist/verify/exec');
+const { createReporter, visibleLength } = require('../../dist/verify/core/report/render');
+const { PUSH_VOICE } = require('../../dist/verify/areas/push/voice');
+const { run, setTracer } = require('../../dist/verify/core/exec');
 
 const sink = () => {
   const written = [];
@@ -14,7 +15,7 @@ const sink = () => {
 };
 
 const reporterOn = (level, out) =>
-  createReporter({ level, out: out.stream, err: out.stream, spinners: false });
+  createReporter({ voice: PUSH_VOICE, level, out: out.stream, err: out.stream, spinners: false });
 
 const rung = (title, checks, extra = {}) => ({
   id: 'project_wiring',
@@ -249,7 +250,7 @@ test('a cell says "received" or "opened" without its evidence, and expands when 
 });
 
 test('every cell says Customer.io\u2019s record was not checked', () => {
-  const ladder = new (require('../../dist/verify/ladder').Ladder)();
+  const ladder = new (require('../../dist/verify/core/report/ladder').Ladder)();
   ladder.addMatrix({
     metric: 'delivered',
     cells: [{ state: 'killed', verdict: 'pass', evidence: [] }],
@@ -310,7 +311,7 @@ test('a prompt gets the terminal to itself', () => {
   const out = sink();
   // Spinners on: the pause/resume pair is what a question relies on, so it has to work
   // when there is actually something painting.
-  const reporter = createReporter({
+  const reporter = createReporter({ voice: PUSH_VOICE,
     level: 'human',
     out: out.stream,
     err: out.stream,

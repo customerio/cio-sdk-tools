@@ -3,13 +3,9 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 
-const {
-  NSE_MARKERS,
-  deliveryIdsIn,
-  parseSyslog,
-  ranInExtension,
-} = require('../../dist/verify/matrix/logs');
-const { judge } = require('../../dist/verify/matrix');
+const { NSE_MARKERS, deliveryIdsIn, ranInExtension } = require('../../dist/verify/areas/push/on_device/sdk_lines');
+const { parseSyslog } = require('../../dist/verify/platform/ios/logs');
+const { judge } = require('../../dist/verify/areas/push/on_device');
 
 /**
  * A real capture from an iPhone 15, trimmed to the extension's own lines and scrubbed.
@@ -72,7 +68,7 @@ test('judged from the real capture, every cell passes', () => {
 });
 
 test('the extension running is read from the real capture, by process', () => {
-  const { extensionRanIn } = require('../../dist/verify/matrix/logs');
+  const { extensionRanIn } = require('../../dist/verify/areas/push/on_device/sdk_lines');
   assert.strictEqual(extensionRanIn(lines, 'NotificationServiceExtension'), true);
   // Defence against the parser regression above: with every process name lost, the line
   // only the extension writes still shows it ran.

@@ -9,10 +9,10 @@ const {
   createAsker,
   describeMissingInput,
   MissingInput,
-} = require('../../dist/verify/prompt');
-const cli = require('../../dist/verify/cio/cli');
-const { resolveWorkspace } = require('../../dist/verify/cio/workspace');
-const { buildVariants } = require('../../dist/verify/android/project');
+} = require('../../dist/verify/core/prompt');
+const cli = require('../../dist/verify/platform/cio/cli');
+const { resolveWorkspace } = require('../../dist/verify/platform/cio/workspace');
+const { buildVariants } = require('../../dist/verify/platform/android/project');
 
 const sink = () => {
   const written = [];
@@ -216,8 +216,8 @@ test('a closed stdin answers immediately instead of looking like a hang', async 
 
 // --- the failure-path sweep ----------------------------------------------
 
-const { findIdentityElsewhere } = require('../../dist/verify/cio/push');
-const { describeHits } = require('../../dist/verify/rungs/profile_linked');
+const { findIdentityElsewhere } = require('../../dist/verify/platform/cio/profile');
+const { describeHits } = require('../../dist/verify/areas/push/registration/profile_linked');
 
 test('the sweep says which workspace actually holds the device', async () => {
   const swept = [];
@@ -296,7 +296,7 @@ test('a workspace holding the device outranks one holding only the name', async 
   assert.strictEqual(hits[0].workspace.id, '122175');
 });
 
-const { selectionFacts } = require('../../dist/verify/select');
+const { selectionFacts } = require('../../dist/verify/areas/push/select');
 
 test('the facts name a picked target and say when a run is a dry run', () => {
   const selection = {

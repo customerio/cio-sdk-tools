@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { ERROR_CODES, exitCodeForError, printError } = require('../../dist/verify/errors');
-const { selectCredentials } = require('../../dist/verify/cio/cli');
+const { ERROR_CODES, exitCodeForError, printError } = require('../../dist/verify/core/errors');
+const { selectCredentials } = require('../../dist/verify/platform/cio/cli');
 
 /**
  * These three behaviours are borrowed from the org's own CLIs — the `cio` CLI's error

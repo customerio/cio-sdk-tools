@@ -1,17 +1,18 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const cli = require('../../dist/verify/cio/cli');
+const cli = require('../../dist/verify/platform/cio/cli');
 const {
   RATE_LIMITED_CAUSE,
   eachState,
   isRateLimited,
   rejectedCell,
   sendVerifyPush,
-} = require('../../dist/verify/matrix/send');
-const { CAUSES } = require('../../dist/verify/causes');
-const { Ladder } = require('../../dist/verify/ladder');
-const { createReporter } = require('../../dist/verify/report');
+} = require('../../dist/verify/areas/push/on_device/send');
+const { CAUSES } = require('../../dist/verify/areas/push/causes');
+const { Ladder } = require('../../dist/verify/core/report/ladder');
+const { createReporter } = require('../../dist/verify/core/report/render');
+const { PUSH_VOICE } = require('../../dist/verify/areas/push/voice');
 
 const APPLE_429 = 'API error 400: 429 TooManyProviderTokenUpdates';
 
@@ -107,7 +108,7 @@ test('after the first 429 nothing more is sent, and the rest are skipped rather 
     // A pause this long would time the test out: none is taken after a refusal.
     {
       pauseMs: 60_000,
-      reporter: createReporter({
+      reporter: createReporter({ voice: PUSH_VOICE,
         level: 'human',
         out: out.stream,
         err: out.stream,
@@ -190,7 +191,7 @@ test('the catalog holds the rate-limit cause', () => {
   assert.strictEqual(CAUSES[RATE_LIMITED_CAUSE].stage, 'delivered_matrix');
 });
 
-const { whyNoSend } = require('../../dist/verify/matrix/send');
+const { whyNoSend } = require('../../dist/verify/areas/push/on_device/send');
 
 test('a send that cannot happen names what is missing, and why the workspace is', () => {
   assert.strictEqual(
@@ -213,8 +214,8 @@ test('a send that cannot happen names what is missing, and why the workspace is'
   );
 });
 
-const { markLateArrivals } = require('../../dist/verify/matrix/send');
-const { postedTitlesFrom } = require('../../dist/verify/matrix/android');
+const { markLateArrivals } = require('../../dist/verify/areas/push/on_device/send');
+const { postedTitlesFrom } = require('../../dist/verify/areas/push/on_device/android');
 
 test('a push that missed its window but is on the target at the end is late, not lost', async () => {
   // The resumed emulator of 2026-10-13: killed and background "never arrived", and both

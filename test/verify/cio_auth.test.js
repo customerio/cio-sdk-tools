@@ -1,10 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const cli = require('../../dist/verify/cio/cli');
+const cli = require('../../dist/verify/platform/cio/cli');
 const { authStatusProblem, unknownProfile, shortError } = cli;
-const { resolveWorkspace } = require('../../dist/verify/cio/workspace');
-const { createAsker } = require('../../dist/verify/prompt');
+const { resolveWorkspace } = require('../../dist/verify/platform/cio/workspace');
+const { createAsker } = require('../../dist/verify/core/prompt');
 
 // Captured from `cio` 0.0.10, so the shapes are the real ones.
 const UNKNOWN_FLAG =
@@ -173,7 +173,7 @@ test('a status the tool cannot read leaves the config file to answer', () => {
   });
 });
 
-const { networkFailure } = require('../../dist/verify/cio/workspace');
+const { networkFailure } = require('../../dist/verify/platform/cio/workspace');
 
 test('a network failure says to check the connection, not the login', async () => {
   const offline =

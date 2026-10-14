@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { formatMs, stopwatch } = require('../../dist/verify/clock');
+const { formatMs, stopwatch } = require('../../dist/verify/core/clock');
 
 test('durations read at the scale a developer thinks in', () => {
   assert.strictEqual(formatMs(0), '0ms');

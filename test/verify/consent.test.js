@@ -2,14 +2,15 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { PassThrough } = require('node:stream');
 
-const { createAsker } = require('../../dist/verify/prompt');
+const { createAsker } = require('../../dist/verify/core/prompt');
 const {
   consentToSend,
   openedStatesToSend,
   refusalWithoutConsent,
-} = require('../../dist/verify/consent');
-const { Ladder } = require('../../dist/verify/ladder');
-const { createReporter } = require('../../dist/verify/report');
+} = require('../../dist/verify/areas/push/consent');
+const { Ladder } = require('../../dist/verify/core/report/ladder');
+const { createReporter } = require('../../dist/verify/core/report/render');
+const { PUSH_VOICE } = require('../../dist/verify/areas/push/voice');
 
 const TOKEN =
   'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90';
@@ -35,7 +36,7 @@ const asker = (lines, out, timeoutMs = 1_000) => {
 };
 
 const reporterOn = (out, level = 'human') =>
-  createReporter({ level, out: out.stream, err: out.stream, spinners: false });
+  createReporter({ voice: PUSH_VOICE, level, out: out.stream, err: out.stream, spinners: false });
 
 const plan = (overrides = {}) => ({
   target: 'cio-verify-poc (simulator iOS 18.4, booted) · 6F1C2A9E',

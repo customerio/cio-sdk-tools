@@ -1,9 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { watchFor, freshness } = require('../../dist/verify/observe');
-const { installTimesFrom } = require('../../dist/verify/android/device');
-const { createAsker } = require('../../dist/verify/prompt');
+const { watchFor, freshness } = require('../../dist/verify/platform/observe');
+const { installTimesFrom } = require('../../dist/verify/platform/android/device');
+const { createAsker } = require('../../dist/verify/core/prompt');
 
 const asker = createAsker({ interactive: false });
 const opts = (extra = {}) => ({ asker, intervalMs: 5, timeoutMs: 400, ...extra });

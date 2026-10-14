@@ -6,7 +6,7 @@ const {
   OPENED_MARKERS,
   OPENED_STATES,
   openedSkipReason,
-} = require('../../dist/verify/matrix/opened');
+} = require('../../dist/verify/areas/push/on_device/opened');
 
 const tapped = {
   available: true,
@@ -115,7 +115,7 @@ test('foreground is not offered by default — there is no banner to tap', () =>
 
 // --- arrival by title ----------------------------------------------------
 
-const { storedNotificationsFrom } = require('../../dist/verify/matrix/notifications');
+const { storedNotificationsFrom } = require('../../dist/verify/areas/push/on_device/notifications');
 
 /** `plutil -convert xml1` over a DeliveredNotifications.plist, cut down to its shape. */
 function storeXml() {
@@ -166,8 +166,8 @@ test('a store that will not parse names no notifications rather than throwing', 
 });
 
 test('every tapped state gets a line, even one whose push was never sent', () => {
-  const { completeTaps } = require('../../dist/verify/matrix');
-  const { notTappedCell } = require('../../dist/verify/matrix/opened');
+  const { completeTaps } = require('../../dist/verify/areas/push/on_device');
+  const { notTappedCell } = require('../../dist/verify/areas/push/on_device/opened');
   const tap = { asker: {}, link: 'app://x', states: ['killed', 'background'] };
   const killed = { state: 'killed', verdict: 'pass', evidence: [] };
   // The provider refused the background send, so that state's cell never ran.
@@ -206,7 +206,7 @@ test('a run that cannot ask for a tap, or has no link, says so instead of tappin
 
 const {
   ANDROID_OPENED_MARKERS,
-} = require('../../dist/verify/matrix/android_opened');
+} = require('../../dist/verify/areas/push/on_device/android_opened');
 
 test('the Android markers match that SDK sentence for sentence', () => {
   // From customerio-android PushNotificationLogger.kt. The wording differs from iOS —
@@ -248,7 +248,7 @@ test('the Android markers match that SDK sentence for sentence', () => {
 });
 
 test('both platforms reach the same verdict through the same judge', () => {
-  const { judgeOpened } = require('../../dist/verify/matrix/opened');
+  const { judgeOpened } = require('../../dist/verify/areas/push/on_device/opened');
   // Android logs no separate "clicked" line, so the caller derives it — the point is that
   // one cause vocabulary covers both, which is what the plugin will key on.
   assert.deepStrictEqual(
@@ -282,7 +282,7 @@ test('a dry run never runs the tap test, because it skipped the consent question
   );
 });
 
-const { observeOpened } = require('../../dist/verify/matrix/opened');
+const { observeOpened } = require('../../dist/verify/areas/push/on_device/opened');
 
 test('internal event lines no longer stand in for the SDK handling the open', () => {
   // Captured from a physical iPhone 15 on 2026-10-13. The lines the check needs were not
@@ -322,7 +322,7 @@ test('the older wording still reads the same way', () => {
   );
 });
 
-const { openedSequenceComplete } = require('../../dist/verify/matrix/opened');
+const { openedSequenceComplete } = require('../../dist/verify/areas/push/on_device/opened');
 
 test('a tap is not finished until the open is tracked and the link has an outcome', () => {
   // The killed tap of 2026-10-13, read before the app said how the link ended.
@@ -381,8 +381,8 @@ test('a tap is not finished until the open is tracked and the link has an outcom
   );
 });
 
-const exec = require('../../dist/verify/exec');
-const { deviceLogUnavailable } = require('../../dist/verify/matrix/logs');
+const exec = require('../../dist/verify/core/exec');
+const { deviceLogUnavailable } = require('../../dist/verify/platform/ios/logs');
 
 test('a phone without idevicesyslog is named before anything is sent; a simulator never is', async () => {
   const original = exec.isCommandAvailable;
@@ -411,8 +411,8 @@ test('a phone without idevicesyslog is named before anything is sent; a simulato
   }
 });
 
-const { explainUnseenTap } = require('../../dist/verify/matrix/opened');
-const { blameStoppedCapture } = require('../../dist/verify/matrix/logs');
+const { explainUnseenTap } = require('../../dist/verify/areas/push/on_device/opened');
+const { blameStoppedCapture } = require('../../dist/verify/areas/push/on_device/sdk_lines');
 
 test('a cell that saw nothing after the capture stopped blames the capture', () => {
   const silent = {
@@ -540,8 +540,8 @@ test('a capture that stopped explains lost tap lines too', () => {
 // --- the tap prompt ---------------------------------------------------------
 
 const { PassThrough } = require('stream');
-const { createAsker } = require('../../dist/verify/prompt');
-const { untappedCell } = require('../../dist/verify/matrix/opened');
+const { createAsker } = require('../../dist/verify/core/prompt');
+const { untappedCell } = require('../../dist/verify/areas/push/on_device/opened');
 
 const tapAsker = (lines, timeoutMs = 200) => {
   const input = new PassThrough();
@@ -647,7 +647,7 @@ test('on a terminal, the arrow keys move and Enter picks', async () => {
 });
 
 test('arrows wrap, a number jumps, and the default is where the cursor starts', async () => {
-  const { pickWithArrows } = require('../../dist/verify/prompt');
+  const { pickWithArrows } = require('../../dist/verify/core/prompt');
   const rows = [{ label: 'a' }, { label: 'b' }, { label: 'c' }];
 
   let terminal = fakeTerminal();
@@ -674,7 +674,7 @@ test('arrows wrap, a number jumps, and the default is where the cursor starts', 
 });
 
 test('no key in time is no answer, and the terminal is restored', async () => {
-  const { pickWithArrows } = require('../../dist/verify/prompt');
+  const { pickWithArrows } = require('../../dist/verify/core/prompt');
   const { input, output, text } = fakeTerminal();
   assert.strictEqual(
     await pickWithArrows(input, output, [{ label: 'a' }], 0, 50),

@@ -8,7 +8,7 @@ const {
   tapBody,
   androidIdForTitle,
   androidOpenedIdentity,
-} = require('../../dist/verify/matrix/identity');
+} = require('../../dist/verify/areas/push/on_device/identity');
 
 test('every push gets its own tag, in an alphabet nobody misreads off a banner', () => {
   const tags = new Set(Array.from({ length: 200 }, () => pushTag()));

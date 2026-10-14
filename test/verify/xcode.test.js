@@ -6,7 +6,7 @@ const {
   hasUnresolvedVariable,
   productFilename,
   trimQuotes,
-} = require('../../dist/verify/ios/xcode');
+} = require('../../dist/verify/platform/ios/xcode');
 
 test('build variables in an App Group are expanded before comparison', () => {
   // Comparing the literal is how a correctly-wired project gets reported as a mismatch.

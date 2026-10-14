@@ -6,7 +6,7 @@ const {
   enclosingScope,
   forwardsToSdk,
   resolveRunsAtLaunch,
-} = require('../../dist/verify/ios/source');
+} = require('../../dist/verify/platform/ios/source');
 
 const file = (p, text) => ({ path: p, absolutePath: `/${p}`, text });
 
@@ -146,7 +146,7 @@ MessagingPushAPN.initializeForExtension(
   assert.strictEqual(signals.logLevel, 'debug');
 });
 
-const { simctlError } = require('../../dist/verify/ios/device');
+const { simctlError } = require('../../dist/verify/platform/ios/device');
 
 test("a missing app container is said plainly, not as simctl's header line", () => {
   const notInstalled =
@@ -168,7 +168,7 @@ const {
   deviceReachability,
   describeTarget,
   isUsable,
-} = require('../../dist/verify/ios/device');
+} = require('../../dist/verify/platform/ios/device');
 
 test('a paired phone on a cable is usable even while its tunnel idles', () => {
   // devicectl, 2026-10-13: an iPhone 15 plugged in by cable, between commands.

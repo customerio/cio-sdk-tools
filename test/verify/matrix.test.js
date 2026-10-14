@@ -1,13 +1,15 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { deliveredRequest, judge } = require('../../dist/verify/matrix');
+const { deliveredRequest, judge } = require('../../dist/verify/areas/push/on_device');
 const {
   NSE_MARKERS,
   deliveryIdsIn,
   ranInExtension,
-} = require('../../dist/verify/matrix/logs');
-const { Ladder } = require('../../dist/verify/ladder');
+} = require('../../dist/verify/areas/push/on_device/sdk_lines');
+const { Ladder } = require('../../dist/verify/core/report/ladder');
+// Push's causes, which the ladder resolves through the core registry.
+require('../../dist/verify/areas/push/causes');
 
 const line = (process, message) => ({ at: '00:00:00.000', process, message });
 
@@ -196,7 +198,7 @@ test('the extension is identified by process, not by message text', () => {
 });
 
 test('the line only the extension writes stands in when the process name is lost', () => {
-  const { extensionRanIn } = require('../../dist/verify/matrix/logs');
+  const { extensionRanIn } = require('../../dist/verify/areas/push/on_device/sdk_lines');
   assert.strictEqual(
     extensionRanIn([line('', '[Push] Tracking push message delivered with deliveryId: dgS_x')]),
     true
@@ -327,7 +329,7 @@ test('an extension that runs and never forwards passes on the device; wiring nam
 });
 
 test('an interrupted run cannot leave a log stream attached', () => {
-  const { trackCapture } = require('../../dist/verify/matrix/logs');
+  const { trackCapture } = require('../../dist/verify/platform/logs');
   const before = process.listenerCount('SIGINT');
   const killed = [];
   const fake = {
@@ -437,7 +439,7 @@ test('the re-send goes out the same way as the first send, Firebase included', (
   assert.strictEqual(retry.title, 'cio verify · killed · 9DG62');
 });
 
-const { explainNotificationsOff } = require('../../dist/verify/matrix');
+const { explainNotificationsOff } = require('../../dist/verify/areas/push/on_device');
 
 test('silence in every state with notifications off is named as that, once', () => {
   // The iPhone run of 2026-10-13, before notifications were allowed for the app.
@@ -523,7 +525,7 @@ test('notifications-off is not claimed when anything arrived, or when the profil
   assert.strictEqual(explainNotificationsOff(silentButOn, false), silentButOn);
 });
 
-const { explainSdkSilence, SDK_PUSH_LINE } = require('../../dist/verify/matrix/logs');
+const { explainSdkSilence, SDK_PUSH_LINE } = require('../../dist/verify/areas/push/on_device/sdk_lines');
 
 test('an app that logged while the SDK wrote nothing names the log level, not the push', () => {
   const cells = [
