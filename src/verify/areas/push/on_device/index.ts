@@ -286,6 +286,7 @@ async function runCell(
             tap: options.tap,
             evidenceDirectory: options.evidenceDirectory,
             reporter: options.reporter,
+            appProcess: options.processNames?.[0],
           },
           capture,
           tapHandle

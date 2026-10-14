@@ -717,3 +717,49 @@ test('a select on a terminal uses the arrows too, and a pipe still answers by nu
   // A pipe is not a terminal: numbers, as before.
   assert.strictEqual(await tapAsker(['2']).asker.askTap('x'), 'not_shown');
 });
+
+test('with the launch held from its first line, silence after the tap is the SDK\'s, not the stream\'s', () => {
+  const handedOver = {
+    available: true,
+    clicked: false,
+    tracked: false,
+    foreign: false,
+    emptyId: false,
+    linkAttempted: false,
+    linkHandled: false,
+    linkUnhandled: false,
+    osDelivered: true,
+  };
+  // Held: every line the app wrote was read, so a tap iOS delivered and the SDK never
+  // logged is the SDK set up too late for a launch.
+  assert.deepStrictEqual(judgeOpened({ ...handedOver, lossy: false }), {
+    verdict: 'fail',
+    cause: 'runtime.cold_tap_not_handled',
+  });
+  // Not held: the phone may have dropped the lines, so nothing is proven either way.
+  assert.deepStrictEqual(judgeOpened({ ...handedOver, lossy: true }), {
+    verdict: 'skip',
+    cause: 'runtime.tap_lines_lost',
+  });
+  // A click with no open, read in full, is the open never being reported.
+  assert.deepStrictEqual(
+    judgeOpened({ ...tapped, tracked: false, lossy: false }),
+    { verdict: 'fail', cause: 'runtime.opened_not_tracked' }
+  );
+});
+
+test('a capture that stopped explains a held launch that looks unhandled', () => {
+  const { explainUnseenTap } = require('../../dist/verify/areas/push/on_device/opened');
+  const cell = {
+    state: 'killed',
+    verdict: 'fail',
+    cause: 'runtime.cold_tap_not_handled',
+    evidence: [],
+  };
+  const explained = explainUnseenTap(cell, {
+    stoppedReason: 'idevicesyslog -p 1220 exited at 17:02:01, partway through the run',
+    linesAfterTap: 0,
+  });
+  assert.strictEqual(explained.cause, 'runtime.capture_stopped');
+  assert.strictEqual(explained.verdict, 'skip');
+});

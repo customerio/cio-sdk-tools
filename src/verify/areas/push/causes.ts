@@ -354,7 +354,15 @@ export const CAUSES: Record<string, PushCause> = {
     summary:
       "The tap reached the app, and the SDK's lines for it never reached the phone's log stream.",
     remedy:
-      "This is unproven, not failed. A phone's log stream drops lines, most of all during the burst of a cold launch, so a tap the app handled can leave no trace in it. Run that state again: the run prints the command, and the report carries it as `rerunUnproven`.",
+      "This is unproven, not failed. A phone's log stream drops lines, most of all during the burst of a cold launch, so a tap the app handled can leave no trace in it. For a tap on a killed app the run holds the launch with Xcode's debugger to stop that; the cell's evidence says why it could not (usually a Release build, or Xcode's debugger already attached to the app). Run that state again: the run prints the command, and the report carries it as `rerunUnproven`.",
+  },
+  'runtime.cold_tap_not_handled': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary: 'The tap started the app, and the SDK never handled it.',
+    remedy:
+      "iOS handed the tap to the app, and every line the app wrote from its first was read, so this is not a lost line. A tap that starts the app is delivered once, during launch, to the notification delegate in place by then; Apple's rule is that the delegate must be assigned before the app finishes launching. When taps on a running app pass and this one fails, the SDK is set up too late: initialize it, push module included, in the app delegate's launch method, not after a login, a screen appearing or an async load.",
+    docs: IOS_PUSH_DOCS,
   },
   'runtime.tap_other_push': {
     stage: 'delivered_matrix',

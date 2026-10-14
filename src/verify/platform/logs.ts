@@ -44,6 +44,20 @@ export interface LogCapture {
    * not been seen to drop anything.
    */
   lossy?: boolean;
+  /**
+   * Add a stream that the device itself filters to one process, merged into this capture.
+   * A phone drops lines from its whole log when it is busy, and not from a stream for one
+   * pid, so a process followed from before its first line has every line in the capture.
+   * Only a phone's capture has it.
+   */
+  followProcess?(pid: number): Promise<FollowedProcess>;
+}
+
+export interface FollowedProcess {
+  /** The stream reached the device, so the process's lines from now on are all in it. */
+  connected: boolean;
+  how: string;
+  reason?: string;
 }
 
 /**

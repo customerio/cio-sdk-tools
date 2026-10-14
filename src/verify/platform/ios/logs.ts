@@ -3,7 +3,7 @@ import { createWriteStream, WriteStream } from 'fs';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { isCommandAvailable, run } from '../../core/exec';
-import { LogCapture, LogLine, trackCapture } from '../logs';
+import { FollowedProcess, LogCapture, LogLine, trackCapture } from '../logs';
 import { Target } from './device';
 
 /**
@@ -110,16 +110,10 @@ export async function startCapture(
   // `-p` and `-K` are mutually exclusive, and passing both makes idevicesyslog print
   // usage and exit — which read as "the app logged nothing" and accused a working
   // extension three times over. A process filter excludes the kernel anyway.
-  const attached = await existingDeviceStream(target.udid);
-  if (attached) {
-    return {
-      ...NOT_CAPTURING,
-      unavailableReason:
-        `idevicesyslog (pid ${attached}) is already attached to this device, so a second ` +
-        'stream would read nothing — stop it and run again',
-    };
-  }
-
+  //
+  // A name filter is applied on the Mac, so the phone still sends its whole log, and drops
+  // lines from all of it when busy. Another stream on the same phone does not take lines
+  // from this one: sixteen at once all delivered, which is what `followProcess` relies on.
   const processes = (filter.processes ?? []).filter(Boolean).join('|');
   const args = processes
     ? ['-u', target.udid, '-p', processes]
@@ -133,28 +127,11 @@ export async function startCapture(
       processes
         ? `idevicesyslog -p "${processes}"`
         : 'idevicesyslog (unfiltered)',
-      evidencePath
+      evidencePath,
+      target.udid
     )),
     lossy: true,
   };
-}
-
-/**
- * `idevicesyslog` already attached to this device?
- *
- * The simulator path has had this check for a while; the device path did not, and the
- * consequence is worse there — an orphan survives across runs, and the second attach reads
- * as an extension that never ran.
- */
-async function existingDeviceStream(udid: string): Promise<string | undefined> {
-  const { stdout, code } = await run(
-    'pgrep',
-    ['-f', `idevicesyslog -u ${udid}`],
-    10_000
-  );
-  if (code !== 0) return undefined;
-  const pid = stdout.trim().split('\n')[0];
-  return pid && pid !== String(process.pid) ? pid : undefined;
 }
 
 async function existingSimulatorStream(
@@ -172,19 +149,83 @@ async function existingSimulatorStream(
 
 /** Bounded so an unfiltered device log cannot exhaust memory mid-run. */
 const MAX_RETAINED_LINES = 40_000;
+/** Lines remembered for telling a repeat from a new line, once two streams overlap. */
+const MAX_REMEMBERED_LINES = 20_000;
+
+/**
+ * Where every stream of one capture puts its lines: a bounded window in memory, everything on
+ * disk, and, once a second stream reads the same process, each line once. A phone's
+ * timestamps carry microseconds, so a line that arrives twice is the same line twice.
+ */
+export interface LineSink {
+  lines: LogLine[];
+  add(line: LogLine): void;
+  /** From now on, a line already taken is not taken again. */
+  dedupe(): void;
+  mark(): number;
+  since(mark: number): LogLine[];
+  end(): Promise<void>;
+}
+
+export function createLineSink(evidencePath?: string): LineSink {
+  const lines: LogLine[] = [];
+  /** How many lines the retention window has discarded, so a mark stays meaningful. */
+  let dropped = 0;
+  let deduping = false;
+  const remembered = new Set<string>();
+  const evidence: WriteStream | undefined = evidencePath
+    ? createWriteStream(evidencePath, { flags: 'a' })
+    : undefined;
+  return {
+    lines,
+    add(line) {
+      // A line the reader could not parse has no time, so it cannot be told from another.
+      if (line.at) {
+        const key = `${line.at}\u0000${line.process}\u0000${line.message}`;
+        if (deduping && remembered.has(key)) return;
+        remembered.add(key);
+        if (remembered.size > MAX_REMEMBERED_LINES) {
+          const oldest = remembered.values();
+          for (let i = 0; i < MAX_REMEMBERED_LINES / 4; i++) {
+            remembered.delete(oldest.next().value as string);
+          }
+        }
+      }
+      lines.push(line);
+      // Disk holds everything; memory holds the recent window a cell reads back.
+      if (lines.length > MAX_RETAINED_LINES) {
+        lines.splice(0, 10_000);
+        dropped += 10_000;
+      }
+      // Written as it arrives: buffered evidence is lost on interrupt, and losing a
+      // confirmed result to a Ctrl-C has already happened once.
+      evidence?.write(`${line.at} ${line.process}: ${line.message}\n`);
+    },
+    dedupe() {
+      deduping = true;
+    },
+    mark: () => dropped + lines.length,
+    since: (mark: number) => lines.slice(Math.max(0, mark - dropped)),
+    end: () =>
+      new Promise<void>((resolve) =>
+        evidence ? evidence.end(resolve) : resolve()
+      ),
+  };
+}
 
 async function streamProcess(
   command: string,
   args: string[],
   parse: (chunk: string) => LogLine[],
   how: string,
-  evidencePath?: string
+  evidencePath?: string,
+  /** A phone's udid: its capture can follow single processes too. */
+  phone?: string
 ): Promise<LogCapture> {
   const child: ChildProcess = spawn(command, args);
   trackCapture(child);
-  const lines: LogLine[] = [];
-  /** How many lines the retention window has discarded, so a mark stays meaningful. */
-  let dropped = 0;
+  const sink = createLineSink(evidencePath);
+  const followers: ChildProcess[] = [];
   let buffer = '';
   let stderr = '';
   let exited: number | null | undefined;
@@ -192,8 +233,6 @@ async function streamProcess(
   let started = false;
   let stopping = false;
   let stoppedReason: string | undefined;
-  let sink: WriteStream | undefined;
-  if (evidencePath) sink = createWriteStream(evidencePath, { flags: 'a' });
 
   child.on('exit', (code) => {
     if (!started || stopping) return;
@@ -214,17 +253,7 @@ async function streamProcess(
     const parts = buffer.split('\n');
     buffer = parts.pop() ?? '';
     for (const part of parts) {
-      for (const line of parse(part)) {
-        lines.push(line);
-        // Disk holds everything; memory holds the recent window a cell reads back.
-        if (lines.length > MAX_RETAINED_LINES) {
-          lines.splice(0, 10_000);
-          dropped += 10_000;
-        }
-        // Written as it arrives: buffered evidence is lost on interrupt, and losing a
-        // confirmed result to a Ctrl-C has already happened once.
-        sink?.write(`${line.at} ${line.process}: ${line.message}\n`);
-      }
+      for (const line of parse(part)) sink.add(line);
     }
   });
 
@@ -232,7 +261,7 @@ async function streamProcess(
   // is given a moment to fall over before anything is claimed about it.
   await new Promise((resolve) => setTimeout(resolve, 1_500));
   if (exited !== undefined) {
-    sink?.end();
+    await sink.end();
     return {
       available: false,
       lines: [],
@@ -249,17 +278,99 @@ async function streamProcess(
   return {
     available: true,
     how,
-    lines,
-    mark: () => dropped + lines.length,
-    since: (mark: number) => lines.slice(Math.max(0, mark - dropped)),
+    lines: sink.lines,
+    mark: sink.mark,
+    since: sink.since,
     evidencePath,
     stoppedReason: () => stoppedReason,
+    followProcess: phone
+      ? (pid: number) =>
+          followOnPhone(phone, pid, sink, followers, (reason) => {
+            if (!stopping) stoppedReason ??= reason;
+          })
+      : undefined,
     stop: async () => {
       stopping = true;
       child.kill();
-      await new Promise<void>((resolve) => sink?.end(resolve) ?? resolve());
+      for (const follower of followers) follower.kill();
+      await sink.end();
     },
   };
+}
+
+/** How long a stream for one pid gets to reach the phone. */
+const FOLLOW_CONNECT_TIMEOUT_MS = 5_000;
+/** After the relay says it is connected, a moment before the process is let go. */
+const FOLLOW_SETTLE_MS = 300;
+
+/**
+ * A numeric `-p` is sent to the phone as the relay's own pid filter, so the phone sends only
+ * that process's lines and has nothing to drop: 0 of 75 SDK lines lost over seven launches,
+ * against up to 45 lost by the name-filtered stream in the same minutes. A name is matched on
+ * the Mac and changes nothing. Resolves once the relay is connected, which is the moment a
+ * held process can be let go.
+ */
+function followOnPhone(
+  udid: string,
+  pid: number,
+  sink: LineSink,
+  followers: ChildProcess[],
+  /** The stream stopped after it connected: what it read after that point is missing. */
+  onLost: (reason: string) => void
+): Promise<FollowedProcess> {
+  const how = `idevicesyslog -p ${pid}`;
+  const child = spawn('idevicesyslog', ['-u', udid, '-p', String(pid)]);
+  trackCapture(child);
+  followers.push(child);
+  sink.dedupe();
+  let buffer = '';
+  let stderr = '';
+  let connected = false;
+  return new Promise((resolve) => {
+    const timer = setTimeout(
+      () =>
+        resolve({
+          connected: false,
+          how,
+          reason: `no connection after ${FOLLOW_CONNECT_TIMEOUT_MS / 1000}s`,
+        }),
+      FOLLOW_CONNECT_TIMEOUT_MS
+    );
+    child.stdout?.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const parts = buffer.split('\n');
+      buffer = parts.pop() ?? '';
+      for (const part of parts) {
+        if (part.startsWith('[connected:')) {
+          connected = true;
+          clearTimeout(timer);
+          setTimeout(() => resolve({ connected: true, how }), FOLLOW_SETTLE_MS);
+          continue;
+        }
+        for (const line of parseSyslog(part)) sink.add(line);
+      }
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      if (connected) {
+        onLost(
+          `${how} exited${code === null ? '' : ` (${code})`} at ${new Date()
+            .toISOString()
+            .slice(11, 19)}, partway through the run`
+        );
+      }
+      resolve({
+        connected: false,
+        how,
+        reason: `idevicesyslog exited (${code}): ${
+          stderr.trim().split('\n')[0] || 'no output'
+        }`,
+      });
+    });
+  });
 }
 
 export function parseNdjson(raw: string): LogLine[] {

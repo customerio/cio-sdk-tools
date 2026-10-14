@@ -81,3 +81,27 @@ test('the fixture carries no device token and no personal address', () => {
   assert.ok(!/\b[0-9a-f]{40,}\b/.test(text), 'a token-shaped string is in the fixture');
   assert.ok(!/@(?!example\.com)[\w-]+\.[\w.]+/.test(text), 'an address is in the fixture');
 });
+
+test('two streams of one phone give each line once, and unparsed lines are kept as they come', () => {
+  const { createLineSink } = require('../../dist/verify/platform/ios/logs');
+  const sink = createLineSink();
+  const line = { at: 'Oct 14 17:01:46.563720', process: 'APN UIKit', message: '[Push] Clicked CIO push message' };
+  // One stream alone is never thinned: a line logged twice is two lines.
+  sink.add(line);
+  sink.add({ ...line });
+  assert.strictEqual(sink.lines.length, 2);
+
+  // A second stream on the same process repeats what the first already has.
+  sink.dedupe();
+  const mark = sink.mark();
+  sink.add({ ...line });
+  const next = { ...line, at: 'Oct 14 17:01:46.563901' };
+  sink.add(next);
+  sink.add({ ...next });
+  sink.add({ at: '', process: '', message: '\tMain bundle   : [<null>]' });
+  sink.add({ at: '', process: '', message: '\tMain bundle   : [<null>]' });
+  assert.deepStrictEqual(
+    sink.since(mark).map((kept) => kept.at),
+    ['Oct 14 17:01:46.563901', '', '']
+  );
+});

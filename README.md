@@ -130,6 +130,8 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
 
    The SDK's push lines are debug lines, so the build you verify needs the SDK's log level set to debug. On a phone, the log stream can drop lines; a missing line there makes a cell inconclusive, never failed.
 
+   A tap on the push sent while the app was killed starts the app, and that launch is where a phone drops the most lines. So on a phone the tool holds that launch with Xcode's debugger for about a second, until a stream reading only the app is attached, then lets it go. Every line the app writes is then read, and a tap the SDK never handled is a failure (`runtime.cold_tap_not_handled`): usually the SDK set up after launch, where a tap that starts the app never reaches it. The hold needs a build the debugger can attach to, which a Debug build is; without one, that cell is judged as before.
+
    ### Requirements
 
    - Node.js 20 or later.

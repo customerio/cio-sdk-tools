@@ -6,6 +6,7 @@ import { CellHandle, Reporter } from '../../../core/report/render';
 import { Verdict } from '../../../core/report/types';
 import { MatrixCell } from '../types';
 import { LogCapture } from '../../../platform/logs';
+import { armLaunchHold } from '../../../platform/ios/launch_hold';
 import { blameStoppedCapture } from './sdk_lines';
 import { AppState } from '../../../platform/app_state';
 
@@ -125,6 +126,8 @@ export async function tapIosPush(
     tap: TapPlan;
     evidenceDirectory?: string;
     reporter?: Reporter;
+    /** The app's process name, so a launch from the tap can be held on a phone. */
+    appProcess?: string;
   },
   capture: LogCapture,
   handle?: CellHandle
@@ -144,20 +147,31 @@ export async function tapIosPush(
   );
   if (shot) evidence.push(`screen at the prompt: ${shot}`);
 
+  // Armed before the question, so a tap is never made before it can be caught.
+  const cold = await holdColdLaunch(state, options, capture, handle);
+
   // The one place this tool waits on a person. Said plainly, because a prompt nobody
   // understands is answered without doing the thing. The spinner has to come down first:
   // it repaints over the question, and a prompt nobody can read is a prompt nobody answers.
   options.reporter?.pause();
-  const answer = await options.tap.asker.askTap(
-    [
-      `Tap the "${push.title}" notification on ${options.target.name}.`,
-      'If the banner has gone, swipe down from the top edge to find it in Notification Centre.',
-      'The app may not visibly change — the verdict comes from the log, not the screen.',
-    ].join('\n  '),
-    { timeoutMs: options.tap.tapTimeoutMs ?? TAP_TIMEOUT_MS }
-  );
+  let answer: TapAnswer;
+  try {
+    answer = await options.tap.asker.askTap(
+      [
+        `Tap the "${push.title}" notification on ${options.target.name}.`,
+        'If the banner has gone, swipe down from the top edge to find it in Notification Centre.',
+        cold?.promptLine ??
+          'The app may not visibly change — the verdict comes from the log, not the screen.',
+      ].join('\n  '),
+      { timeoutMs: options.tap.tapTimeoutMs ?? TAP_TIMEOUT_MS }
+    );
+  } catch (error) {
+    await cold?.finish();
+    throw error;
+  }
   options.reporter?.resume();
   if (answer !== 'tapped') {
+    await cold?.finish();
     return untappedCell(state, answer, evidence, push.arrivalSeen);
   }
 
@@ -178,6 +192,9 @@ export async function tapIosPush(
       await sleep(TAP_POLL_MS);
     }
   }
+
+  const launch = await cold?.finish();
+  if (launch) evidence.push(launch.evidence);
 
   // Read from the push's own start, not from the answer: people tap first and answer after,
   // so the SDK's lines for the tap usually come before the prompt is answered. Nothing in
@@ -223,7 +240,8 @@ export async function tapIosPush(
     deliveryId: deliveryId ?? push.expectedId,
     ...judgeOpened({
       available: capture.available,
-      lossy: capture.lossy,
+      // A launch read from its first line has lost nothing, so what is missing is missing.
+      lossy: launch?.complete ? false : capture.lossy,
       matched,
       linkSent: Boolean(options.tap.link),
       ...observed,
@@ -236,6 +254,90 @@ export async function tapIosPush(
     linesAfterTap: capture.since(afterTap).length,
     lastLineAt: all.length > 0 ? all[all.length - 1].at : undefined,
   });
+}
+
+/** The hold on the launch a tap starts, from before the prompt to after the tap is read. */
+interface ColdLaunch {
+  /** Said in the tap prompt, so the pause on the launch screen is expected. */
+  promptLine?: string;
+  /** Let a held app go, or stop waiting for one, and say what the hold did. */
+  finish(): Promise<{ complete: boolean; evidence: string }>;
+}
+
+/**
+ * A tap on the killed state's push starts the app from nothing, and the SDK handles it about
+ * 60ms in, inside the burst a phone's live log drops. About half of those taps left no SDK
+ * line in the stream, though the app's own record shows every one was handled. So on a phone
+ * the launch is held until a stream for its pid is open, and that stream has every line the
+ * app writes from its first.
+ *
+ * Without the hold (a build the debugger cannot attach to, or Xcode's debugger already
+ * attached) the cell is judged as before: a missing line is unproven, never a failure.
+ */
+async function holdColdLaunch(
+  state: AppState,
+  options: { target: Target; appProcess?: string },
+  capture: LogCapture,
+  handle?: CellHandle
+): Promise<ColdLaunch | undefined> {
+  const follow = capture.followProcess;
+  if (
+    state !== 'killed' ||
+    options.target.kind !== 'device' ||
+    !capture.available ||
+    !follow ||
+    !options.appProcess
+  ) {
+    return undefined;
+  }
+  handle?.phase('getting ready to catch the launch');
+  const armed = await armLaunchHold(options.target, options.appProcess);
+  if (!armed.hold) {
+    const why = armed.unavailableReason;
+    return {
+      finish: async () => ({
+        complete: false,
+        evidence: `the launch from the tap was not held, so its first lines could be lost: ${why}`,
+      }),
+    };
+  }
+  const hold = armed.hold;
+  const followed = hold.held.then(async (launch) => {
+    if (!launch) return undefined;
+    try {
+      return { launch, stream: await follow(launch.pid) };
+    } finally {
+      await hold.release();
+    }
+  });
+  return {
+    promptLine:
+      'The app opens and waits a moment on its launch screen while its log is attached.',
+    finish: async () => {
+      if (hold.state() === 'waiting') await hold.release();
+      const result = await followed;
+      if (!result) {
+        return {
+          complete: false,
+          evidence:
+            'no launch of the app came while the tap was asked for, so none was held',
+        };
+      }
+      const at = `pid ${result.launch.pid}${
+        result.launch.stoppedIn ? `, stopped in ${result.launch.stoppedIn}` : ''
+      }`;
+      if (!result.stream.connected) {
+        return {
+          complete: false,
+          evidence: `the launch from the tap was held (${at}), but the stream for it did not open: ${result.stream.reason}`,
+        };
+      }
+      return {
+        complete: true,
+        evidence: `the launch from the tap was held (${at}) until \`${result.stream.how}\` was reading it, so every line the app wrote is here`,
+      };
+    },
+  };
 }
 
 /**
@@ -299,17 +401,14 @@ export function explainUnseenTap(
     lastLineAt?: string;
   }
 ): MatrixCell {
-  if (
-    cell.cause !== 'runtime.tap_not_seen' &&
-    cell.cause !== 'runtime.tap_lines_lost'
-  ) {
-    return cell;
-  }
+  const unseen = [
+    'runtime.tap_not_seen',
+    'runtime.tap_lines_lost',
+    'runtime.cold_tap_not_handled',
+  ];
+  if (!unseen.includes(cell.cause ?? '')) return cell;
   if (context.stoppedReason) {
-    return blameStoppedCapture(cell, context.stoppedReason, [
-      'runtime.tap_not_seen',
-      'runtime.tap_lines_lost',
-    ]);
+    return blameStoppedCapture(cell, context.stoppedReason, unseen);
   }
   if (cell.cause !== 'runtime.tap_not_seen') return cell;
   if (context.linesAfterTap === 0 && context.lastLineAt) {
@@ -385,7 +484,10 @@ export function observeOpened(lines: string[]): {
  */
 export function judgeOpened(observed: {
   available: boolean;
-  /** The capture can drop lines (a phone's), so a missing line proves nothing. */
+  /**
+   * The capture can drop lines (a phone's), so a missing line proves nothing. False when the
+   * app's launch was held until a stream for it was open: nothing it wrote was dropped.
+   */
   lossy?: boolean;
   /** The open names this push (true), another push (false), or cannot be matched. */
   matched?: boolean;
@@ -409,9 +511,13 @@ export function judgeOpened(observed: {
   if (!observed.clicked && !observed.tracked) {
     if (observed.foreign)
       return { verdict: 'fail', cause: 'runtime.tap_not_ours' };
-    // iOS says the tap reached the app, and not one SDK line for it reached the log.
+    // iOS says the tap reached the app, and not one SDK line for it reached the log. From a
+    // stream that read the launch from its first line, that silence is the SDK's: a tap
+    // that starts the app reaches only a handler set up before launch finished.
     if (observed.osDelivered) {
-      return { verdict: 'skip', cause: 'runtime.tap_lines_lost' };
+      return observed.lossy === false
+        ? { verdict: 'fail', cause: 'runtime.cold_tap_not_handled' }
+        : { verdict: 'skip', cause: 'runtime.tap_lines_lost' };
     }
     return { verdict: 'skip', cause: 'runtime.tap_not_seen' };
   }
