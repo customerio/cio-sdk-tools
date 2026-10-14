@@ -190,7 +190,10 @@ test('the closing facts carry the time, the evidence path and, when watched, tha
       text,
       /✔ Push works on the device: each push arrived and the app handled it\./
     );
-    assert.match(text, /Customer\.io's record of them isn't checked yet\./);
+    assert.match(
+      text,
+      /Customer\.io's record of them wasn't checked: --depth end-to-end reads it\./
+    );
   }
 });
 
@@ -210,7 +213,25 @@ test('the closing line names the tap when opened ran too, and claims nothing was
   );
   // Only what the device showed: no claim that Customer.io accepted or counted anything.
   assert.doesNotMatch(out.text(), /counted|accepted|reported/);
-  assert.match(out.text(), /isn't checked yet/);
+  assert.match(out.text(), /wasn't checked: --depth end-to-end reads it/);
+});
+
+test('an end-to-end run that passed claims the record too, and nothing more', () => {
+  const out = sink();
+  reporterOn('human', out).summary(
+    report({
+      matrices: [
+        { metric: 'delivered', cells: [] },
+        { metric: 'opened', cells: [] },
+        { metric: 'recorded', cells: [] },
+      ],
+    })
+  );
+  assert.match(
+    out.text(),
+    /✔ Push works end to end: each push arrived, each tap reached the SDK, and Customer\.io recorded both\./
+  );
+  assert.doesNotMatch(out.text(), /wasn't checked/);
 });
 
 test('a registration run that passed says what it proved, and that nothing was sent', () => {

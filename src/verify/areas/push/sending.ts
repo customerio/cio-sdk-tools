@@ -1,4 +1,6 @@
 import { Reporter } from '../../core/report/render';
+import { skipSending } from './climb';
+import { readBack } from './record';
 import { Asker } from '../../core/prompt';
 import { TapPlan, openedSkipReason } from './on_device/opened';
 import { ALL_STATES, AppState } from '../../platform/app_state';
@@ -37,6 +39,30 @@ export function tapPlanFor(
   return { tap: { asker, link: options.link, states } };
 }
 
+/**
+ * The sections a sending run produced, with Customer.io's record read into them once the
+ * last push is done: an open the log could not prove is settled by it, and at end-to-end
+ * the record of every push is judged in a section of its own.
+ */
+export async function addSent(
+  ladder: PushLadder,
+  options: VerifyPushOptions,
+  sent: { delivered: MatrixSection; opened?: MatrixSection },
+  inputs: { environmentId: string; reporter: Reporter; tapSkipped?: string }
+): Promise<void> {
+  const read = await readBack({
+    environmentId: inputs.environmentId,
+    judge: options.recorded,
+    delivered: sent.delivered,
+    opened: sent.opened,
+    linkSent: Boolean(options.link),
+    reporter: inputs.reporter,
+  });
+  ladder.addMatrix(read.delivered);
+  addOpened(ladder, options, read.opened, inputs.tapSkipped);
+  if (read.recorded) ladder.addMatrix(read.recorded);
+}
+
 export function addOpened(
   ladder: PushLadder,
   options: VerifyPushOptions,
@@ -59,10 +85,11 @@ export function skipUnreadable(
   options: VerifyPushOptions,
   reason: string
 ): void {
-  const skipped = `no push was sent: the device's log cannot be read (${reason})`;
-  ladder.addMatrix({ metric: 'delivered', cells: [], skipped });
-  if (options.opened)
-    ladder.addMatrix({ metric: 'opened', cells: [], skipped });
+  skipSending(
+    ladder,
+    options,
+    `no push was sent: the device's log cannot be read (${reason})`
+  );
 }
 
 /**
@@ -110,6 +137,7 @@ export async function askToSend(
     },
     named: options.named,
     opened: options.opened,
+    recorded: options.recorded,
     asker,
     reporter,
     ladder,

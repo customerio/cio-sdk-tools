@@ -26,8 +26,8 @@ import {
 } from './registration/workspace_ready';
 import { PushLadder, RUNG_TITLES } from './types';
 import { VerifyPushOptions, evidenceDirectoryFor } from './options';
-import { ClimbResult, skipRest } from './climb';
-import { addOpened, askToSend, tapPlanFor } from './sending';
+import { ClimbResult, skipRest, skipSending } from './climb';
+import { addSent, askToSend, tapPlanFor } from './sending';
 import { askerPhases } from '../../platform/observe';
 
 /**
@@ -62,7 +62,7 @@ export async function climbAndroid(
       ladder,
       reporter,
       ['workspace_ready', 'device_ready', 'profile_linked'],
-      options.send
+      options
     );
     return { projectName: wiring.model?.appModuleName };
   }
@@ -104,12 +104,7 @@ export async function climbAndroid(
   ladder.adopt(ready, workspaceTimer());
   workspaceRung.done(ready);
   if (ladder.halted) {
-    skipRest(
-      ladder,
-      reporter,
-      ['device_ready', 'profile_linked'],
-      options.send
-    );
+    skipRest(ladder, reporter, ['device_ready', 'profile_linked'], options);
     return { projectName: wiring.model.appModuleName };
   }
 
@@ -117,7 +112,7 @@ export async function climbAndroid(
   ladder.adopt(deviceRungResult, deviceMs);
   deviceRung.done(deviceRungResult);
   if (ladder.halted) {
-    skipRest(ladder, reporter, ['profile_linked'], options.send);
+    skipRest(ladder, reporter, ['profile_linked'], options);
     return { projectName: wiring.model.appModuleName };
   }
 
@@ -297,9 +292,7 @@ async function androidMatrix(
         workspaceReason: inputs.workspaceReason,
         token: inputs.token,
       }) ?? 'no push was sent';
-    ladder.addMatrix({ metric: 'delivered', cells: [], skipped });
-    if (options.opened)
-      ladder.addMatrix({ metric: 'opened', cells: [], skipped });
+    skipSending(ladder, options, skipped);
     return;
   }
 
@@ -316,6 +309,14 @@ async function androidMatrix(
     evidenceDirectory: evidenceDirectoryFor(options),
     tap: plan.tap,
   });
-  ladder.addMatrix(delivered);
-  addOpened(ladder, options, opened, plan.skipped);
+  await addSent(
+    ladder,
+    options,
+    { delivered, opened },
+    {
+      environmentId: inputs.environmentId,
+      reporter,
+      tapSkipped: plan.skipped,
+    }
+  );
 }

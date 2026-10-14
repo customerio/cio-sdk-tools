@@ -141,6 +141,7 @@ export function createReporter(options: {
   let paused: string | undefined;
   /** Which section the cells now printing belong to, so each says what it proved. */
   let currentSection = voice.firstSection;
+  let matrices = 0;
   let timer: NodeJS.Timeout | undefined;
 
   function paint(): void {
@@ -259,6 +260,8 @@ export function createReporter(options: {
 
     matrix(how?: string, section = voice.firstSection) {
       currentSection = section;
+      // A later block of cells is set apart from the rows above it.
+      if (matrices++ > 0) line();
       const title = voice.matrixTitle?.(section) ?? `${section} matrix`;
       line(`${chalk.bold(title)}${how ? chalk.dim(`   (${how})`) : ''}`);
     },

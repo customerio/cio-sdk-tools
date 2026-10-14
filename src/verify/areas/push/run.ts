@@ -97,6 +97,7 @@ export async function runPush(
     fallback: 'registration',
   });
   options.send = level.id !== 'registration';
+  options.recorded = level.steps.includes('recorded');
 
   // Someone who answered "how far" by hand is asked the rest the same way. A command line
   // that set the depth gets the defaults instead: all three states, no taps.

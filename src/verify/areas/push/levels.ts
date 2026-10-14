@@ -43,10 +43,10 @@ export const PUSH_LEVELS: Level[] = [
     id: 'end-to-end',
     label: 'End to end',
     hint: 'also checks Customer.io recorded them',
+    // Until Customer.io keeps test pushes for the workspace, the sends return no delivery id
+    // and the record section is skipped with that reason: unproven, never passed.
     title:
       'on-device, plus Customer.io recorded each push as delivered, and opened when tapped',
     steps: [...onDevice, 'recorded'],
-    unavailable:
-      "Customer.io doesn't record test pushes yet, so there is nothing to read back",
   },
 ];

@@ -11,7 +11,6 @@ import {
   WindowOutcome,
   openPidWindow,
 } from '../../../platform/ios/pid_window';
-import { RecordedOpen, readRecordedOpen } from './recorded';
 import { blameStoppedCapture } from './sdk_lines';
 import { AppState } from '../../../platform/app_state';
 
@@ -104,11 +103,6 @@ export interface SentPush {
   arrivalSeen: boolean;
   /** Where this push's lines begin in the capture. */
   mark: number;
-  /**
-   * The ids the sends returned, a re-send's included. Only these are kept by Customer.io, so
-   * only these can be read back; ids from the log are the payload's and are not stored.
-   */
-  recordedIds?: string[];
 }
 
 export const TAP_TIMEOUT_MS = 180_000;
@@ -138,10 +132,6 @@ export async function tapIosPush(
     reporter?: Reporter;
     /** The app's process name, so a launch from the tap can be caught on a phone. */
     appProcess?: string;
-    /** The workspace the push went through, where Customer.io's record of it is read. */
-    environmentId?: string;
-    /** Read Customer.io's record of the open; replaced in tests. */
-    readRecorded?: typeof readRecordedOpen;
   },
   capture: LogCapture,
   handle?: CellHandle
@@ -267,76 +257,9 @@ export async function tapIosPush(
     linesAfterTap: capture.since(afterTap).length,
     lastLineAt: all.length > 0 ? all[all.length - 1].at : undefined,
   });
-  if (!RECORD_DECIDES.includes(explained.cause ?? '')) return explained;
-  // The device could not prove the open, or says it never happened: Customer.io's own record
-  // of this push answers either way, once it keeps one.
-  handle?.phase("reading Customer.io's record of the open");
-  const recorded = await (options.readRecorded ?? readRecordedOpen)(
-    options.environmentId,
-    push.recordedIds ?? []
-  );
-  return withRecordedOpen(explained, recorded, Boolean(options.tap.link));
-}
-
-/** The device-side verdicts Customer.io's record of the open can settle or overturn. */
-const RECORD_DECIDES = [
-  'runtime.tap_lines_lost',
-  'runtime.tap_not_seen',
-  'runtime.capture_silent',
-  'runtime.capture_stopped',
-  'runtime.cold_tap_not_handled',
-  'runtime.opened_not_tracked',
-];
-
-/**
- * An open the device's log could not show, read from Customer.io's record instead. An open it
- * recorded is the SDK reporting this exact push's open, so it overturns a failure the log
- * suggested, which can only have come from lines the stream lost. Where the tap went is in
- * the log alone, so with a deep link sent that part stays unproven. No open recorded leaves
- * the device's verdict as it was: the metric may still be on its way.
- */
-export function withRecordedOpen(
-  cell: MatrixCell,
-  recorded: RecordedOpen,
-  linkSent: boolean
-): MatrixCell {
-  if (recorded.answer === 'unavailable') {
-    return {
-      ...cell,
-      evidence: [
-        ...cell.evidence,
-        `Customer.io's record of the open was not read: ${recorded.reason}`,
-      ],
-    };
-  }
-  if (recorded.answer === 'not_opened') {
-    return {
-      ...cell,
-      recorded: 'not_recorded',
-      evidence: [
-        ...cell.evidence,
-        `Customer.io had recorded no open for ${recorded.deliveryIds.join(
-          ' or '
-        )} after ${recorded.waitedMs / 1000}s`,
-      ],
-    };
-  }
-  const when = recorded.at
-    ? ` at ${new Date(recorded.at * 1000).toISOString().slice(11, 19)}Z`
-    : '';
-  return {
-    ...cell,
-    deliveryId: recorded.deliveryId,
-    recorded: 'recorded',
-    ...(linkSent
-      ? { verdict: 'warn', cause: 'runtime.opened_recorded_link_unseen' }
-      : { verdict: 'pass', cause: undefined }),
-    summary: undefined,
-    evidence: [
-      ...cell.evidence,
-      `Customer.io recorded the open of ${recorded.deliveryId}${when} (was: ${cell.cause})`,
-    ],
-  };
+  // What the log could not prove, Customer.io's record of the open may: it is read for every
+  // push at once after the last one (see record/), so no tap waits on it.
+  return { ...explained, tapped: true };
 }
 
 /** The watch on the launch a tap starts, from before the prompt to after the tap is read. */

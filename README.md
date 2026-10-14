@@ -124,13 +124,19 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
 
    1. **`registration`**: project wiring, workspace, device, and profile, in that order. The first failure stops the run. Nothing is sent.
    2. **`on-device`**: registration, plus one real push per app state (killed, background, foreground), each followed until it reaches the device and the app handles it. With `--check-opens`, you tap the killed and background pushes and the tool checks the SDK handled the open, and the deep link when the push carries one.
-   3. **`end-to-end`**: on-device, plus Customer.io recorded each push as delivered and opened. Not available yet: test pushes have no stored delivery to read back, so it stops and says so.
+   3. **`end-to-end`**: on-device, plus Customer.io recorded each push as delivered, and opened when tapped. It reads the record of each push from Customer.io once the last one is done.
 
-   A pass means what the device showed: the push arrived and the app handled it, and for a tap, the SDK handled the open of that exact push. Arrival is read from the OS (the notification list, or the extension's own process) wherever it can be, and SDK log lines only where the OS has no answer. Every cell reports `recorded: "not_checked"`.
+   A pass at `on-device` means what the device showed: the push arrived and the app handled it, and for a tap, the SDK handled the open of that exact push. Arrival is read from the OS (the notification list, or the extension's own process) wherever it can be, and SDK log lines only where the OS has no answer. Each cell's `recorded` says whether Customer.io's record of it was read: `not_checked` unless it was.
+
+   ### Customer.io's record
+
+   A test push leaves a record only once Customer.io keeps test pushes for the workspace: the send then returns a delivery id, and the record holds when the device reported the push delivered and opened. Until then the sends return no id, so `end-to-end` has nothing to read: its record section is skipped with that reason, and the run ends unproven (exit 21), never passed.
+
+   The SDK sends opens in batches of up to 30 seconds, so the tool waits up to 120 seconds for delivered and 150 seconds for opened, reading every push at once. A report still missing then is `backend.metric_not_recorded`, unproven rather than failed, because it can still arrive.
 
    The SDK's push lines are debug lines, so the build you verify needs the SDK's log level set to debug. On a phone, the log stream can drop lines; a missing line there makes a cell inconclusive, never failed.
 
-   A tap on the push sent while the app was killed starts the app, and that launch is where a phone drops the most lines. So before asking for that tap, the tool opens streams for the next 8 process ids the phone will hand out, which the phone filters to one process each and does not drop, and moves them along as other processes start. The app lands in one that is already reading, so every line it writes is read, and a tap the SDK never handled is a failure (`runtime.cold_tap_not_handled`): usually the SDK set up after launch, where a tap that starts the app never reaches it. Lines from any other process that takes one of those ids are dropped unread. If the app lands outside them, the cell is judged as before, and once Customer.io keeps test pushes, its record of the open answers instead.
+   A tap on the push sent while the app was killed starts the app, and that launch is where a phone drops the most lines. So before asking for that tap, the tool opens streams for the next 8 process ids the phone will hand out, which the phone filters to one process each and does not drop, and moves them along as other processes start. The app lands in one that is already reading, so every line it writes is read, and a tap the SDK never handled is a failure (`runtime.cold_tap_not_handled`): usually the SDK set up after launch, where a tap that starts the app never reaches it. Lines from any other process that takes one of those ids are dropped unread. If the app lands outside them, the cell is judged as before. At any depth, a tap the log could not prove is then settled by Customer.io's record of the open, when the send returned a delivery id.
 
    ### Requirements
 

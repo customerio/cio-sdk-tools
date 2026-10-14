@@ -136,6 +136,15 @@ const scripted = (answer, interactive = true) => {
   };
 };
 
+// A level an area has not built yet, to prove the core refuses it and leaves it out.
+const LATER = {
+  id: 'later',
+  label: 'Later',
+  title: 'a level that cannot run yet',
+  steps: ['project_wiring'],
+  unavailable: 'it is not built',
+};
+
 test('a level given by name is taken, an unknown or unavailable one is refused with why', async () => {
   const base = { flag: '--depth', question: 'How far?', fallback: 'registration' };
   const given = await resolveLevel(PUSH_LEVELS, {
@@ -150,16 +159,22 @@ test('a level given by name is taken, an unknown or unavailable one is refused w
     resolveLevel(PUSH_LEVELS, { ...base, given: 'far', asker: scripted().asker }),
     /unknown level far — --depth takes registration, on-device, end-to-end/
   );
+  const endToEnd = await resolveLevel(PUSH_LEVELS, {
+    ...base,
+    given: 'end-to-end',
+    asker: scripted().asker,
+  });
+  assert.strictEqual(endToEnd.level.id, 'end-to-end');
   await assert.rejects(
-    resolveLevel(PUSH_LEVELS, { ...base, given: 'end-to-end', asker: scripted().asker }),
-    /--depth end-to-end isn't available yet: Customer\.io doesn't record test pushes yet/
+    resolveLevel([...PUSH_LEVELS, LATER], { ...base, given: 'later', asker: scripted().asker }),
+    /--depth later isn't available yet: it is not built/
   );
 });
 
 test('a missing level is asked for, without the ones that cannot run, or falls back when nobody can be asked', async () => {
   const base = { flag: '--depth', question: 'How far?', fallback: 'registration' };
   const { asker, asked } = scripted('on-device');
-  const picked = await resolveLevel(PUSH_LEVELS, { ...base, asker });
+  const picked = await resolveLevel([...PUSH_LEVELS, LATER], { ...base, asker });
   assert.strictEqual(picked.level.id, 'on-device');
   assert.strictEqual(picked.asked, true);
   assert.deepStrictEqual(
@@ -167,6 +182,7 @@ test('a missing level is asked for, without the ones that cannot run, or falls b
     [
       ['Registration only', 'nothing is sent'],
       ['On the device', 'sends real pushes and checks the app handles them'],
+      ['End to end', 'also checks Customer.io recorded them'],
     ]
   );
 
@@ -179,9 +195,10 @@ test('a missing level is asked for, without the ones that cannot run, or falls b
 });
 
 test('the help lists every level from the data, and says which cannot run yet', () => {
-  const lines = levelsHelp(PUSH_LEVELS, 60).join('\n');
+  const lines = levelsHelp([...PUSH_LEVELS, LATER], 60).join('\n');
   for (const level of PUSH_LEVELS) assert.match(lines, new RegExp(`^${level.id} `, 'm'));
-  assert.match(lines, /\(not\s+available yet\)/);
+  assert.match(lines, /^later\s+a level that cannot run yet \(not\s+available\s+yet\)/m);
+  assert.strictEqual(lines.match(/not\s+available\s+yet/g).length, 1, 'only the level that cannot run says so');
 });
 
 // --- help --------------------------------------------------------------------
@@ -249,11 +266,11 @@ function verify(args) {
 
 const envelope = (stderr) => JSON.parse(stderr.split('\n').find((line) => line.startsWith('{')));
 
-test('end-to-end is refused by name until Customer.io records test pushes', () => {
+test('end-to-end sends like on-device: unattended, it must name the workspace and the device', () => {
   const { code, stdout, stderr } = verify(['--depth', 'end-to-end', '--json']);
   assert.strictEqual(code, 2);
   assert.strictEqual(stdout, '', '--json after the area still owns stdout');
-  assert.match(envelope(stderr).message, /--depth end-to-end isn't available yet/);
+  assert.deepStrictEqual(envelope(stderr).details.flags, ['--workspace <id>', '--device <id|name>']);
 });
 
 test('a sending flag beside --depth registration is a contradiction, not a silent send', () => {
@@ -283,7 +300,7 @@ test('the shared options work before the area name too', () => {
     );
     assert.strictEqual(result.status, 2);
     assert.strictEqual(result.stdout, '');
-    assert.match(envelope(result.stderr).message, /isn't available yet/);
+    assert.match(envelope(result.stderr).message, /pass --workspace <id> and --device/);
   } finally {
     fs.rmSync(project, { recursive: true, force: true });
   }

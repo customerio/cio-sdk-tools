@@ -37,6 +37,8 @@ export type VerifyPushOptions = {
   profile?: string;
   /** The level sends real pushes. */
   send: boolean;
+  /** The level reads Customer.io's record of each push and judges it. */
+  recorded: boolean;
   dryRun: boolean;
   /** A push that never arrived is sent once more. */
   resend: boolean;
@@ -74,6 +76,7 @@ export function settingsFrom(flags: PushFlags): VerifyPushOptions {
     package: flags.androidAppId,
     profile: flags.cioProfile,
     send: false,
+    recorded: false,
     dryRun: Boolean(flags.dryRun),
     resend: flags.retry !== false,
     observe: Boolean(flags.watchRegistration),

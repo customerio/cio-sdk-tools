@@ -24,6 +24,10 @@ export interface SendRequest {
 
 export interface SendResult {
   accepted: boolean;
+  /**
+   * Where Customer.io keeps its record of this push, once it keeps test pushes. A refused
+   * send can carry one too: the record then says why the provider refused it.
+   */
   deliveryId?: string;
   error?: string;
   /** Refused for sending too often: every send after it would be refused the same way. */
@@ -63,25 +67,63 @@ export async function sendVerifyPush(
     };
   }
 
-  const res = await cioApi<{ delivery_id?: string; errors?: string[] }>(
+  const res = await cioApi<SendBody>(
     '/v1/environments/{environment_id}/verify/push',
     { environment_id: request.environmentId },
     { method: 'POST', body: payload }
   );
+  return sendResultOf(res);
+}
 
+type SendError = string | { detail?: string; meta?: { delivery_id?: string } };
+
+interface SendBody {
+  delivery_id?: string;
+  errors?: SendError[] | null;
+}
+
+/**
+ * What the send's answer says. Accepted, it carries `delivery_id` when Customer.io kept a
+ * record; refused (a 400 naming the provider's error), the id is in the error's `meta`.
+ */
+export function sendResultOf(res: {
+  ok: boolean;
+  data?: SendBody;
+  error?: string;
+  errorBody?: unknown;
+}): SendResult {
   if (!res.ok) {
     return {
       accepted: false,
       error: res.error,
       rateLimited: isRateLimited(res.error),
+      deliveryId: idIn((res.errorBody as SendBody | undefined)?.errors),
     };
   }
   const errors = res.data?.errors;
   if (Array.isArray(errors) && errors.length > 0) {
-    const error = errors.join('; ');
-    return { accepted: false, error, rateLimited: isRateLimited(error) };
+    const error = errors
+      .map((entry) => (typeof entry === 'string' ? entry : entry.detail))
+      .filter(Boolean)
+      .join('; ');
+    return {
+      accepted: false,
+      error: error || 'refused',
+      rateLimited: isRateLimited(error),
+      deliveryId: idIn(errors),
+    };
   }
-  return { accepted: true, deliveryId: res.data?.delivery_id };
+  return { accepted: true, deliveryId: res.data?.delivery_id || undefined };
+}
+
+function idIn(errors?: SendError[] | null): string | undefined {
+  if (!Array.isArray(errors)) return undefined;
+  for (const entry of errors) {
+    if (typeof entry === 'object' && entry?.meta?.delivery_id) {
+      return entry.meta.delivery_id;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -138,7 +180,12 @@ export function rejectedCell(
     state,
     verdict: sent.rateLimited ? 'skip' : 'fail',
     cause: sent.rateLimited ? RATE_LIMITED_CAUSE : 'send.provider_rejected',
-    evidence: [...evidence, `${label}: ${sent.error ?? 'unknown error'}`],
+    evidence: [
+      ...evidence,
+      `${label}: ${sent.error ?? 'unknown error'}${
+        sent.deliveryId ? ` (delivery ${sent.deliveryId})` : ''
+      }`,
+    ],
   };
 }
 

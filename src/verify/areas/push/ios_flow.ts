@@ -28,8 +28,8 @@ import {
 } from './registration/workspace_ready';
 import { PushLadder, RUNG_TITLES } from './types';
 import { VerifyPushOptions, evidenceDirectoryFor } from './options';
-import { ClimbResult, skipRest } from './climb';
-import { addOpened, askToSend, skipUnreadable, tapPlanFor } from './sending';
+import { ClimbResult, skipRest, skipSending } from './climb';
+import { addSent, askToSend, skipUnreadable, tapPlanFor } from './sending';
 import { askerPhases } from '../../platform/observe';
 
 /**
@@ -63,7 +63,7 @@ export async function climb(
       ladder,
       reporter,
       ['workspace_ready', 'device_ready', 'profile_linked'],
-      options.send
+      options
     );
     return { projectName: wiring.model.projectName };
   }
@@ -114,12 +114,7 @@ export async function climb(
     ladder.adopt(ready, workspaceTimer());
     workspaceRung.done(ready);
     if (ladder.halted) {
-      skipRest(
-        ladder,
-        reporter,
-        ['device_ready', 'profile_linked'],
-        options.send
-      );
+      skipRest(ladder, reporter, ['device_ready', 'profile_linked'], options);
       return { projectName: wiring.model.projectName };
     }
 
@@ -127,7 +122,7 @@ export async function climb(
     ladder.adopt(deviceRungResult, deviceMs);
     deviceRung.done(deviceRungResult);
     if (ladder.halted) {
-      skipRest(ladder, reporter, ['profile_linked'], options.send);
+      skipRest(ladder, reporter, ['profile_linked'], options);
       return { projectName: wiring.model.projectName };
     }
 
@@ -333,9 +328,7 @@ async function matrix(
         workspaceReason: inputs.workspaceReason,
         token: inputs.token,
       }) ?? 'no push was sent';
-    ladder.addMatrix({ metric: 'delivered', cells: [], skipped });
-    if (options.opened)
-      ladder.addMatrix({ metric: 'opened', cells: [], skipped });
+    skipSending(ladder, options, skipped);
     return;
   }
 
@@ -356,8 +349,20 @@ async function matrix(
     evidenceDirectory: evidenceDirectoryFor(options),
     tap: plan.tap,
   });
-  ladder.addMatrix(
-    explainNotificationsOff(delivered, inputs.pushDisabled === true)
+  await addSent(
+    ladder,
+    options,
+    {
+      delivered: explainNotificationsOff(
+        delivered,
+        inputs.pushDisabled === true
+      ),
+      opened,
+    },
+    {
+      environmentId: inputs.environmentId,
+      reporter,
+      tapSkipped: plan.skipped,
+    }
   );
-  addOpened(ladder, options, opened, plan.skipped);
 }

@@ -793,7 +793,7 @@ test('a caught launch is complete only from its first line, and when its stream 
 });
 
 test("Customer.io's record of the open settles what the phone's log could not", () => {
-  const { withRecordedOpen } = require('../../dist/verify/areas/push/on_device/opened');
+  const { withRecordedOpen } = require('../../dist/verify/areas/push/record');
   const lost = { state: 'killed', verdict: 'skip', cause: 'runtime.tap_lines_lost', evidence: [] };
   const recorded = { answer: 'opened', deliveryId: 'dgS_ug', at: 1791983000 };
 
@@ -812,6 +812,7 @@ test("Customer.io's record of the open settles what the phone's log could not", 
   const none = withRecordedOpen(failed, { answer: 'not_opened', deliveryIds: ['dgS_ug'], waitedMs: 30000 }, false);
   assert.strictEqual(none.verdict, 'fail');
   assert.strictEqual(none.recorded, 'not_recorded');
+  assert.match(none.evidence.at(-1), /no open for dgS_ug within 30s; it can still arrive later/);
   const unread = withRecordedOpen(lost, { answer: 'unavailable', reason: 'the send returned no delivery id' }, true);
   assert.strictEqual(unread.verdict, 'skip');
   assert.match(unread.evidence.at(-1), /not read: the send returned no delivery id/);

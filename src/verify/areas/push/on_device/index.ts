@@ -14,6 +14,7 @@ import {
 } from './sdk_lines';
 import {
   SendRequest,
+  SendResult,
   eachState,
   markLateArrivals,
   rejectedCell,
@@ -250,6 +251,24 @@ interface RunState {
   nothingArrives?: boolean;
 }
 
+/**
+ * The delivery ids a cell's sends returned, which is where Customer.io keeps its record of
+ * them. `ids` stays absent until a send was accepted or refused with an id: a cell that sent
+ * nothing has nothing to read back.
+ */
+export interface Sends {
+  ids?: string[];
+}
+
+/** Keep what a send says about the record it left, and hand the result on. */
+export function noteSend(sends: Sends, sent: SendResult): SendResult {
+  if (sent.accepted || sent.deliveryId) {
+    sends.ids ??= [];
+    if (sent.deliveryId) sends.ids.push(sent.deliveryId);
+  }
+  return sent;
+}
+
 async function runCell(
   state: AppState,
   options: MatrixOptions,
@@ -259,16 +278,18 @@ async function runCell(
   tapped: MatrixCell[]
 ): Promise<MatrixCell> {
   const handle = options.reporter?.cell(state);
+  const sends: Sends = {};
   const body = await runCellBody(
     state,
     options,
     capture,
     seenIds,
     handle,
-    known
+    known,
+    sends
   );
   const cell = blameStoppedCapture(
-    body.cell,
+    { ...body.cell, sentIds: sends.ids },
     capture.stoppedReason?.(),
     SILENT
   );
@@ -287,7 +308,6 @@ async function runCell(
             evidenceDirectory: options.evidenceDirectory,
             reporter: options.reporter,
             appProcess: options.processNames?.[0],
-            environmentId: options.environmentId,
           },
           capture,
           tapHandle
@@ -308,15 +328,21 @@ async function runCellBody(
   capture: LogCapture,
   seenIds: Set<string>,
   handle: CellHandle | undefined,
-  known: RunState
+  known: RunState,
+  sends: Sends
 ): Promise<{ cell: MatrixCell; push?: SentPush; noPush?: string }> {
   const evidence: string[] = [];
   const tapping = options.tap?.states.includes(state) === true;
-  const tapPush = (title: string) =>
-    deliveredRequest(
-      options,
-      title,
-      tapping && options.tap ? { link: options.tap.link, state } : undefined
+  const send = async (title: string) =>
+    noteSend(
+      sends,
+      await sendVerifyPush(
+        deliveredRequest(
+          options,
+          title,
+          tapping && options.tap ? { link: options.tap.link, state } : undefined
+        )
+      )
     );
 
   handle?.phase('staging the app state');
@@ -334,7 +360,7 @@ async function runCellBody(
 
   const title = deliveredTitle(state, pushTag());
   handle?.phase('sending');
-  const sent = await sendVerifyPush(tapPush(title));
+  const sent = await send(title);
 
   if (sent.wouldSend) {
     return {
@@ -413,7 +439,6 @@ async function runCellBody(
   // being slow as it is a real failure, and the tool has no business calling a delayed
   // push a broken one. One re-send, said out loud in the evidence, settles which it was.
   // It carries its own tag, and either push arriving counts: the first may just be late.
-  let resentId: string | undefined;
   if (
     options.resend !== false &&
     stored === false &&
@@ -423,8 +448,7 @@ async function runCellBody(
   ) {
     handle?.phase('nothing arrived — sending once more');
     const retryTitle = deliveredTitle(state, pushTag());
-    const again = await sendVerifyPush(tapPush(retryTitle));
-    resentId = again.deliveryId;
+    const again = await send(retryTitle);
     if (again.rateLimited) {
       return {
         cell: rejectedCell(state, again, evidence, 're-send rejected'),
@@ -542,9 +566,6 @@ async function runCellBody(
       expectedId: deliveryId,
       arrivalSeen: stored ? true : extensionRan,
       mark,
-      recordedIds: [sent.deliveryId, resentId].filter((id): id is string =>
-        Boolean(id)
-      ),
     },
   };
 }

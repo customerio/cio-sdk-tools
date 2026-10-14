@@ -2,7 +2,6 @@ const test = require('node:test');
 const assert = require('node:assert');
 
 const { openPidWindow, parsePidList } = require('../../dist/verify/platform/ios/pid_window');
-const { readRecordedOpen, openedAt } = require('../../dist/verify/areas/push/on_device/recorded');
 
 const phone = { kind: 'device', udid: '00008120-TEST', name: 'iPhone' };
 
@@ -112,39 +111,4 @@ test('the process list parses, and a long name cut short still matches', async (
   assert.strictEqual(pids.get(1183), 'APN UIKit');
   assert.strictEqual(pids.size, 4);
   assert.strictEqual(parsePidList(''), undefined);
-});
-
-test('no delivery id from the send means no record to read, and nothing is called', async () => {
-  const answer = await readRecordedOpen('122175', [], { api: () => assert.fail('nothing should be called') });
-  assert.strictEqual(answer.answer, 'unavailable');
-  assert.match(answer.reason, /no delivery id/);
-});
-
-test('an open Customer.io recorded is read back, from either shape of the delivery', async () => {
-  const calls = [];
-  const api = async (path, params) => {
-    calls.push(params.delivery_id);
-    return params.delivery_id === 'resent'
-      ? { ok: true, data: { delivery: { opened: 1791983000 } } }
-      : { ok: true, data: { opened: null, metrics: {} } };
-  };
-  const answer = await readRecordedOpen('122175', ['first', 'resent'], { api, waitMs: 0, pollMs: 0 });
-  assert.deepStrictEqual(answer, { answer: 'opened', deliveryId: 'resent', at: 1791983000 });
-  assert.deepStrictEqual(calls, ['first', 'resent']);
-  assert.strictEqual(openedAt({ metrics: { opened: '1791983001' } }), 1791983001);
-  assert.strictEqual(openedAt({ opened: null }), undefined);
-});
-
-test('no open recorded within the wait, or no record at all, is said as such', async () => {
-  const unopened = await readRecordedOpen('122175', ['first'], {
-    api: async () => ({ ok: true, data: { delivery: { opened: null } } }),
-    waitMs: 0,
-    pollMs: 0,
-  });
-  assert.deepStrictEqual(unopened, { answer: 'not_opened', deliveryIds: ['first'], waitedMs: 0 });
-  const missing = await readRecordedOpen('122175', ['first'], {
-    api: async () => ({ ok: false, error: '404 Not Found' }),
-  });
-  assert.strictEqual(missing.answer, 'unavailable');
-  assert.match(missing.reason, /404 Not Found/);
 });

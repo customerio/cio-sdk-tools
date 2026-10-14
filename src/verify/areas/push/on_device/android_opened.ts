@@ -160,6 +160,7 @@ export async function tapAndroidPush(
     state,
     title: push.title,
     deliveryId: opened?.deliveryId ?? push.expectedId,
+    tapped: true,
     ...judgeOpened({
       available: capture.available,
       lossy: capture.lossy,

@@ -558,6 +558,29 @@ export const CAUSES: Record<string, PushCause> = {
     remedy:
       'Usually an earlier push still in flight, so the cell proves less than it appears to. Re-run with the app quiet, and treat the timing as suspect if it repeats.',
   },
+  'backend.metric_not_recorded': {
+    stage: 'recorded',
+    severity: 'warning',
+    summary:
+      "Customer.io had not recorded the device's report of this push when the tool stopped waiting.",
+    remedy:
+      'The SDK sends opens in batches of up to 30 seconds and retries a failed upload later, so a report can arrive after the wait: run that state again before acting on it. If it never arrives, the SDK is reporting somewhere else. It reports with the API key and region it was set up with, so a key from another workspace sends its reports there. On iOS, delivered comes from the notification service extension, which needs the same key as the app.',
+  },
+  'backend.delivery_not_found': {
+    stage: 'recorded',
+    severity: 'warning',
+    summary:
+      'Customer.io had no record under a delivery id its own send returned.',
+    remedy:
+      "A test push's record is kept for 24 hours and read from the workspace that sent it, so this run should always find it. Run again, and if it repeats, report it with the delivery id in the evidence.",
+  },
+  'backend.record_unreadable': {
+    stage: 'recorded',
+    severity: 'warning',
+    summary: "Customer.io's record of the push could not be read.",
+    remedy:
+      'The error is in the evidence. The `cio` login needs permission to view deliveries in this workspace: check it with `cio auth status`, then run again.',
+  },
 };
 
 registerCauses('push', CAUSES);

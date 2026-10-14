@@ -151,5 +151,7 @@ test("push's levels build on each other, as push chose", () => {
   );
   for (const step of registration.steps) assert.ok(onDevice.steps.includes(step));
   for (const step of onDevice.steps) assert.ok(endToEnd.steps.includes(step));
-  assert.ok(endToEnd.unavailable, 'end-to-end runs before Customer.io records test pushes');
+  assert.ok(endToEnd.steps.includes('recorded'));
+  // It runs before Customer.io keeps test pushes everywhere, and says so in its report.
+  assert.ok(!endToEnd.unavailable);
 });

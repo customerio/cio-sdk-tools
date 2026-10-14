@@ -22,7 +22,7 @@ import {
   pushTag,
   tapBody,
 } from './identity';
-import { PushMatrices, completeTaps } from '.';
+import { PushMatrices, Sends, completeTaps, noteSend } from '.';
 import { SentPush, TapPlan, notTappedCell } from './opened';
 import { tapAndroidPush } from './android_opened';
 
@@ -136,14 +136,18 @@ async function runCell(
   tapped: MatrixCell[]
 ): Promise<MatrixCell> {
   const handle = options.reporter?.cell(state);
-  const { cell, push, noPush } = await runCellBody(
+  const sends: Sends = {};
+  const body = await runCellBody(
     state,
     options,
     capture,
     seenIds,
     known,
+    sends,
     handle
   );
+  const { push, noPush } = body;
+  const cell: MatrixCell = { ...body.cell, sentIds: sends.ids };
   handle?.done(cell);
 
   // The same push, tapped: asked for straight after it appeared, while the banner is up.
@@ -179,6 +183,7 @@ async function runCellBody(
   capture: LogCapture,
   seenIds: Set<string>,
   known: { listed: boolean },
+  sends: Sends,
   handle?: CellHandle
 ): Promise<{ cell: MatrixCell; push?: SentPush; noPush?: string }> {
   const evidence: string[] = [];
@@ -201,21 +206,24 @@ async function runCellBody(
   const mark = capture.mark();
   const title = deliveredTitle(state, pushTag());
   handle?.phase('sending');
-  const sent = await sendVerifyPush({
-    dryRun: options.dryRun,
-    environmentId: options.environmentId,
-    token: options.token,
-    // FCM has no sandbox and production split; the flag is meaningless here and the API
-    // ignores it, so it is sent false rather than implying a distinction that exists only
-    // on APNs.
-    sandbox: false,
-    platform: 'android',
-    provider: 'fcm',
-    title,
-    // A push that will be tapped carries the link, and its body says to tap it.
-    body: tapping ? tapBody(state) : 'Sent by cio-sdk-tools verify push.',
-    link: tapping ? options.tap?.link : undefined,
-  });
+  const sent = noteSend(
+    sends,
+    await sendVerifyPush({
+      dryRun: options.dryRun,
+      environmentId: options.environmentId,
+      token: options.token,
+      // FCM has no sandbox and production split; the flag is meaningless here and the API
+      // ignores it, so it is sent false rather than implying a distinction that exists only
+      // on APNs.
+      sandbox: false,
+      platform: 'android',
+      provider: 'fcm',
+      title,
+      // A push that will be tapped carries the link, and its body says to tap it.
+      body: tapping ? tapBody(state) : 'Sent by cio-sdk-tools verify push.',
+      link: tapping ? options.tap?.link : undefined,
+    })
+  );
 
   if (sent.wouldSend) {
     return {
@@ -240,7 +248,9 @@ async function runCellBody(
     };
   }
   evidence.push(
-    'sent (this route returns no delivery id, so the log supplies it)'
+    sent.deliveryId
+      ? `sent, delivery ${sent.deliveryId}`
+      : 'sent (this route returns no delivery id, so the log supplies it)'
   );
 
   const since = () => capture.since(mark);

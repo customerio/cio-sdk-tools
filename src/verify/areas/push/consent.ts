@@ -4,6 +4,7 @@ import { goAhead } from '../../core/consent';
 import { Asker } from '../../core/prompt';
 import { Reporter } from '../../core/report/render';
 import { Consent } from '../../core/report/types';
+import { skipSending } from './climb';
 import { PushLadder } from './types';
 
 /**
@@ -127,6 +128,8 @@ export async function consentToSend(input: {
   named: boolean;
   /** Whether opens were to be checked, so a no skips that section too. */
   opened: boolean;
+  /** Whether Customer.io's record was to be read, so a no skips that section too. */
+  recorded?: boolean;
   asker: Asker;
   reporter: Reporter;
   ladder: PushLadder;
@@ -146,10 +149,11 @@ export async function consentToSend(input: {
     const skipped = input.asker.interactive
       ? 'the send was not confirmed, so nothing was sent'
       : 'nobody could confirm the send — name the device with --device and the workspace with --workspace';
-    input.ladder.addMatrix({ metric: 'delivered', cells: [], skipped });
-    if (input.opened) {
-      input.ladder.addMatrix({ metric: 'opened', cells: [], skipped });
-    }
+    skipSending(
+      input.ladder,
+      { opened: input.opened, recorded: Boolean(input.recorded) },
+      skipped
+    );
   }
   return consent;
 }

@@ -51,9 +51,8 @@ export interface Cell {
   cause?: string;
   evidence: string[];
   /**
-   * Whether Customer.io recorded what this cell proved happened on the device. Always
-   * `not_checked` until there is a record the tool can read back; the device evidence never
-   * decides it.
+   * Whether Customer.io recorded what this cell proved happened on the device, when its
+   * record was read: `not_checked` otherwise. The device evidence never decides it.
    */
   recorded?: 'not_checked' | 'recorded' | 'not_recorded';
   /** Everything the cell did, from staging to judging. */

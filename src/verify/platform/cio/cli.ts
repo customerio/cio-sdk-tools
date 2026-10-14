@@ -29,6 +29,8 @@ export interface CioResult<T> {
   ok: boolean;
   data?: T;
   error?: string;
+  /** A refused call's own body, when the API sent one: it can carry more than the error. */
+  errorBody?: unknown;
 }
 
 const INSTALL_HINT =
@@ -291,6 +293,7 @@ export async function cioApi<T>(
     return {
       ok: false,
       error: readableError(parsed as Record<string, unknown>),
+      errorBody: apiBody(parsed as Record<string, unknown>),
     };
   }
   return { ok: code === 0, data: parsed as T };
@@ -310,6 +313,8 @@ function firstJson(body: string): unknown {
   return undefined;
 }
 
+const NESTED = /^(API error \d+): (\{.*\})$/s;
+
 /**
  * One sentence a person can read. The API's own errors arrive as JSON nested inside the
  * envelope's message, and the detail is the only part worth surfacing — the full body is
@@ -317,17 +322,26 @@ function firstJson(body: string): unknown {
  */
 function readableError(envelope: Record<string, unknown>): string {
   const message = String(envelope.message ?? envelope.error);
-  const nested = /^(API error \d+): (\{.*\})$/s.exec(message);
+  const nested = NESTED.exec(message);
   if (!nested) return message;
+  const body = parseBody(nested[2]) as
+    | { errors?: { detail?: string }[]; message?: string }
+    | undefined;
+  const detail = body?.errors?.[0]?.detail ?? body?.message;
+  if (!detail) return nested[1];
+  return `${nested[1]}: ${detail.replace(/\s*\(reference [^)]*\)/, '')}`;
+}
+
+/** The API's own JSON body, nested inside the envelope's message, if it parses. */
+function apiBody(envelope: Record<string, unknown>): unknown {
+  const nested = NESTED.exec(String(envelope.message ?? envelope.error));
+  return nested ? parseBody(nested[2]) : undefined;
+}
+
+function parseBody(text: string): unknown {
   try {
-    const body = JSON.parse(nested[2]) as {
-      errors?: { detail?: string }[];
-      message?: string;
-    };
-    const detail = body.errors?.[0]?.detail ?? body.message;
-    if (!detail) return nested[1];
-    return `${nested[1]}: ${detail.replace(/\s*\(reference [^)]*\)/, '')}`;
+    return JSON.parse(text);
   } catch {
-    return nested[1];
+    return undefined;
   }
 }
