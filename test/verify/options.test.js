@@ -288,3 +288,108 @@ test('the shared options work before the area name too', () => {
     fs.rmSync(project, { recursive: true, force: true });
   }
 });
+
+// --- the go-ahead on a terminal ----------------------------------------------
+
+const fakeTerminal = () => {
+  const input = new PassThrough();
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = (mode) => {
+    input.isRaw = mode;
+  };
+  const written = [];
+  const output = { isTTY: true, write: (chunk) => written.push(String(chunk)) };
+  return { input, output, text: () => written.join('') };
+};
+
+const press = (input, ...keys) => {
+  let delay = 10;
+  for (const key of keys) {
+    setTimeout(() => input.write(key), delay);
+    delay += 10;
+  }
+};
+
+const answers = { yes: 'Yes, send 3 pushes', no: 'No, send nothing' };
+
+test('on a terminal the go-ahead is two rows, and Enter alone is no', async () => {
+  const terminal = fakeTerminal();
+  const asker = createAsker({ interactive: true, input: terminal.input, output: terminal.output, timeoutMs: 2_000 });
+  press(terminal.input, '\r');
+  assert.strictEqual(await asker.agree('Send 3 real pushes?', 'context\n', answers), false);
+  assert.match(terminal.text(), /Send 3 real pushes\?/);
+  assert.match(terminal.text(), /Yes, send 3 pushes/);
+  assert.match(terminal.text(), /✔.*No, send nothing/);
+  assert.doesNotMatch(terminal.text(), /\(y\/N\)/, 'the typed form showed on a terminal');
+  assert.strictEqual(terminal.input.isRaw, false, 'raw mode was left on');
+});
+
+test('the arrow up to yes and Enter is the only way to send', async () => {
+  const terminal = fakeTerminal();
+  const asker = createAsker({ interactive: true, input: terminal.input, output: terminal.output, timeoutMs: 2_000 });
+  press(terminal.input, '\u001b[A', '\r');
+  assert.strictEqual(await asker.agree('Send 3 real pushes?', undefined, answers), true);
+  assert.match(terminal.text(), /✔.*Yes, send 3 pushes/);
+
+  const silent = fakeTerminal();
+  const waiting = createAsker({ interactive: true, input: silent.input, output: silent.output, timeoutMs: 50 });
+  assert.strictEqual(await waiting.agree('Send?', undefined, answers), false, 'silence sent');
+});
+
+// --- what a partly proven run says ------------------------------------------------
+
+const { unprovenLine } = require('../../dist/verify/core/report/render');
+const { PUSH_VOICE } = require('../../dist/verify/areas/push/voice');
+const { unprovenStates } = require('../../dist/verify/areas/push/rerun');
+
+const cell = (state, verdict, cause) => ({ state, verdict, cause, evidence: [] });
+const iphone = [
+  {
+    kind: 'cells',
+    metric: 'delivered',
+    cells: [cell('killed', 'pass'), cell('background', 'pass'), cell('foreground', 'pass')],
+  },
+  {
+    kind: 'cells',
+    metric: 'opened',
+    cells: [cell('killed', 'skip', 'runtime.tap_lines_lost'), cell('background', 'pass')],
+  },
+];
+
+test('a run with one cell it could not read says how much was proven and names that cell', () => {
+  assert.strictEqual(
+    unprovenLine(iphone, PUSH_VOICE),
+    '4 of 5 proven; not proven: killed opened (runtime.tap_lines_lost). skipped is not passed.'
+  );
+  assert.strictEqual(
+    unprovenLine(
+      [iphone[0], { kind: 'cells', metric: 'opened', cells: [], skipped: 'a dry run sends nothing' }],
+      PUSH_VOICE
+    ),
+    '3 of 3 proven; opened did not run. skipped is not passed.'
+  );
+  assert.strictEqual(
+    unprovenLine([{ kind: 'cells', metric: 'delivered', cells: [], skipped: 'nothing confirmed' }], PUSH_VOICE),
+    'nothing was proven. skipped is not passed.'
+  );
+});
+
+test('only the states with an inconclusive cell are run again, and a dry run has none', () => {
+  assert.deepStrictEqual(unprovenStates(iphone), ['killed']);
+  assert.deepStrictEqual(
+    unprovenStates([{ metric: 'delivered', cells: [cell('killed', 'skip'), cell('background', 'skip')] }]),
+    [],
+    'a dry run\'s cells name no cause'
+  );
+  const retry = pushRerun({
+    program: 'cio-sdk-tools verify push',
+    pathArg: '.',
+    level: 'on-device',
+    options: settings({ opened: false }),
+    flags: {},
+    selection: selection({ states: ['foreground'] }),
+  });
+  assert.doesNotMatch(retry, /--deep-link|--check-opens/, 'a deep link without taps');
+  assert.match(retry, /--app-states foreground/);
+});

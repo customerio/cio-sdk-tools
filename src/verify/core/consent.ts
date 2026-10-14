@@ -59,6 +59,8 @@ export async function goAhead(input: {
   what: string;
   facts: [string, string][];
   question: string;
+  /** The two answers, as the picker shows them. */
+  answers?: { yes: string; no: string };
   writes: string[];
   asker: Asker;
   reporter: Reporter;
@@ -77,7 +79,11 @@ export async function goAhead(input: {
     '',
   ].join('\n');
   input.reporter.pause();
-  const granted = await input.asker.agree(input.question, context);
+  const granted = await input.asker.agree(
+    input.question,
+    context,
+    input.answers
+  );
   input.reporter.resume();
   return { granted, by: 'prompt', writes: input.writes };
 }

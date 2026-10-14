@@ -338,7 +338,34 @@ test('the facts name the device, say how each answer was settled, and say when a
   const typed = Object.fromEntries(
     selectionFacts({ ...selection, targetName: undefined, targetSource: 'flag' })
   );
-  assert.strictEqual(typed.device, 'BAC485BA  --device', 'a --device is shown as typed');
+  assert.strictEqual(typed.device, 'BAC485BA  --device', 'an unknown --device is shown as typed');
+
+  // A --device the run could match is named like a picked one: a serial alone is not
+  // something a person recognises.
+  const named = Object.fromEntries(
+    selectionFacts({
+      ...selection,
+      targetSelector: 'RFCXB0LZRLD',
+      targetName: 'SM_S921B',
+      targetId: 'RFCXB0LZRLD',
+      targetSource: 'flag',
+    })
+  );
+  assert.strictEqual(named.device, 'SM_S921B (RFCXB0LZRLD)  --device');
+
+  const android = Object.fromEntries(
+    selectionFacts({
+      ...selection,
+      appTargetName: undefined,
+      packageName: 'io.customer.android.sample.java_layout',
+      packageSource: 'only one',
+    })
+  );
+  assert.strictEqual(
+    android.app,
+    'io.customer.android.sample.java_layout',
+    'the only variant needs no note, as on iOS'
+  );
 
   const alone = Object.fromEntries(
     selectionFacts({

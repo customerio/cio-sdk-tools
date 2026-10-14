@@ -36,8 +36,9 @@ export interface Selection {
   packageSource?: AnswerSource;
   variant?: BuildVariant;
   targetSelector?: string;
-  /** Set when the device came from the list, so the facts can name it. */
+  /** The device's name and its udid or serial, so the facts can say which one it is. */
   targetName?: string;
+  targetId?: string;
   targetSource?: AnswerSource;
   states?: AppState[];
 }
@@ -63,6 +64,7 @@ export async function selectForIos(
     appTargetSource: app.source,
     targetSelector: target.selector,
     targetName: target.name,
+    targetId: target.id,
     targetSource: target.source,
     states: statesToSend(input),
   };
@@ -86,6 +88,7 @@ export async function selectForAndroid(
     variant,
     targetSelector: target.selector,
     targetName: target.name,
+    targetId: target.id,
     targetSource: target.source,
     states: statesToSend(input),
   };
@@ -134,8 +137,11 @@ export function selectionFacts(
   if (selection.packageName) {
     facts.push([
       'app',
+      // The only variant there is needs no note; one that was picked or named does.
       `${selection.packageName}${sourceOf(
-        selection.packageSource,
+        selection.packageSource === 'only one'
+          ? undefined
+          : selection.packageSource,
         '--android-app-id'
       )}`,
     ]);
@@ -154,7 +160,9 @@ export function selectionFacts(
   if (selection.targetSelector) {
     // Named the way the workspace is: a udid alone is not something a person recognises.
     const device = selection.targetName
-      ? `${selection.targetName} (${selection.targetSelector})`
+      ? `${selection.targetName} (${
+          selection.targetId ?? selection.targetSelector
+        })`
       : selection.targetSelector;
     facts.push([
       'device',

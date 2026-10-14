@@ -10,7 +10,12 @@ import {
 } from './android/device';
 import { CioContext } from './cio/cli';
 import { WorkspaceResolution, resolveWorkspace } from './cio/workspace';
-import { describeTarget, isUsable, listTargets } from './ios/device';
+import {
+  describeTarget,
+  isUsable,
+  listTargets,
+  selectTarget,
+} from './ios/device';
 import { Asker } from '../core/prompt';
 import { XcodeProjectModel, appTargets } from './ios/xcode';
 
@@ -25,9 +30,12 @@ import { XcodeProjectModel, appTargets } from './ios/xcode';
 export type AnswerSource = 'flag' | 'picked' | 'only one';
 
 export interface Picked {
+  /** What the rest of the run matches the device by: as typed, or the picked one's id. */
   selector?: string;
-  /** Set when the device came from the list, so the facts can name it. */
+  /** The device's name, so the facts can say which one it is. */
   name?: string;
+  /** Its udid or serial, beside the name. */
+  id?: string;
   source?: AnswerSource;
 }
 
@@ -126,13 +134,24 @@ export async function chooseAndroidVariant(input: {
  * phone plugged into this machine is not necessarily a test phone.
  */
 export async function chooseIosTarget(input: PickInput): Promise<Picked> {
-  if (input.target) return { selector: input.target, source: 'flag' };
-  const usable = (await listTargets()).filter(isUsable);
+  const targets = await listTargets();
+  if (input.target) {
+    // Named the way the run will match it, so the facts say which device that is.
+    const named = selectTarget(targets, input.target).target;
+    return {
+      selector: input.target,
+      name: named?.name,
+      id: named?.udid,
+      source: 'flag',
+    };
+  }
+  const usable = targets.filter(isUsable);
   if (usable.length === 0) return {};
   if (usable.length === 1) {
     return {
       selector: usable[0].udid,
       name: usable[0].name,
+      id: usable[0].udid,
       source: 'only one',
     };
   }
@@ -145,17 +164,31 @@ export async function chooseIosTarget(input: PickInput): Promise<Picked> {
     })),
     { flag: '--device <name|udid>' }
   );
-  return { selector: picked.udid, name: picked.name, source: 'picked' };
+  return {
+    selector: picked.udid,
+    name: picked.name,
+    id: picked.udid,
+    source: 'picked',
+  };
 }
 
 export async function chooseAndroidTarget(input: PickInput): Promise<Picked> {
-  if (input.target) return { selector: input.target, source: 'flag' };
   const targets = await listAndroidTargets();
+  if (input.target) {
+    const named = targets.find((target) => target.serial === input.target);
+    return {
+      selector: input.target,
+      name: named?.model,
+      id: named?.serial,
+      source: 'flag',
+    };
+  }
   if (targets.length === 0) return {};
   if (targets.length === 1) {
     return {
       selector: targets[0].serial,
       name: targets[0].model,
+      id: targets[0].serial,
       source: 'only one',
     };
   }
@@ -168,5 +201,10 @@ export async function chooseAndroidTarget(input: PickInput): Promise<Picked> {
     })),
     { flag: '--device <serial>' }
   );
-  return { selector: picked.serial, name: picked.model, source: 'picked' };
+  return {
+    selector: picked.serial,
+    name: picked.model,
+    id: picked.serial,
+    source: 'picked',
+  };
 }

@@ -157,7 +157,7 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
 
    ### Sending real pushes
 
-   Pushes go out without a question when `--depth`, `--workspace`, and `--device` are all on the command line: naming where they go is the go-ahead. If the run picked any of them itself, it shows the device, app, workspace, `cio` login, token prefix, and push count, then asks `Send 3 real pushes? (y/N)`. The default is no.
+   Pushes go out without a question when `--depth`, `--workspace`, and `--device` are all on the command line: naming where they go is the go-ahead. If the run picked any of them itself, it shows the device, app, workspace, `cio` login, token prefix, and push count, then asks `Send 3 real pushes?` with two answers to pick with the arrow keys. The cursor starts on no, so Enter alone sends nothing.
 
    ### In CI or a script
 
@@ -168,7 +168,7 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
      --workspace WORKSPACE_ID --device SIMULATOR_NAME_UDID_OR_SERIAL > verify.json
    ```
 
-   `--json` prints only the report on stdout, with errors on stderr. `--report FILE` also writes the report to a file. `--dry-run` does everything except send. The report carries `area`, `level`, its sections in order, and `rerun`, the command that repeats the run.
+   `--json` prints only the report on stdout, with errors on stderr. `--report FILE` also writes the report to a file. `--dry-run` does everything except send. The report carries `area`, `level`, its sections in order, `rerun`, the command that repeats the run, and, when a check couldn't be proven either way, `rerunUnproven`, the command that tries only those app states again.
 
    ### Exit Codes
 

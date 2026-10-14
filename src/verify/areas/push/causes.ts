@@ -354,7 +354,7 @@ export const CAUSES: Record<string, PushCause> = {
     summary:
       "The tap reached the app, and the SDK's lines for it never reached the phone's log stream.",
     remedy:
-      "This is unproven, not failed. A phone's log stream drops lines, most of all during the burst of a cold launch, so a tap the app handled can leave no trace in it. Run the state again.",
+      "This is unproven, not failed. A phone's log stream drops lines, most of all during the burst of a cold launch, so a tap the app handled can leave no trace in it. Run that state again: the run prints the command, and the report carries it as `rerunUnproven`.",
   },
   'runtime.tap_other_push': {
     stage: 'delivered_matrix',

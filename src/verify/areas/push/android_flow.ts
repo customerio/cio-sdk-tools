@@ -158,6 +158,7 @@ export async function climbAndroid(
   if (consent?.granted !== false) {
     await androidMatrix(ladder, options, reporter, asker, selection.states, {
       serial: device.target?.serial,
+      deviceName: device.target?.model,
       packageName,
       environmentId: workspace.resolution?.workspace?.id,
       workspaceReason: workspace.resolution?.unresolvedReason ?? cio.reason,
@@ -272,6 +273,7 @@ async function androidMatrix(
   states: AppState[] | undefined,
   inputs: {
     serial?: string;
+    deviceName?: string;
     packageName?: string;
     environmentId?: string;
     workspaceReason?: string;
@@ -304,6 +306,7 @@ async function androidMatrix(
   const plan = tapPlanFor(options, asker, states ?? ALL_STATES);
   const { delivered, opened } = await runAndroidDeliveredMatrix({
     serial: inputs.serial,
+    deviceName: inputs.deviceName,
     packageName: inputs.packageName,
     environmentId: inputs.environmentId,
     token: inputs.token,

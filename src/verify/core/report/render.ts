@@ -33,6 +33,8 @@ export interface Voice {
   sectionName(section: Section): string;
   /** A cell's roll-up phrase, when the cell did not write its own. */
   cellSummary(cell: Cell, section: string): string;
+  /** A cell named in a sentence about the whole run: "killed opened". */
+  cellLabel(cell: Cell, section: string): string;
   /** The closing line when a section of cells did not pass. */
   failed: string;
   /** The closing lines of a run that passed: what it proved, in the area's words. */
@@ -46,6 +48,7 @@ export const PLAIN_VOICE: Voice = {
   sectionName: () => 'section',
   cellSummary: (cell) =>
     cell.verdict === 'pass' ? 'passed' : cell.cause ?? cell.verdict,
+  cellLabel: (_cell, section) => section,
   failed: 'a check did not pass.',
   conclusion: () => ['passed.'],
 };
@@ -362,7 +365,7 @@ export function createReporter(options: {
       } else if (report.verdict === 'fail') {
         body.push(chalk.red(`  ${voice.failed}`));
       } else if (report.verdict === 'skip') {
-        body.push(chalk.yellow('  nothing was proven. skipped is not passed.'));
+        body.push(chalk.yellow(`  ${unprovenLine(cells, voice)}`));
       } else {
         // Only the area knows what its run proved, and it says that and nothing more.
         const [claim, ...caveats] = voice.conclusion(report);
@@ -385,6 +388,48 @@ export function createReporter(options: {
       write(out, body.join('\n'));
     },
   };
+}
+
+/**
+ * The closing line of a run that was not all proven. "Nothing was proven" is only true when
+ * nothing was: a run where four cells passed and one could not be read says that, and names
+ * the one.
+ */
+export function unprovenLine(
+  sections: (Section & { kind: 'cells' })[],
+  voice: Voice
+): string {
+  const cells = sections
+    .filter((section) => !section.skipped)
+    .flatMap((section) =>
+      section.cells.map((cell) => ({
+        cell,
+        section: voice.sectionName(section),
+      }))
+    );
+  const proven = cells.filter(
+    ({ cell }) => cell.verdict === 'pass' || cell.verdict === 'warn'
+  );
+  if (proven.length === 0) return 'nothing was proven. skipped is not passed.';
+  const parts = [`${proven.length} of ${cells.length} proven`];
+  const unproven = cells.filter(({ cell }) => cell.verdict === 'skip');
+  if (unproven.length > 0) {
+    parts.push(
+      `not proven: ${unproven
+        .map(
+          ({ cell, section }) =>
+            `${voice.cellLabel(cell, section)}${
+              cell.cause ? ` (${cell.cause})` : ''
+            }`
+        )
+        .join(', ')}`
+    );
+  }
+  const notRun = sections
+    .filter((section) => section.skipped)
+    .map((section) => voice.sectionName(section));
+  if (notRun.length > 0) parts.push(`${notRun.join(', ')} did not run`);
+  return `${parts.join('; ')}. skipped is not passed.`;
 }
 
 function write(stream: { write(chunk: string): unknown }, text: string): void {

@@ -120,21 +120,18 @@ export async function runArea(
   }
 
   await emit(report, reporter, options);
+  const human = level === 'human' || level === 'verbose';
   // A run that had to ask hands over the command that would not have: the next run, the
-  // CI job, the agent. One that asked nothing was already that command.
-  if (
-    report.rerun &&
-    asker.asked > 0 &&
-    (level === 'human' || level === 'verbose')
-  ) {
-    process.stdout.write(
-      [
-        '  Run it again without the questions:',
-        ...wrapCommand(report.rerun),
-        '',
-        '',
-      ].join('\n')
-    );
+  // CI job, the agent. One that asked nothing was already that command, and one whose
+  // go-ahead was refused does not get a command that would skip it.
+  const declined = report.consent?.granted === false;
+  if (report.rerun && asker.asked > 0 && human && !declined) {
+    printCommand('Run it again without the questions:', report.rerun);
+  }
+  // What to do about an inconclusive result is to try it again, so the narrower command is
+  // printed even in quiet mode, which keeps "what to do about it".
+  if (report.rerunUnproven && (human || level === 'quiet')) {
+    printCommand("Run what couldn't be proven again:", report.rerunUnproven);
   }
   return report.exitCode;
 }
@@ -171,4 +168,10 @@ function toolError(
     if (extra?.humanSuffix) process.stderr.write(`${extra.humanSuffix}\n`);
   }
   return exitCode;
+}
+
+function printCommand(title: string, command: string): void {
+  process.stdout.write(
+    [`  ${title}`, ...wrapCommand(command), '', ''].join('\n')
+  );
 }

@@ -1,6 +1,6 @@
 import { Voice } from '../../core/report/render';
 import { Cell, Report, Section } from '../../core/report/types';
-import { MatrixSection } from './types';
+import { MatrixCell, MatrixSection } from './types';
 
 /** How push says what a run proved, and only that. */
 export const PUSH_VOICE: Voice = {
@@ -25,6 +25,11 @@ export const PUSH_VOICE: Voice = {
         return cell.cause ?? 'not sent';
     }
   },
+
+  cellLabel: (cell: Cell, section: string) =>
+    `${(cell as MatrixCell).state} ${
+      section === 'opened' ? 'opened' : 'received'
+    }`,
 
   failed: 'a real push was tried and did not pass.',
 

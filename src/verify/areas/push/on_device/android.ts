@@ -30,6 +30,8 @@ export interface AndroidMatrixOptions {
   dryRun?: boolean;
   reporter?: Reporter;
   serial: string;
+  /** What a person calls the device, for the tap prompt. */
+  deviceName?: string;
   packageName: string;
   environmentId: string;
   token: string;
@@ -153,6 +155,7 @@ async function runCell(
           push,
           {
             serial: options.serial,
+            deviceName: options.deviceName,
             tap: options.tap,
             evidenceDirectory: options.evidenceDirectory,
             reporter: options.reporter,

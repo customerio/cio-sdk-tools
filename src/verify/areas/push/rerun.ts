@@ -1,7 +1,27 @@
 import { ReplayPart, replayCommand } from '../../core/replay';
-import { ALL_STATES } from '../../platform/app_state';
+import { ALL_STATES, AppState } from '../../platform/app_state';
 import { PushFlags, VerifyPushOptions } from './options';
 import { Selection } from './select';
+import { MatrixSection } from './types';
+
+/**
+ * The states with a cell that could not be proven either way, to try again on their own. A
+ * dry run's cells say nothing was sent and name no cause, so they are not inconclusive.
+ */
+export function unprovenStates(sections: MatrixSection[]): AppState[] {
+  return ALL_STATES.filter((state) =>
+    sections.some(
+      (section) =>
+        !section.skipped &&
+        section.cells.some(
+          (cell) =>
+            cell.state === state &&
+            cell.verdict === 'skip' &&
+            Boolean(cell.cause)
+        )
+    )
+  );
+}
 
 /**
  * Push's run as flags: every answer, whether it was given, picked or the only one there was,
@@ -28,7 +48,9 @@ export function pushRerun(input: {
       ALL_STATES.every((state) => states.includes(state));
     if (!everyState) parts.push(['--app-states', states.join(',')]);
     if (options.opened) parts.push('--check-opens');
-    if (options.link) parts.push(['--deep-link', options.link]);
+    if (options.opened && options.link) {
+      parts.push(['--deep-link', options.link]);
+    }
     if (options.dryRun) parts.push('--dry-run');
     if (!options.resend) parts.push('--no-retry');
   }

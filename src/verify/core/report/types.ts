@@ -115,6 +115,11 @@ export interface Report {
    */
   rerun?: string;
   /**
+   * The command that runs again only what could not be proven, with everything else as it
+   * was. Absent when everything asked for was proven or failed outright.
+   */
+  rerunUnproven?: string;
+  /**
    * How the facts were obtained. `read` means they were recovered from storage and the
    * server after the fact, so the moment they were written is unknown; `observed` means
    * the run watched them happen. A green report of each kind is not the same claim, and

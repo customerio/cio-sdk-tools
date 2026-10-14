@@ -54,9 +54,14 @@ export interface Asker {
   /**
    * A yes/no question whose answer defaults to no. Only an explicit yes counts: Enter,
    * silence, a closed stdin and a run that cannot ask all read as no, because this is the
-   * question asked before something that cannot be taken back.
+   * question asked before something that cannot be taken back. On a terminal it is two rows
+   * picked with the arrow keys, the cursor starting on no.
    */
-  agree(question: string, context?: string): Promise<boolean>;
+  agree(
+    question: string,
+    context?: string,
+    answers?: { yes: string; no: string }
+  ): Promise<boolean>;
   /**
    * `flag` is the non-interactive escape hatch, named in the error and in the hint, so a
    * session that had to be answered by hand can be turned into a CI job by copying it.
@@ -203,10 +208,24 @@ export function createAsker(options: {
       return 'no_answer';
     },
 
-    async agree(question: string, context?: string): Promise<boolean> {
+    async agree(
+      question: string,
+      context?: string,
+      answers: { yes: string; no: string } = { yes: 'Yes', no: 'No' }
+    ): Promise<boolean> {
       if (!interactive) return false;
       asked += 1;
       if (context) output.write(`\n${context}`);
+      if (arrows) {
+        output.write(`${chalk.bold(question)}\n`);
+        // The cursor starts on no: Enter alone must never be the yes.
+        const index = await pick(
+          [{ label: answers.yes }, { label: answers.no }],
+          1,
+          timeoutMs
+        );
+        return index === 0;
+      }
       for (let attempt = 0; attempt < ATTEMPTS; attempt += 1) {
         output.write(`${chalk.bold(question)} ${chalk.dim('(y/N)')} `);
         const answer = await reader?.next(timeoutMs);

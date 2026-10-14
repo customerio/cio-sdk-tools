@@ -48,6 +48,8 @@ export async function tapAndroidPush(
   push: SentPush,
   options: {
     serial: string;
+    /** What a person calls the device, for the prompt; the serial when unknown. */
+    deviceName?: string;
     tap: TapPlan;
     evidenceDirectory?: string;
     reporter?: Reporter;
@@ -74,7 +76,9 @@ export async function tapAndroidPush(
   options.reporter?.pause();
   const answer = await options.tap.asker.askTap(
     [
-      `Tap the "${push.title}" notification on ${options.serial}.`,
+      `Tap the "${push.title}" notification on ${
+        options.deviceName ?? options.serial
+      }.`,
       'If the banner has gone, pull down the notification shade to find it.',
       'The app may not visibly change — the verdict comes from the log, not the screen.',
     ].join('\n  '),

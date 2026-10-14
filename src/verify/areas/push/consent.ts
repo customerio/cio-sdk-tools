@@ -97,6 +97,15 @@ export function consentQuestion(plan: SendPlan): string {
   return `Send ${count} real push${count === 1 ? '' : 'es'}?`;
 }
 
+/** The two answers, saying what each one does. */
+export function consentAnswers(plan: SendPlan): { yes: string; no: string } {
+  const count = pushCount(plan);
+  return {
+    yes: `Yes, send ${count} push${count === 1 ? '' : 'es'}`,
+    no: 'No, send nothing',
+  };
+}
+
 /** What the go-ahead covered, for the report. */
 export function consentWrites(plan: SendPlan): string[] {
   const count = pushCount(plan);
@@ -127,6 +136,7 @@ export async function consentToSend(input: {
     what: 'real pushes',
     facts: consentFacts(input.plan),
     question: consentQuestion(input.plan),
+    answers: consentAnswers(input.plan),
     writes: consentWrites(input.plan),
     asker: input.asker,
     reporter: input.reporter,

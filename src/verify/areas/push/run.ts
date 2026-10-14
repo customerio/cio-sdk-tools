@@ -17,6 +17,7 @@ import { XcodeProjectModel, loadProject } from '../../platform/ios/xcode';
 import { detectPlatform } from '../../platform/project';
 import { climbAndroid } from './android_flow';
 import { openedStatesToSend } from './consent';
+import { OPENED_STATES } from './on_device/opened';
 import { climb } from './ios_flow';
 import { PUSH_LEVELS } from './levels';
 import {
@@ -25,7 +26,7 @@ import {
   parseStates,
   settingsFrom,
 } from './options';
-import { pushRerun } from './rerun';
+import { pushRerun, unprovenStates } from './rerun';
 import {
   Selection,
   selectForAndroid,
@@ -209,6 +210,16 @@ export async function runPush(
           asker
         );
 
+  const unproven = unprovenStates(ladder.matrices);
+  const rerunInput = {
+    program: `${packageJson.name} verify push`,
+    pathArg,
+    level: level.id,
+    options,
+    flags,
+    selection,
+  };
+
   return ladder.toReport({
     schema: 1,
     // `observed` is only claimed when the run actually watched a fact appear. An agent
@@ -225,14 +236,22 @@ export async function runPush(
     command: 'verify push',
     area: 'push',
     level: level.id,
-    rerun: pushRerun({
-      program: `${packageJson.name} verify push`,
-      pathArg,
-      level: level.id,
-      options,
-      flags,
-      selection,
-    }),
+    rerun: pushRerun(rerunInput),
+    rerunUnproven:
+      unproven.length > 0 && !options.dryRun
+        ? pushRerun({
+            ...rerunInput,
+            // Taps only on the states that get one: a lone foreground retry has no banner
+            // the tap test would ask for.
+            options: {
+              ...options,
+              opened:
+                options.opened &&
+                unproven.some((state) => OPENED_STATES.includes(state)),
+            },
+            selection: { ...selection, states: unproven },
+          })
+        : undefined,
     startedAt,
     finishedAt: new Date().toISOString(),
     project: {
