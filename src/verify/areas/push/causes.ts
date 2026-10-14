@@ -354,7 +354,15 @@ export const CAUSES: Record<string, PushCause> = {
     summary:
       "The tap reached the app, and the SDK's lines for it never reached the phone's log stream.",
     remedy:
-      "This is unproven, not failed. A phone's log stream drops lines, most of all during the burst of a cold launch, so a tap the app handled can leave no trace in it. For a tap on a killed app the run holds the launch with Xcode's debugger to stop that; the cell's evidence says why it could not (usually a Release build, or Xcode's debugger already attached to the app). Run that state again: the run prints the command, and the report carries it as `rerunUnproven`.",
+      "This is unproven, not failed. A phone's log stream drops lines, most of all during the burst of a cold launch, so a tap the app handled can leave no trace in it. For a tap on a killed app the run watches the next pids the phone will hand out, so the app lands in a stream that is already reading; the cell's evidence says why that did not cover it (usually more processes starting at once than it watched). Run that state again: the run prints the command, and the report carries it as `rerunUnproven`.",
+  },
+  'runtime.opened_recorded_link_unseen': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      "Customer.io recorded the open; where the tap went was in the lines the phone's log lost.",
+    remedy:
+      "The open is proven by Customer.io's own record of this push. The deep link's outcome only exists in the device's log, which dropped it, so run the state again to see it.",
   },
   'runtime.cold_tap_not_handled': {
     stage: 'delivered_matrix',

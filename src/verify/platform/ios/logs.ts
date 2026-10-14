@@ -5,6 +5,7 @@ import * as path from 'path';
 import { isCommandAvailable, run } from '../../core/exec';
 import {
   FollowedProcess,
+  FollowedStream,
   LogCapture,
   LogLine,
   StreamAgreement,
@@ -355,8 +356,8 @@ async function streamProcess(
     stoppedReason: () => stoppedReason,
     compareStreams: phone ? sink.compare : undefined,
     followProcess: phone
-      ? (pid: number) =>
-          followOnPhone(phone, pid, sink, followers, (reason) => {
+      ? (pid: number, only?: string[]) =>
+          followOnPhone(phone, pid, only, sink, followers, (reason) => {
             if (!stopping) stoppedReason ??= reason;
           })
       : undefined,
@@ -376,18 +377,22 @@ const FOLLOW_CONNECT_TIMEOUT_MS = 5_000;
  * A numeric `-p` is sent to the phone as the relay's own pid filter, so the phone sends only
  * that process's lines and has nothing to drop: 0 of 75 SDK lines lost over seven launches,
  * against up to 45 lost by the name-filtered stream in the same minutes. A name is matched on
- * the Mac and changes nothing. Resolves once the relay is connected, which is the moment a
- * held process can be let go: idevicesyslog prints `[connected:…]` only after the phone has
- * answered the request that sets the filter, so nothing the process writes after it is missed.
+ * the Mac and changes nothing. idevicesyslog prints `[connected:…]` only after the phone has
+ * answered the request that sets the filter, so nothing written after it is missed, and a
+ * stream opened for a pid nobody has yet reads that process from its first line.
+ *
+ * With `only`, lines from any other process are dropped unread: a pid opened ahead of time
+ * can go to someone else's process, and its lines are not this tool's to keep.
  */
 function followOnPhone(
   udid: string,
   pid: number,
+  only: string[] | undefined,
   sink: LineSink,
   followers: ChildProcess[],
-  /** The stream stopped after it connected: what it read after that point is missing. */
+  /** A stream that delivered lines stopped: what it read after that point is missing. */
   onLost: (reason: string) => void
-): Promise<FollowedProcess> {
+): FollowedStream {
   const how = `idevicesyslog -p ${pid}`;
   const child = spawn('idevicesyslog', ['-u', udid, '-p', String(pid)]);
   trackCapture(child);
@@ -395,8 +400,11 @@ function followOnPhone(
   sink.dedupe();
   let buffer = '';
   let stderr = '';
-  let connected = false;
-  return new Promise((resolve) => {
+  let connectedAt: number | undefined;
+  let foreign = false;
+  let ours = false;
+  let stopped = false;
+  const connected = new Promise<FollowedProcess>((resolve) => {
     const timer = setTimeout(
       () =>
         resolve({
@@ -412,12 +420,20 @@ function followOnPhone(
       buffer = parts.pop() ?? '';
       for (const part of parts) {
         if (part.startsWith('[connected:')) {
-          connected = true;
+          connectedAt ??= Date.now();
           clearTimeout(timer);
           resolve({ connected: true, how });
           continue;
         }
-        for (const line of parseSyslog(part)) sink.add(line, 'followed');
+        for (const line of parseSyslog(part)) {
+          if (only && !only.includes(line.process)) {
+            // A continuation line has no process; it belongs to whichever line came before.
+            if (line.process) foreign = true;
+            continue;
+          }
+          ours = true;
+          sink.add(line, 'followed');
+        }
       }
     });
     child.stderr?.on('data', (chunk: Buffer) => {
@@ -425,7 +441,7 @@ function followOnPhone(
     });
     child.on('exit', (code) => {
       clearTimeout(timer);
-      if (connected) {
+      if (connectedAt !== undefined && ours && !stopped) {
         onLost(
           `${how} exited${code === null ? '' : ` (${code})`} at ${new Date()
             .toISOString()
@@ -441,6 +457,18 @@ function followOnPhone(
       });
     });
   });
+  return {
+    pid,
+    how,
+    connected,
+    connectedAt: () => connectedAt,
+    foreign: () => foreign,
+    ours: () => ours,
+    stop: () => {
+      stopped = true;
+      child.kill();
+    },
+  };
 }
 
 export function parseNdjson(raw: string): LogLine[] {

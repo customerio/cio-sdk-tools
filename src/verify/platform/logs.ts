@@ -45,18 +45,34 @@ export interface LogCapture {
    */
   lossy?: boolean;
   /**
-   * Add a stream that the device itself filters to one process, merged into this capture.
-   * A phone drops lines from its whole log when it is busy, and not from a stream for one
-   * pid, so a process followed from before its first line has every line in the capture.
-   * Only a phone's capture has it.
+   * Add a stream that the device itself filters to one pid, merged into this capture. A
+   * phone drops lines from its whole log when it is busy, and not from a stream for one pid,
+   * so a process followed from before its first line has every line in the capture. The pid
+   * need not exist yet. With `only`, lines from other processes are dropped unread. Only a
+   * phone's capture has it.
    */
-  followProcess?(pid: number): Promise<FollowedProcess>;
+  followProcess?(pid: number, only?: string[]): FollowedStream;
   /**
    * Which stream delivered one process's lines since the first `followProcess`. Lines only the
    * followed stream has are what the whole-log stream dropped, which is the hold doing its
    * job; a line only the whole-log stream has means the followed stream dropped one too.
    */
   compareStreams?(process: string): StreamAgreement;
+}
+
+/** One pid's stream, from `followProcess`. */
+export interface FollowedStream {
+  pid: number;
+  how: string;
+  /** Settles once the stream reaches the device, or fails to. */
+  connected: Promise<FollowedProcess>;
+  /** When it reached the device, in ms since the epoch. */
+  connectedAt(): number | undefined;
+  /** Lines from a process outside `only` arrived: someone else's process has this pid. */
+  foreign(): boolean;
+  /** Lines from a process in `only` arrived. */
+  ours(): boolean;
+  stop(): void;
 }
 
 export interface FollowedProcess {

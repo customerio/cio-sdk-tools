@@ -764,23 +764,47 @@ test('a capture that stopped explains a held launch that looks unhandled', () =>
   assert.strictEqual(explained.verdict, 'skip');
 });
 
-test('a held launch is complete only when the held stream missed nothing the other one saw', () => {
-  const { describeHeldLaunch } = require('../../dist/verify/areas/push/on_device/opened');
-  const result = {
-    launch: { pid: 1236, stoppedIn: '__mmap in dyld' },
-    stream: { connected: true, how: 'idevicesyslog -p 1236' },
-  };
-  const rescued = describeHeldLaunch(result, { both: 300, onlyFollowed: 42, onlyMain: 0 });
+test('a caught launch is complete only from its first line, and when its stream missed nothing', () => {
+  const { describeCaughtLaunch } = require('../../dist/verify/areas/push/on_device/opened');
+  const caught = { pid: 1236, slot: 1, fromFirstLine: true, how: 'idevicesyslog -p 1236' };
+  const rescued = describeCaughtLaunch({ caught }, { both: 300, onlyFollowed: 42, onlyMain: 0 });
   assert.strictEqual(rescued.complete, true);
-  assert.match(rescued.evidence, /42 only the held one \(the whole-log stream dropped them\)/);
+  assert.match(rescued.evidence, /opened before that pid was in use \(pid 1 of the 8 watched\)/);
+  assert.match(rescued.evidence, /42 only the pid's \(the whole-log stream dropped them\)/);
 
-  const leaky = describeHeldLaunch(result, { both: 300, onlyFollowed: 0, onlyMain: 2 });
+  const leaky = describeCaughtLaunch({ caught }, { both: 300, onlyFollowed: 0, onlyMain: 2 });
   assert.strictEqual(leaky.complete, false);
-  assert.match(leaky.evidence, /held stream missed lines too/);
+  assert.match(leaky.evidence, /that stream missed lines too/);
 
-  assert.strictEqual(
-    describeHeldLaunch({ ...result, stream: { connected: false, how: 'x', reason: 'no connection after 5s' } }).complete,
-    false
-  );
-  assert.strictEqual(describeHeldLaunch(undefined).complete, false);
+  // Opened only after the app had started: its first lines may have gone before it.
+  assert.strictEqual(describeCaughtLaunch({ caught: { ...caught, fromFirstLine: false } }).complete, false);
+  const missed = describeCaughtLaunch({ missed: { pid: 1250, from: 1240, to: 1247 } });
+  assert.strictEqual(missed.complete, false);
+  assert.match(missed.evidence, /outside the pids watched for it \(1240–1247\)/);
+  assert.strictEqual(describeCaughtLaunch({}).complete, false);
+});
+
+test("Customer.io's record of the open settles what the phone's log could not", () => {
+  const { withRecordedOpen } = require('../../dist/verify/areas/push/on_device/opened');
+  const lost = { state: 'killed', verdict: 'skip', cause: 'runtime.tap_lines_lost', evidence: [] };
+  const recorded = { answer: 'opened', deliveryId: 'dgS_ug', at: 1791983000 };
+
+  // An open it recorded proves the open; where the tap went was only in the lost lines.
+  const linked = withRecordedOpen(lost, recorded, true);
+  assert.strictEqual(linked.verdict, 'warn');
+  assert.strictEqual(linked.cause, 'runtime.opened_recorded_link_unseen');
+  assert.strictEqual(linked.recorded, 'recorded');
+  assert.strictEqual(withRecordedOpen(lost, recorded, false).verdict, 'pass');
+
+  // It overturns a failure the log suggested: only lost lines can explain the two disagreeing.
+  const failed = { ...lost, verdict: 'fail', cause: 'runtime.cold_tap_not_handled' };
+  assert.strictEqual(withRecordedOpen(failed, recorded, false).verdict, 'pass');
+
+  // No open recorded yet, or no record at all, leaves the device's verdict as it was.
+  const none = withRecordedOpen(failed, { answer: 'not_opened', deliveryIds: ['dgS_ug'], waitedMs: 30000 }, false);
+  assert.strictEqual(none.verdict, 'fail');
+  assert.strictEqual(none.recorded, 'not_recorded');
+  const unread = withRecordedOpen(lost, { answer: 'unavailable', reason: 'the send returned no delivery id' }, true);
+  assert.strictEqual(unread.verdict, 'skip');
+  assert.match(unread.evidence.at(-1), /not read: the send returned no delivery id/);
 });

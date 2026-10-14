@@ -130,7 +130,7 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
 
    The SDK's push lines are debug lines, so the build you verify needs the SDK's log level set to debug. On a phone, the log stream can drop lines; a missing line there makes a cell inconclusive, never failed.
 
-   A tap on the push sent while the app was killed starts the app, and that launch is where a phone drops the most lines. So on a phone the tool holds that launch with Xcode's debugger for about a second, until a stream reading only the app is attached, then lets it go. Every line the app writes is then read, and a tap the SDK never handled is a failure (`runtime.cold_tap_not_handled`): usually the SDK set up after launch, where a tap that starts the app never reaches it. The hold needs a build the debugger can attach to, which a Debug build is; without one, that cell is judged as before.
+   A tap on the push sent while the app was killed starts the app, and that launch is where a phone drops the most lines. So before asking for that tap, the tool opens streams for the next 8 process ids the phone will hand out, which the phone filters to one process each and does not drop, and moves them along as other processes start. The app lands in one that is already reading, so every line it writes is read, and a tap the SDK never handled is a failure (`runtime.cold_tap_not_handled`): usually the SDK set up after launch, where a tap that starts the app never reaches it. Lines from any other process that takes one of those ids are dropped unread. If the app lands outside them, the cell is judged as before, and once Customer.io keeps test pushes, its record of the open answers instead.
 
    ### Requirements
 

@@ -5,12 +5,13 @@ import { Asker, TapAnswer } from '../../../core/prompt';
 import { CellHandle, Reporter } from '../../../core/report/render';
 import { Verdict } from '../../../core/report/types';
 import { MatrixCell } from '../types';
+import { LogCapture, StreamAgreement } from '../../../platform/logs';
 import {
-  FollowedProcess,
-  LogCapture,
-  StreamAgreement,
-} from '../../../platform/logs';
-import { HeldLaunch, armLaunchHold } from '../../../platform/ios/launch_hold';
+  WINDOW_SIZE as WATCHED,
+  WindowOutcome,
+  openPidWindow,
+} from '../../../platform/ios/pid_window';
+import { RecordedOpen, readRecordedOpen } from './recorded';
 import { blameStoppedCapture } from './sdk_lines';
 import { AppState } from '../../../platform/app_state';
 
@@ -103,6 +104,11 @@ export interface SentPush {
   arrivalSeen: boolean;
   /** Where this push's lines begin in the capture. */
   mark: number;
+  /**
+   * The ids the sends returned, a re-send's included. Only these are kept by Customer.io, so
+   * only these can be read back; ids from the log are the payload's and are not stored.
+   */
+  recordedIds?: string[];
 }
 
 export const TAP_TIMEOUT_MS = 180_000;
@@ -130,8 +136,12 @@ export async function tapIosPush(
     tap: TapPlan;
     evidenceDirectory?: string;
     reporter?: Reporter;
-    /** The app's process name, so a launch from the tap can be held on a phone. */
+    /** The app's process name, so a launch from the tap can be caught on a phone. */
     appProcess?: string;
+    /** The workspace the push went through, where Customer.io's record of it is read. */
+    environmentId?: string;
+    /** Read Customer.io's record of the open; replaced in tests. */
+    readRecorded?: typeof readRecordedOpen;
   },
   capture: LogCapture,
   handle?: CellHandle
@@ -151,8 +161,8 @@ export async function tapIosPush(
   );
   if (shot) evidence.push(`screen at the prompt: ${shot}`);
 
-  // Armed before the question, so a tap is never made before it can be caught.
-  const cold = await holdColdLaunch(state, options, capture, handle);
+  // Watching before the question, so a tap is never made before it can be caught.
+  const cold = await catchColdLaunch(state, options, capture, handle);
 
   // The one place this tool waits on a person. Said plainly, because a prompt nobody
   // understands is answered without doing the thing. The spinner has to come down first:
@@ -164,8 +174,7 @@ export async function tapIosPush(
       [
         `Tap the "${push.title}" notification on ${options.target.name}.`,
         'If the banner has gone, swipe down from the top edge to find it in Notification Centre.',
-        cold?.promptLine ??
-          'The app may not visibly change — the verdict comes from the log, not the screen.',
+        'The app may not visibly change — the verdict comes from the log, not the screen.',
       ].join('\n  '),
       { timeoutMs: options.tap.tapTimeoutMs ?? TAP_TIMEOUT_MS }
     );
@@ -253,18 +262,86 @@ export async function tapIosPush(
     evidence,
   };
   const all = capture.since(push.mark);
-  return explainUnseenTap(judged, {
+  const explained = explainUnseenTap(judged, {
     stoppedReason: capture.stoppedReason?.(),
     linesAfterTap: capture.since(afterTap).length,
     lastLineAt: all.length > 0 ? all[all.length - 1].at : undefined,
   });
+  if (!RECORD_DECIDES.includes(explained.cause ?? '')) return explained;
+  // The device could not prove the open, or says it never happened: Customer.io's own record
+  // of this push answers either way, once it keeps one.
+  handle?.phase("reading Customer.io's record of the open");
+  const recorded = await (options.readRecorded ?? readRecordedOpen)(
+    options.environmentId,
+    push.recordedIds ?? []
+  );
+  return withRecordedOpen(explained, recorded, Boolean(options.tap.link));
 }
 
-/** The hold on the launch a tap starts, from before the prompt to after the tap is read. */
+/** The device-side verdicts Customer.io's record of the open can settle or overturn. */
+const RECORD_DECIDES = [
+  'runtime.tap_lines_lost',
+  'runtime.tap_not_seen',
+  'runtime.capture_silent',
+  'runtime.capture_stopped',
+  'runtime.cold_tap_not_handled',
+  'runtime.opened_not_tracked',
+];
+
+/**
+ * An open the device's log could not show, read from Customer.io's record instead. An open it
+ * recorded is the SDK reporting this exact push's open, so it overturns a failure the log
+ * suggested, which can only have come from lines the stream lost. Where the tap went is in
+ * the log alone, so with a deep link sent that part stays unproven. No open recorded leaves
+ * the device's verdict as it was: the metric may still be on its way.
+ */
+export function withRecordedOpen(
+  cell: MatrixCell,
+  recorded: RecordedOpen,
+  linkSent: boolean
+): MatrixCell {
+  if (recorded.answer === 'unavailable') {
+    return {
+      ...cell,
+      evidence: [
+        ...cell.evidence,
+        `Customer.io's record of the open was not read: ${recorded.reason}`,
+      ],
+    };
+  }
+  if (recorded.answer === 'not_opened') {
+    return {
+      ...cell,
+      recorded: 'not_recorded',
+      evidence: [
+        ...cell.evidence,
+        `Customer.io had recorded no open for ${recorded.deliveryIds.join(
+          ' or '
+        )} after ${recorded.waitedMs / 1000}s`,
+      ],
+    };
+  }
+  const when = recorded.at
+    ? ` at ${new Date(recorded.at * 1000).toISOString().slice(11, 19)}Z`
+    : '';
+  return {
+    ...cell,
+    deliveryId: recorded.deliveryId,
+    recorded: 'recorded',
+    ...(linkSent
+      ? { verdict: 'warn', cause: 'runtime.opened_recorded_link_unseen' }
+      : { verdict: 'pass', cause: undefined }),
+    summary: undefined,
+    evidence: [
+      ...cell.evidence,
+      `Customer.io recorded the open of ${recorded.deliveryId}${when} (was: ${cell.cause})`,
+    ],
+  };
+}
+
+/** The watch on the launch a tap starts, from before the prompt to after the tap is read. */
 interface ColdLaunch {
-  /** Said in the tap prompt, so the pause on the launch screen is expected. */
-  promptLine?: string;
-  /** Let a held app go, or stop waiting for one, and say what the hold did. */
+  /** Stop watching, and say whether the app was read from its first line. */
   finish(): Promise<{ complete: boolean; evidence: string }>;
 }
 
@@ -272,105 +349,93 @@ interface ColdLaunch {
  * A tap on the killed state's push starts the app from nothing, and the SDK handles it about
  * 60ms in, inside the burst a phone's live log drops. About half of those taps left no SDK
  * line in the stream, though the app's own record shows every one was handled. So on a phone
- * the launch is held until a stream for its pid is open, and that stream has every line the
- * app writes from its first.
+ * the next pids are watched before the prompt (see platform/ios/pid_window), and the app
+ * lands in a stream that was already reading.
  *
- * Without the hold (a build the debugger cannot attach to, or Xcode's debugger already
- * attached) the cell is judged as before: a missing line is unproven, never a failure.
+ * When it lands outside the window the cell is judged as before: a missing line is unproven,
+ * never a failure.
  */
-async function holdColdLaunch(
+async function catchColdLaunch(
   state: AppState,
   options: { target: Target; appProcess?: string },
   capture: LogCapture,
   handle?: CellHandle
 ): Promise<ColdLaunch | undefined> {
-  const follow = capture.followProcess;
   const appProcess = options.appProcess;
   if (
     state !== 'killed' ||
     options.target.kind !== 'device' ||
     !capture.available ||
-    !follow ||
-    !options.appProcess
+    !capture.followProcess ||
+    !appProcess
   ) {
     return undefined;
   }
   handle?.phase('getting ready to catch the launch');
-  const armed = await armLaunchHold(options.target, options.appProcess);
-  if (!armed.hold) {
-    const why = armed.unavailableReason;
+  const opened = await openPidWindow(options.target, capture, appProcess);
+  const window = opened.window;
+  if (!window) {
+    const why = opened.unavailableReason;
     return {
       finish: async () => ({
         complete: false,
-        evidence: `the launch from the tap was not held, so its first lines could be lost: ${why}`,
+        evidence: `the launch from the tap was not watched for, so its first lines could be lost: ${why}`,
       }),
     };
   }
-  const hold = armed.hold;
-  const followed = hold.held.then(async (launch) => {
-    if (!launch) return undefined;
-    try {
-      return { launch, stream: await follow(launch.pid) };
-    } finally {
-      await hold.release();
-    }
-  });
   return {
-    promptLine:
-      'The app opens and waits a moment on its launch screen while its log is attached.',
-    finish: async () => {
-      if (hold.state() === 'waiting') await hold.release();
-      const result = await followed;
-      return describeHeldLaunch(
-        result,
-        appProcess ? capture.compareStreams?.(appProcess) : undefined
-      );
-    },
+    finish: async () =>
+      describeCaughtLaunch(
+        await window.stop(),
+        capture.compareStreams?.(appProcess)
+      ),
   };
 }
 
 /**
- * What a hold proved. Complete only when the held stream was reading before the app ran and
- * then missed nothing the whole-log stream saw. Every run checks the second part itself: a
- * line only the whole-log stream has means the held stream dropped one, and then a missing
- * SDK line is unproven again rather than a failure. Lines only the held stream has are the
- * whole-log stream's losses, which is how a run shows the hold mattered.
+ * What the window proved. Complete only when the app landed in a stream that was reading
+ * before the process existed, and that stream then missed nothing the whole-log stream saw.
+ * Every run checks the second part itself: a line only the whole-log stream has means the
+ * window's stream dropped one, and then a missing SDK line is unproven again rather than a
+ * failure. Lines only the window's stream has are the whole-log stream's losses, which is
+ * how a run shows the window mattered.
  */
-export function describeHeldLaunch(
-  result: { launch: HeldLaunch; stream: FollowedProcess } | undefined,
+export function describeCaughtLaunch(
+  outcome: WindowOutcome,
   agreement?: StreamAgreement
 ): { complete: boolean; evidence: string } {
-  if (!result) {
+  if (outcome.missed) {
+    const { pid, from, to } = outcome.missed;
     return {
       complete: false,
-      evidence:
-        'no launch of the app came while the tap was asked for, so none was held',
+      evidence: `the app launched as pid ${pid}, outside the pids watched for it (${from}–${to}), so its first lines could be lost`,
     };
   }
-  const at = `pid ${result.launch.pid}${
-    result.launch.stoppedIn ? `, stopped in ${result.launch.stoppedIn}` : ''
-  }`;
-  if (!result.stream.connected) {
+  if (!outcome.caught) {
     return {
       complete: false,
-      evidence: `the launch from the tap was held (${at}), but the stream for it did not open: ${result.stream.reason}`,
+      evidence: outcome.reason
+        ? `the launch from the tap was not caught: ${outcome.reason}`
+        : 'no launch of the app came while the tap was asked for, so none was caught',
     };
   }
-  const held = `the launch from the tap was held (${at}) until \`${result.stream.how}\` was reading it`;
-  if (!agreement) {
+  const { pid, slot, fromFirstLine, how } = outcome.caught;
+  const caught = `the app launched as pid ${pid}, into \`${how}\`, opened before that pid was in use (pid ${slot} of the ${WATCHED} watched)`;
+  if (!fromFirstLine) {
     return {
-      complete: true,
-      evidence: `${held}, so every line the app wrote is here`,
+      complete: false,
+      evidence: `the app launched as pid ${pid}, but its stream may have opened after the app started, so its first lines could be lost`,
     };
   }
-  const tally = `of the app's lines since, ${agreement.both} reached both streams, ${agreement.onlyFollowed} only the held one (the whole-log stream dropped them), ${agreement.onlyMain} only the whole-log one`;
+  if (!agreement) return { complete: true, evidence: caught };
+  const tally = `of the app's lines since, ${agreement.both} reached both streams, ${agreement.onlyFollowed} only the pid's (the whole-log stream dropped them), ${agreement.onlyMain} only the whole-log one`;
   if (agreement.onlyMain > 0) {
     return {
       complete: false,
-      evidence: `${held}, but the held stream missed lines too, so a missing line proves nothing: ${tally}`,
+      evidence: `${caught}, but that stream missed lines too, so a missing line proves nothing: ${tally}`,
     };
   }
-  return { complete: true, evidence: `${held}; ${tally}` };
+  return { complete: true, evidence: `${caught}; ${tally}` };
 }
 
 /**

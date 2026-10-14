@@ -287,6 +287,7 @@ async function runCell(
             evidenceDirectory: options.evidenceDirectory,
             reporter: options.reporter,
             appProcess: options.processNames?.[0],
+            environmentId: options.environmentId,
           },
           capture,
           tapHandle
@@ -412,6 +413,7 @@ async function runCellBody(
   // being slow as it is a real failure, and the tool has no business calling a delayed
   // push a broken one. One re-send, said out loud in the evidence, settles which it was.
   // It carries its own tag, and either push arriving counts: the first may just be late.
+  let resentId: string | undefined;
   if (
     options.resend !== false &&
     stored === false &&
@@ -422,6 +424,7 @@ async function runCellBody(
     handle?.phase('nothing arrived — sending once more');
     const retryTitle = deliveredTitle(state, pushTag());
     const again = await sendVerifyPush(tapPush(retryTitle));
+    resentId = again.deliveryId;
     if (again.rateLimited) {
       return {
         cell: rejectedCell(state, again, evidence, 're-send rejected'),
@@ -539,6 +542,9 @@ async function runCellBody(
       expectedId: deliveryId,
       arrivalSeen: stored ? true : extensionRan,
       mark,
+      recordedIds: [sent.deliveryId, resentId].filter((id): id is string =>
+        Boolean(id)
+      ),
     },
   };
 }
