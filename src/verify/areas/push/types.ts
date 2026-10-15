@@ -50,13 +50,12 @@ export interface MatrixCell extends Cell {
 }
 
 /**
- * iOS's own answer on notifications for the app, from the SDK's debug line
- * `[Push] Notification authorization: <status>`, which it writes when it reads the status
- * for its device update. Customer.io's push_enabled is a copy of the same answer that
- * reached the profile 30-60s later on a simulator.
+ * The OS's own answer on notifications for the app, from the SDK's debug line
+ * `[Push] Notification permission: <status>`. Customer.io's push_enabled is a copy of the same
+ * answer that reached the profile 30-60s later on a simulator.
  */
 export interface NotificationAuthorization {
-  /** `authorized`, `denied`, `notDetermined`, `provisional`, or `other(n)`. */
+  /** iOS: `authorized`, `denied`, `notDetermined`, `provisional`, `other(n)`; Android: `granted`, `denied`. */
   status: string;
   /** When the SDK read it, as the log stamps the line. */
   at: string;

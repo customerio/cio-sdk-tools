@@ -53,21 +53,26 @@ export function simulatorPredicate(
   return `subsystem == "io.customer.sdk" OR processImagePath CONTAINS "NotificationService"${named}${openFailed}`;
 }
 
-/** The SDK's line with iOS's answer on notifications for the app. */
-export const NOTIFICATION_AUTHORIZATION =
-  /^\[Push\] Notification authorization: (\S+)/;
+/**
+ * The SDK's line with the OS's answer on notifications for the app, the same sentence on both
+ * platforms: `[Push] Notification permission: <status>`, logged at debug when the SDK reads it
+ * (its device update, the app coming to the front, a push shown in the foreground, the iOS
+ * extension). Support asks customers for debug logs, so it is in theirs too.
+ */
+export const NOTIFICATION_PERMISSION =
+  /^\[Push\] Notification permission: (\S+)/;
 
 /** The latest answer the SDK logged, or nothing when it never read one in the run. */
 export function lastAuthorization(
   lines: LogLine[]
 ): NotificationAuthorization | undefined {
   for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const status = NOTIFICATION_AUTHORIZATION.exec(lines[index].message)?.[1];
+    const status = NOTIFICATION_PERMISSION.exec(lines[index].message)?.[1];
     if (!status) continue;
     return {
       status,
       at: lines[index].at,
-      allowed: ['authorized', 'provisional'].includes(status)
+      allowed: ['authorized', 'provisional', 'granted'].includes(status)
         ? true
         : ['denied', 'notDetermined'].includes(status)
         ? false

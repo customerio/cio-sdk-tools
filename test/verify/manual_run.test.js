@@ -347,14 +347,14 @@ const { lastAuthorization } = require('../../dist/verify/areas/push/on_device/sd
 
 test("iOS's own answer, as the SDK logged it, is the only verdict on notifications", () => {
   const lines = [
-    { at: '00:40:01.000', process: 'NotificationServiceExtension', message: '[Push] Notification authorization: notDetermined' },
-    { at: '00:41:02.500', process: 'NotificationServiceExtension', message: '[Push] Notification authorization: authorized' },
+    { at: '00:40:01.000', process: 'NotificationServiceExtension', message: '[Push] Notification permission: notDetermined' },
+    { at: '00:41:02.500', process: 'NotificationServiceExtension', message: '[Push] Notification permission: authorized' },
   ];
   const said = lastAuthorization(lines);
   assert.deepStrictEqual(said, { status: 'authorized', at: '00:41:02.500', allowed: true });
   assert.strictEqual(lastAuthorization([]), undefined);
   assert.strictEqual(
-    lastAuthorization([{ ...lines[0], message: '[Push] Notification authorization: other(4)' }]).allowed,
+    lastAuthorization([{ ...lines[0], message: '[Push] Notification permission: other(4)' }]).allowed,
     undefined
   );
 
