@@ -349,6 +349,8 @@ export const CAUSES: Record<string, PushCause> = {
     remedy:
       "Allow notifications for the app: accept its prompt, or turn them on in the device's Settings under Notifications. Until then a push can still arrive, and be counted as delivered, without anything showing. Read from the SDK's own log line, so it is iOS's current answer, not Customer.io's copy of it.",
   },
+  // No longer emitted: push_enabled is Customer.io's lagging copy and is not judged. Kept so a
+  // consumer that learned the code still resolves it.
   'profile.push_disabled': {
     stage: 'profile_linked',
     severity: 'warning',
@@ -432,7 +434,7 @@ export const CAUSES: Record<string, PushCause> = {
     stage: 'delivered_matrix',
     severity: 'blocker',
     summary:
-      'Nothing reached the app in any state, and its profile reports that notifications are off.',
+      "Nothing reached the app in any state, and iOS says the app's notifications aren't allowed.",
     remedy:
       'On the device, open Settings → Notifications, find the app by its display name, and allow notifications; then run again. With notifications off, iOS drops an alert push before the extension runs, which looks exactly like a broken extension.',
   },

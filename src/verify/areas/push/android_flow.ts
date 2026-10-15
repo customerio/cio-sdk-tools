@@ -20,10 +20,7 @@ import {
   stoppedBeforeRun,
 } from './registration/android_device';
 import { androidWiring } from './registration/android_wiring';
-import {
-  profileLinked,
-  recheckPushEnabled,
-} from './registration/profile_linked';
+import { profileLinked } from './registration/profile_linked';
 import {
   gatherWorkspace,
   workspaceReady,
@@ -170,21 +167,13 @@ export async function climbAndroid(
     });
   }
   const sent = options.send && !options.dryRun && consent?.granted !== false;
-  const pushEnabledNote = sent
-    ? await recheckPushEnabled(ladder, {
-        environmentId: workspace.resolution?.workspace?.id,
-        userId: device.sdk?.userId,
-        token: device.sdk?.deviceToken,
-      })
-    : undefined;
 
   return {
     projectName: wiring.model.appModuleName,
     observed,
-    notes: [
-      ...(sent ? [stoppedBeforeRun(device)] : []),
-      pushEnabledNote,
-    ].filter((note): note is string => Boolean(note)),
+    notes: [...(sent ? [stoppedBeforeRun(device)] : [])].filter(
+      (note): note is string => Boolean(note)
+    ),
     freshnessNote: androidFreshness.note,
     consent,
   };

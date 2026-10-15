@@ -621,18 +621,17 @@ const SILENT = [
 ];
 
 /**
- * When no state received anything and the profile says notifications are off, say that,
+ * When no state received anything and iOS says notifications are not allowed, say that,
  * rather than a separate "never arrived" or "extension did not run" per state.
  *
- * iOS drops an alert push for an app with notifications off before its extension runs, so
- * the silence looks exactly like a broken extension. On its own, `push_enabled: false` is
- * only a hint — it has read false while permission was granted — but with nothing arriving
- * in any state, it is the likeliest reason, and the cheapest one to check. A single state
- * that received something means notifications are on, and the section is left alone.
+ * With notifications off, iOS can hold a push back from the extension, so the silence looks
+ * exactly like a broken extension. Only iOS's own answer, as the SDK logged it in the run,
+ * counts: Customer.io's push_enabled lags and read wrong both ways.
  */
 export function explainNotificationsOff(
   section: MatrixSection,
-  pushDisabled: boolean,
+  /** iOS's own answer, as the SDK logged it in the run, said notifications are not allowed. */
+  notAllowed: boolean,
   reporter?: Pick<Reporter, 'cell'>
 ): MatrixSection {
   const silent =
@@ -640,7 +639,7 @@ export function explainNotificationsOff(
     section.cells.every(
       (cell) => cell.cause && OFF_EXPLAINS.includes(cell.cause)
     );
-  if (!pushDisabled || !silent) return section;
+  if (!notAllowed || !silent) return section;
   return {
     ...section,
     cells: section.cells.map((cell) => {
@@ -651,7 +650,7 @@ export function explainNotificationsOff(
         summary: undefined,
         evidence: [
           ...cell.evidence,
-          `nothing reached the app in any state, and the profile reports push_enabled false (was: ${cell.cause})`,
+          `nothing reached the app in any state, and iOS says notifications are not allowed (was: ${cell.cause})`,
         ],
       };
       // Printed again, so the row streamed earlier is not the last word.

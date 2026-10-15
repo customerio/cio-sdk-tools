@@ -235,9 +235,10 @@ test('a linked device passes, and its smells are warnings alongside the pass', (
     { token, bundleId: 'io.example.app' }
   );
   assert.strictEqual(checks[0].verdict, 'pass');
+  // push_enabled is Customer.io's lagging copy: recorded, never judged.
+  assert.match(checks[0].evidence.join(' '), /push_enabled false in Customer\.io/);
   assert.deepStrictEqual(checks.slice(1).map((c) => c.cause), [
     'profile.app_identifier_mismatch',
-    'profile.push_disabled',
   ]);
 });
 

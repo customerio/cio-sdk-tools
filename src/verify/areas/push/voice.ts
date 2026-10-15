@@ -62,13 +62,11 @@ export const PUSH_VOICE: Voice = {
     // were never allowed: the pushes pass and nobody saw one. A tapped push was seen.
     const hidden =
       !opened &&
-      report.causes.some((cause) =>
-        ['profile.push_disabled', 'device.notifications_not_allowed'].includes(
-          cause.code
-        )
+      report.causes.some(
+        (cause) => cause.code === 'device.notifications_not_allowed'
       )
         ? [
-            'the device reported notifications off, so the pushes may have arrived without showing: allow notifications for the app.',
+            'iOS says notifications are not allowed for the app, so the pushes may have arrived without showing: allow them.',
           ]
         : [];
     if (ran.some((section) => section.metric === 'recorded')) {

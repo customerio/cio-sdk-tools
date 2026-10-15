@@ -22,7 +22,7 @@ import { ALL_STATES, AppState } from '../../platform/app_state';
 import { deviceReady, gatherDevice } from './registration/device_ready';
 import {
   profileLinked,
-  recheckPushEnabled,
+  judgeNotificationPermission,
 } from './registration/profile_linked';
 import { projectWiring } from './registration/project_wiring';
 import {
@@ -183,9 +183,6 @@ export async function climb(
     if (!unreadable && !offline && consent?.granted !== false) {
       await matrix(ladder, options, reporter, asker, selection.states, {
         target: device.target,
-        pushDisabled: profile.checks.some(
-          (check) => check.cause === 'profile.push_disabled'
-        ),
         bundleId: wiring.bundleId,
         provider: wiring.provider,
         environmentId: workspace.resolution?.workspace?.id,
@@ -197,33 +194,15 @@ export async function climb(
         appSchemes: wiring.urlSchemes,
       });
     }
-    // Only pushes that went out started the app again, which is what updates the flag.
-    const pushEnabledNote =
-      options.send &&
-      !options.dryRun &&
-      !unreadable &&
-      !offline &&
-      consent?.granted !== false
-        ? await recheckPushEnabled(ladder, {
-            environmentId: workspace.resolution?.workspace?.id,
-            userId: device.sdk?.userId,
-            token: device.sdk?.pushDeviceToken,
-            authorization: ladder.matrices.find(
-              (section) => section.metric === 'delivered'
-            )?.notificationAuthorization,
-            // A tap, or a background or foreground state, starts the app.
-            appStarted:
-              Boolean(options.opened) ||
-              (selection.states ?? ALL_STATES).some(
-                (state) => state !== 'killed'
-              ),
-          })
-        : undefined;
+    judgeNotificationPermission(
+      ladder,
+      ladder.matrices.find((section) => section.metric === 'delivered')
+        ?.notificationAuthorization
+    );
 
     return {
       projectName: wiring.model.projectName,
       observed,
-      notes: pushEnabledNote ? [pushEnabledNote] : undefined,
       freshnessNote: freshness({
         installedAt: device.freshness?.installedAt,
         observed,
@@ -346,8 +325,6 @@ async function matrix(
     provider: PushProvider;
     processNames?: string[];
     extensionName?: string;
-    /** The profile reports push_enabled false. */
-    pushDisabled?: boolean;
     appSchemes?: string[];
   }
 ): Promise<void> {
@@ -397,7 +374,7 @@ async function matrix(
     {
       delivered: explainNotificationsOff(
         delivered,
-        inputs.pushDisabled === true,
+        delivered.notificationAuthorization?.allowed === false,
         reporter
       ),
       opened,

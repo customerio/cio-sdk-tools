@@ -248,6 +248,12 @@ export function deviceLinkChecks(profile: Profile, input: ProfileInput) {
       linked.lastUsed
         ? `last used ${new Date(linked.lastUsed * 1000).toISOString()}`
         : 'never used',
+      // Recorded, never judged: see judgeNotificationPermission.
+      ...(linked.pushEnabled !== undefined
+        ? [
+            `push_enabled ${linked.pushEnabled} in Customer.io, its copy of the permission, which lags the device`,
+          ]
+        : []),
     ]),
   ];
 
@@ -266,111 +272,32 @@ export function deviceLinkChecks(profile: Profile, input: ProfileInput) {
     );
   }
 
-  // Deliberately a warning: this field has read false while permission was granted, until
-  // the app next reported. It is read again after the pushes (see recheckPushEnabled).
-  if (linked.pushEnabled === 'false') {
-    checks.push(
-      warn(
-        'device_push_enabled',
-        'Linked device reports push enabled',
-        'profile.push_disabled',
-        ['push_enabled: false']
-      )
-    );
-  }
-
   return checks;
 }
 
 /**
- * The SDK reports push_enabled when the app starts or comes to the front, so the flag lags a
- * new Allow: it read false at the start of a run straight after one, and true once the run's
- * launches had reported. Read again after the pushes, a false that is still there means what
- * it says; one that flipped is no finding at all.
- *
- * Returns a note for the end of the report when it flipped.
+ * Whether iOS lets the app's notifications show, from iOS's own answer as the SDK logged it
+ * during the run. Customer.io's push_enabled is a copy that reached the profile 30-60s after
+ * the app reported it, and read wrong both ways on an iPhone and a simulator, so it is never
+ * judged. Without the SDK's line nothing is claimed either way.
  */
-export async function recheckPushEnabled(
+export function judgeNotificationPermission(
   ladder: { rungs: Rung[] },
-  input: {
-    environmentId?: string;
-    userId?: string;
-    token?: string;
-    /**
-     * A push in the run started the app. A killed-state push on iOS runs only the extension,
-     * and the app is what reports the flag, so after those alone it cannot have changed.
-     */
-    appStarted?: boolean;
-    /** What iOS said, as the SDK logged it during the run; decides without the profile. */
-    authorization?: NotificationAuthorization;
-  },
-  find: typeof findProfile = findProfile
-): Promise<string | undefined> {
-  const check = ladder.rungs
-    .find((rung) => rung.id === 'profile_linked')
-    ?.checks.find(
-      (each) => each.id === 'device_push_enabled' && each.verdict === 'warn'
+  said?: NotificationAuthorization
+): void {
+  if (said?.allowed === undefined) return;
+  const label = 'iOS allows notifications for the app';
+  const evidence = [`iOS says ${said.status}, as the SDK logged at ${said.at}`];
+  ladder.rungs
+    .find((rung) => rung.id === 'device_ready')
+    ?.checks.push(
+      said.allowed
+        ? pass('notifications_allowed', label, evidence)
+        : warn(
+            'notifications_allowed',
+            label,
+            'device.notifications_not_allowed',
+            evidence
+          )
     );
-  // iOS's own answer outranks Customer.io's lagging copy of it.
-  const said = input.authorization;
-  // The flag can still read true after notifications were turned off, so iOS saying no is a
-  // finding of its own, on the device's step.
-  if (!check && said?.allowed !== undefined) {
-    const label = 'iOS allows notifications for the app';
-    const evidence = [
-      `iOS says ${said.status}, as the SDK logged at ${said.at}`,
-    ];
-    ladder.rungs
-      .find((rung) => rung.id === 'device_ready')
-      ?.checks.push(
-        said.allowed
-          ? pass('notifications_allowed', label, evidence)
-          : warn(
-              'notifications_allowed',
-              label,
-              'device.notifications_not_allowed',
-              evidence
-            )
-      );
-    return undefined;
-  }
-  if (!check || !input.environmentId || !input.userId || !input.token) {
-    return undefined;
-  }
-  if (said?.allowed !== undefined) {
-    const from = `iOS says ${said.status}, as the SDK logged at ${said.at}`;
-    if (said.allowed) {
-      check.verdict = 'pass';
-      check.cause = undefined;
-      check.evidence = ['push_enabled: false in Customer.io', from];
-      return `push_enabled read false, and ${from}: the flag lags iOS`;
-    }
-    check.evidence = [...(check.evidence ?? []), from];
-    return undefined;
-  }
-  if (input.appStarted === false) {
-    check.evidence = [
-      ...(check.evidence ?? []),
-      'not read again: no push in this run started the app, which is when the SDK reports it',
-    ];
-    return undefined;
-  }
-  const profile = await find(input.environmentId, input.userId).catch(
-    () => null
-  );
-  const now = profile?.devices.find((device) => device.id === input.token)
-    ?.pushEnabled;
-  if (now === 'true') {
-    check.verdict = 'pass';
-    check.cause = undefined;
-    check.evidence = ['push_enabled: false before the pushes, true after them'];
-    return 'push_enabled read false at the start and true after the pushes: it lags a new Allow until the app next reports';
-  }
-  check.evidence = [
-    ...(check.evidence ?? []),
-    now === 'false'
-      ? 'still false after the pushes, which started the app again'
-      : 'could not be read again after the pushes',
-  ];
-  return undefined;
 }
