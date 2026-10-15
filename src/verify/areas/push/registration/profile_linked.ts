@@ -50,9 +50,10 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
     rung.skipped = 'no workspace was resolved';
     return rung;
   }
-  const identifier = input.userId ?? input.anonymousId;
+  // Push goes only to identified profiles; an anonymous device already stopped the climb.
+  const identifier = input.userId;
   if (!identifier) {
-    rung.skipped = 'no identity could be read off the device';
+    rung.skipped = 'no identified user could be read off the device';
     return rung;
   }
   if (!input.token) {

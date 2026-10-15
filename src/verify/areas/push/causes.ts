@@ -291,10 +291,11 @@ export const CAUSES: Record<string, PushCause> = {
   },
   'device.identity_anonymous': {
     stage: 'device_ready',
-    severity: 'warning',
-    summary: 'The app has an anonymous profile only — identify has never run.',
+    severity: 'blocker',
+    summary:
+      'No user is identified on this device, and Customer.io sends push only to identified profiles.',
     remedy:
-      'Log in, or call identify, so the token belongs to a profile a campaign can address. An anonymous token still receives a direct send.',
+      "Log in, or call identify, then run again. Until then the token belongs to no profile, so nothing Customer.io sends can reach this device. Logging out removes the device from the profile, so the app has to be logged in when it's verified.",
   },
   'profile.device_in_other_workspace': {
     stage: 'profile_linked',

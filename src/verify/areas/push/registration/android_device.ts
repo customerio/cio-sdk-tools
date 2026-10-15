@@ -232,7 +232,8 @@ function identityCheck(facts: AndroidDeviceFacts): Check {
         : 'no siteId in settings',
     ]);
   }
-  return warn(
+  // Customer.io sends push only to identified profiles, so an anonymous device stops here.
+  return fail(
     'identity_read',
     'SDK has an identified profile',
     'device.identity_anonymous',

@@ -139,7 +139,7 @@ test('an app that was never installed fails before the token is looked for', () 
   assert.strictEqual(check(rung, 'token_registered'), undefined);
 });
 
-test('no stored token fails, and an anonymous-only profile warns', () => {
+test('no stored token fails, and so does an anonymous device: push goes only to identified profiles', () => {
   const target = { kind: 'simulator', name: 'A', udid: '1', state: 'booted' };
   const noToken = deviceReady(
     {
@@ -169,8 +169,10 @@ test('no stored token fails, and an anonymous-only profile warns', () => {
     },
     'io.example.app'
   );
-  assert.strictEqual(Ladder.verdictOf(anonymous), 'warn');
+  assert.strictEqual(Ladder.verdictOf(anonymous), 'fail', 'an anonymous device must stop the climb before any send');
   assert.deepStrictEqual(causes(anonymous), ['device.identity_anonymous']);
+  const identity = anonymous.checks.find((check) => check.id === 'identity_read');
+  assert.deepStrictEqual(identity.evidence, ['anonymous id only: anon-1']);
 });
 
 test('the token is never printed in full', () => {
@@ -243,7 +245,9 @@ test('the profile rung skips, never fails, when its inputs are missing', async (
   const cases = [
     [{ cio: { available: true, authenticated: false, reason: 'not authenticated' } }, /not authenticated/],
     [{ cio: authed }, /no workspace/],
-    [{ cio: authed, environmentId: '1' }, /no identity/],
+    [{ cio: authed, environmentId: '1' }, /no identified user/],
+    // An anonymous id is never looked up: push goes only to identified profiles.
+    [{ cio: authed, environmentId: '1', anonymousId: 'anon-1', token: 't' }, /no identified user/],
     [{ cio: authed, environmentId: '1', userId: 'a@b.c' }, /no push token/],
   ];
   for (const [input, expected] of cases) {
