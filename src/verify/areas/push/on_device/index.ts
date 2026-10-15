@@ -630,26 +630,47 @@ const SILENT = [
  */
 export function explainNotificationsOff(
   section: MatrixSection,
-  pushDisabled: boolean
+  pushDisabled: boolean,
+  reporter?: Pick<Reporter, 'cell'>
 ): MatrixSection {
   const silent =
     section.cells.length > 0 &&
-    section.cells.every((cell) => cell.cause && SILENT.includes(cell.cause));
+    section.cells.every(
+      (cell) => cell.cause && OFF_EXPLAINS.includes(cell.cause)
+    );
   if (!pushDisabled || !silent) return section;
   return {
     ...section,
-    cells: section.cells.map((cell) => ({
-      ...cell,
-      verdict: 'fail',
-      cause: 'device.notifications_disabled',
-      summary: undefined,
-      evidence: [
-        ...cell.evidence,
-        `nothing reached the app in any state, and the profile reports push_enabled false (was: ${cell.cause})`,
-      ],
-    })),
+    cells: section.cells.map((cell) => {
+      const off: MatrixCell = {
+        ...cell,
+        verdict: 'fail',
+        cause: 'device.notifications_disabled',
+        summary: undefined,
+        evidence: [
+          ...cell.evidence,
+          `nothing reached the app in any state, and the profile reports push_enabled false (was: ${cell.cause})`,
+        ],
+      };
+      // Printed again, so the row streamed earlier is not the last word.
+      reporter?.cell(cell.state).done(off);
+      return off;
+    }),
   };
 }
+
+/**
+ * What notifications being off explains: the push reached the device and the app's side
+ * stayed silent. Not a push the notification store never got. On a simulator with
+ * notifications never allowed, the store still took the push and only the extension did
+ * not run (2026-10-16); the next run's pushes never reached the store because the
+ * simulator's connection to Apple had gone stale, and blaming the permission hid that.
+ */
+const OFF_EXPLAINS = [
+  'runtime.no_evidence',
+  'runtime.nse_did_not_run',
+  'runtime.push_not_seen',
+];
 
 /**
  * What the evidence adds up to.

@@ -388,7 +388,8 @@ async function matrix(
     {
       delivered: explainNotificationsOff(
         delivered,
-        inputs.pushDisabled === true
+        inputs.pushDisabled === true,
+        reporter
       ),
       opened,
     },

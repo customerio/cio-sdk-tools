@@ -326,3 +326,22 @@ test('a push the store held during its cell is not late; notifications off expla
   const [late] = await markLateArrivals([{ ...cell, arrived: undefined }], async () => true);
   assert.strictEqual(late.cause, 'runtime.push_arrived_late');
 });
+
+test('a push the simulator never got is the delivery path, not notifications off', () => {
+  // The iPhone 16 simulator's second run: its connection to Apple had gone stale, and the
+  // held push arrived a minute and a half after the run ended.
+  const neverGot = {
+    metric: 'delivered',
+    cells: [{ state: 'killed', verdict: 'fail', cause: 'runtime.push_never_arrived', evidence: [] }],
+  };
+  assert.strictEqual(explainNotificationsOff(neverGot, true), neverGot);
+
+  const printed = [];
+  const reporter = { cell: (label) => ({ done: (cell) => printed.push([label, cell.cause]) }) };
+  const stored = {
+    metric: 'delivered',
+    cells: [{ state: 'killed', verdict: 'skip', cause: 'runtime.no_evidence', arrived: true, evidence: [] }],
+  };
+  explainNotificationsOff(stored, true, reporter);
+  assert.deepStrictEqual(printed, [['killed', 'device.notifications_disabled']]);
+});
