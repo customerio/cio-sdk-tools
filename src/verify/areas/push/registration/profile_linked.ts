@@ -292,7 +292,16 @@ export function deviceLinkChecks(profile: Profile, input: ProfileInput) {
  */
 export async function recheckPushEnabled(
   ladder: { rungs: Rung[] },
-  input: { environmentId?: string; userId?: string; token?: string },
+  input: {
+    environmentId?: string;
+    userId?: string;
+    token?: string;
+    /**
+     * A push in the run started the app. A killed-state push on iOS runs only the extension,
+     * and the app is what reports the flag, so after those alone it cannot have changed.
+     */
+    appStarted?: boolean;
+  },
   find: typeof findProfile = findProfile
 ): Promise<string | undefined> {
   const check = ladder.rungs
@@ -301,6 +310,13 @@ export async function recheckPushEnabled(
       (each) => each.id === 'device_push_enabled' && each.verdict === 'warn'
     );
   if (!check || !input.environmentId || !input.userId || !input.token) {
+    return undefined;
+  }
+  if (input.appStarted === false) {
+    check.evidence = [
+      ...(check.evidence ?? []),
+      'not read again: no push in this run started the app, which is when the SDK reports it',
+    ];
     return undefined;
   }
   const profile = await find(input.environmentId, input.userId).catch(

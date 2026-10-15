@@ -64,7 +64,7 @@ export const PUSH_VOICE: Voice = {
       !opened &&
       report.causes.some((cause) => cause.code === 'profile.push_disabled')
         ? [
-            'the device still reports notifications off, so the pushes may have arrived without showing: allow notifications for the app.',
+            'the device reported notifications off, so the pushes may have arrived without showing: allow notifications for the app.',
           ]
         : [];
     if (ran.some((section) => section.metric === 'recorded')) {

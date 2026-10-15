@@ -345,3 +345,25 @@ test('a push the simulator never got is the delivery path, not notifications off
   explainNotificationsOff(stored, true, reporter);
   assert.deepStrictEqual(printed, [['killed', 'device.notifications_disabled']]);
 });
+
+test('push_enabled is not read again after pushes that never started the app', async () => {
+  const check = {
+    id: 'device_push_enabled',
+    verdict: 'warn',
+    cause: 'profile.push_disabled',
+    evidence: ['push_enabled: false'],
+  };
+  let reads = 0;
+  const note = await recheckPushEnabled(
+    { rungs: [{ id: 'profile_linked', checks: [check] }] },
+    { environmentId: '1', userId: 'a@b.c', token: 'tok', appStarted: false },
+    async () => {
+      reads += 1;
+      return profile('true');
+    }
+  );
+  assert.strictEqual(note, undefined);
+  assert.strictEqual(reads, 0);
+  assert.strictEqual(check.verdict, 'warn');
+  assert.match(check.evidence.at(-1), /no push in this run started the app/);
+});
