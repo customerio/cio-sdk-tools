@@ -373,3 +373,19 @@ test("iOS's own answer, as the SDK logged it, is the only verdict on notificatio
   judgeNotificationPermission({ rungs: unknown }, undefined);
   assert.deepStrictEqual(unknown[0].checks, []);
 });
+
+const { judge } = require('../../dist/verify/areas/push/on_device');
+
+test('a phone push that left no line at all was not seen; the capture is not blamed', () => {
+  const nothing = { available: true, extensionRan: false, sawLines: false, loggedIds: [], freshIds: [] };
+  // The iPhone, killed state, the app not running: 0 lines in a working stream.
+  assert.deepStrictEqual(judge({ ...nothing, lossy: true, arrived: undefined }), {
+    verdict: 'skip',
+    cause: 'runtime.push_not_seen',
+  });
+  // A simulator's store answers arrival, so silence there still points at the capture.
+  assert.deepStrictEqual(judge({ ...nothing, lossy: false, arrived: true }), {
+    verdict: 'skip',
+    cause: 'runtime.no_evidence',
+  });
+});

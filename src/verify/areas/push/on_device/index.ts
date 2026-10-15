@@ -712,9 +712,14 @@ export function judge(observed: {
       ? { verdict: 'skip', cause: 'device.notifications_wedged' }
       : { verdict: 'fail', cause: 'runtime.push_never_arrived' };
   }
-  // The app's processes say nothing at all: that points at the capture, not at the push.
+  // The app's processes say nothing at all. On a simulator that points at the capture: the
+  // store already said whether the push came. On a phone nothing says it came, and an app
+  // that is not running writes nothing until a push arrives, so it is the push that was not
+  // seen. "Suspect the capture" there sent people after a log stream that was working.
   if (!observed.sawLines) {
-    return { verdict: 'skip', cause: 'runtime.no_evidence' };
+    return observed.arrived === undefined && observed.lossy
+      ? { verdict: 'skip', cause: 'runtime.push_not_seen' }
+      : { verdict: 'skip', cause: 'runtime.no_evidence' };
   }
   if (!observed.extensionRan) {
     // On a simulator the store says the push is there and the capture drops nothing, so an
