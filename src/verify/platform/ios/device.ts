@@ -163,21 +163,38 @@ async function listPhysicalDevices(): Promise<Target[]> {
 export function selectTarget(
   targets: Target[],
   selector?: string
-): { target?: Target; usable: Target[]; ambiguous: Target[] } {
+): {
+  target?: Target;
+  usable: Target[];
+  ambiguous: Target[];
+  /** Everything the selector named, running or not. */
+  matched: Target[];
+} {
   const usable = targets.filter(isUsable);
 
   if (selector) {
-    const wanted = targets.filter(
+    const matched = targets.filter(
       (t) =>
         t.udid === selector ||
         t.name === selector ||
         t.name.toLowerCase() === selector.toLowerCase()
     );
-    return { target: wanted[0], usable, ambiguous: wanted.slice(1) };
+    // A name can belong to one simulator per runtime, and only a running one can be verified.
+    // Taking the first match picked a shut-down simulator over the booted one of the same
+    // name. Two running under one name is a question only a UDID can answer.
+    const running = matched.filter(isUsable);
+    return {
+      target: running.length === 1 ? running[0] : undefined,
+      usable,
+      ambiguous: running.length > 1 ? running : [],
+      matched,
+    };
   }
 
-  if (usable.length === 1) return { target: usable[0], usable, ambiguous: [] };
-  return { usable, ambiguous: usable };
+  if (usable.length === 1) {
+    return { target: usable[0], usable, ambiguous: [], matched: [] };
+  }
+  return { usable, ambiguous: usable, matched: [] };
 }
 
 export interface AppLocation {

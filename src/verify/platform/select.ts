@@ -16,7 +16,7 @@ import {
   listTargets,
   selectTarget,
 } from './ios/device';
-import { Asker } from '../core/prompt';
+import { Asker, MissingInput } from '../core/prompt';
 import { XcodeProjectModel, appTargets } from './ios/xcode';
 
 /**
@@ -137,7 +137,14 @@ export async function chooseIosTarget(input: PickInput): Promise<Picked> {
   const targets = await listTargets();
   if (input.target) {
     // Named the way the run will match it, so the facts say which device that is.
-    const named = selectTarget(targets, input.target).target;
+    const { target: named, ambiguous } = selectTarget(targets, input.target);
+    if (ambiguous.length > 1) {
+      throw new MissingInput(
+        `--device ${input.target} names ${ambiguous.length} running simulators or devices — pass one's UDID`,
+        '--device <name|udid>',
+        ambiguous.map((target) => `${target.udid}  ${describeTarget(target)}`)
+      );
+    }
     return {
       selector: input.target,
       name: named?.name,

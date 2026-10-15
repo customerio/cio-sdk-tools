@@ -24,6 +24,8 @@ export interface DeviceFacts {
   target?: Target;
   usable: Target[];
   ambiguous: Target[];
+  /** Every target the selector named, running or not. */
+  matched?: Target[];
   selector?: string;
   installed: boolean;
   appPath?: string;
@@ -48,12 +50,16 @@ export async function gatherDevice(options: {
   selector?: string;
 }): Promise<DeviceFacts> {
   const targets = await listTargets();
-  const { target, usable, ambiguous } = selectTarget(targets, options.selector);
+  const { target, usable, ambiguous, matched } = selectTarget(
+    targets,
+    options.selector
+  );
 
   const facts: DeviceFacts = {
     target,
     usable,
     ambiguous,
+    matched,
     selector: options.selector,
     installed: false,
   };
@@ -100,7 +106,12 @@ export function deviceReady(facts: DeviceFacts, bundleId?: string): Rung {
           'Simulator or device is usable',
           'device.not_available',
           [
-            `--device ${facts.selector} matched nothing usable`,
+            facts.ambiguous.length > 1
+              ? `--device ${facts.selector} names ${facts.ambiguous.length} running targets; pass one's UDID`
+              : `--device ${facts.selector} matched nothing usable`,
+            ...(facts.matched ?? [])
+              .filter((t) => !facts.ambiguous.includes(t))
+              .map((t) => `named, but ${t.state}: ${t.name} (${t.udid})`),
             ...facts.usable.map((t) => `available: ${describeTarget(t)}`),
           ]
         )

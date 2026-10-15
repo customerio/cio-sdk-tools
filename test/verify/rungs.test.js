@@ -266,3 +266,47 @@ test('the push transport comes from the linked SDK product, not an assumption', 
   assert.strictEqual(providerFrom(['CioMessagingPushAPN', 'CioMessagingPushFCM']), 'apns');
   assert.strictEqual(providerFrom([]), 'apns');
 });
+
+test('a workspace with no APNs credential is named as missing, not as a lookup that failed', async () => {
+  const { pushCredential } = require('../../dist/verify/areas/push/credentials');
+  // The API's answer for workspace 100585, which has no APNs key.
+  const missing = await pushCredential('100585', 'apns', async () => ({ ok: false, error: 'API error 404: not found' }));
+  assert.deepStrictEqual(missing, { ok: true });
+  const rung = workspaceReady(
+    {
+      cio: authed,
+      provider: 'apns',
+      resolution: { how: 'flag', workspace: { id: '100585', name: 'Mobile: xReact Native FCM' }, candidates: [] },
+      credential: missing.credential,
+    },
+    'development'
+  );
+  assert.deepStrictEqual(causes(rung), ['workspace.apns_credential_missing']);
+
+  // Any other failure still says the credential could not be read.
+  const denied = await pushCredential('100585', 'apns', async () => ({ ok: false, error: 'API error 403: forbidden' }));
+  assert.strictEqual(denied.ok, false);
+});
+
+test('--device by name takes the running simulator, and refuses two running under one name', () => {
+  const { selectTarget } = require('../../dist/verify/platform/ios/device');
+  const sim = (udid, state) => ({ kind: 'simulator', name: 'iPhone 16', udid, state });
+  const off = [sim('1688FDB0', 'shutdown'), sim('008B1517', 'shutdown')];
+
+  const picked = selectTarget([...off, sim('2B0C8B8F', 'booted')], 'iPhone 16');
+  assert.strictEqual(picked.target.udid, '2B0C8B8F', 'a shut-down simulator of the same name was taken first');
+
+  const two = selectTarget([...off, sim('2B0C8B8F', 'booted'), sim('AAAA0000', 'booted')], 'iPhone 16');
+  assert.strictEqual(two.target, undefined);
+  assert.strictEqual(two.ambiguous.length, 2);
+
+  // Only shut-down matches: nothing usable, and the device rung says why.
+  const none = selectTarget(off, 'iPhone 16');
+  assert.strictEqual(none.target, undefined);
+  const rung = deviceReady(
+    { usable: [], ambiguous: none.ambiguous, matched: none.matched, selector: 'iPhone 16', installed: false },
+    'io.example.app'
+  );
+  assert.deepStrictEqual(causes(rung), ['device.not_available']);
+  assert.ok(rung.checks[0].evidence.includes('named, but shutdown: iPhone 16 (1688FDB0)'));
+});
