@@ -263,22 +263,45 @@ test('a temp folder nobody removed is removed when the run ends', async () => {
   assert.strictEqual(fs.existsSync(removed.path), false);
 });
 
-const { SDK_DEBUG_LINE } = require('../../dist/verify/areas/push/on_device/sdk_lines');
+const { isSdkDebugLine } = require('../../dist/verify/areas/push/on_device/sdk_lines');
+const { parseSyslog, parseNdjson } = require('../../dist/verify/platform/ios/logs');
+
+test('the SDK logging at debug is told by each line\'s type, not its tag', () => {
+  // The simulator, notifications never allowed: the in-app module at debug was the SDK's only voice.
+  const sim = parseNdjson(
+    JSON.stringify({
+      timestamp: '2026-10-16 00:09:29.527000+0400',
+      processImagePath: '/x/APN UIKit',
+      subsystem: 'io.customer.sdk',
+      messageType: 'Debug',
+      eventMessage: "[InApp] SseService: → Server event - type: 'heartbeat'",
+    })
+  )[0];
+  assert.strictEqual(sim.level, 'debug');
+  assert.ok(isSdkDebugLine(sim));
+  // The same module at info, as an SDK set to info writes it, is not debug.
+  assert.ok(!isSdkDebugLine({ ...sim, level: 'info' }));
+
+  // A phone line carries its type in angle brackets.
+  const phone = parseSyslog(
+    'Oct 16 00:40:06.765290 APN UIKit(APN UIKit.debug.dylib)[928] <Debug>: [InApp] SSE Manager: Heartbeat received'
+  )[0];
+  assert.deepStrictEqual(
+    [phone.process, phone.level, phone.message],
+    ['APN UIKit', 'debug', '[InApp] SSE Manager: Heartbeat received']
+  );
+  assert.ok(isSdkDebugLine(phone));
+  // Apple's own debug lines with a bracketed tag are not the SDK's.
+  for (const tag of ['[Location]', '[Telemetry]', '[TLSCBQ]', '[FBSScene]']) {
+    assert.ok(!isSdkDebugLine({ ...phone, message: `${tag} x` }));
+  }
+  // A reader that gives no type keeps the narrow reading: push lines only.
+  assert.ok(isSdkDebugLine({ at: '', process: 'x', message: '[Push] Received CIO push message' }));
+  assert.ok(!isSdkDebugLine({ at: '', process: 'x', message: '[InApp] x' }));
+});
+
 const { markLateArrivals } = require('../../dist/verify/areas/push/on_device/send');
 const { explainNotificationsOff } = require('../../dist/verify/areas/push/on_device');
-
-test('an SDK whose in-app module logged is at debug level, though push said nothing', () => {
-  // The iPhone 16 simulator, notifications never allowed: these were the run's only lines.
-  const s1 = [
-    "[InApp] SseService: → Server event - type: 'heartbeat'",
-    '[InApp] SSE Manager: Heartbeat received (interval: 30.0s, timeout: 35.0s)',
-  ];
-  assert.ok(s1.some((line) => SDK_DEBUG_LINE.test(line)));
-  // The iPhone at log level error still wrote these, so none of them counts.
-  for (const line of ['[Location] x', '[Telemetry] x', '[TLSCBQ] x', '[FBSScene] x']) {
-    assert.doesNotMatch(line, SDK_DEBUG_LINE);
-  }
-});
 
 test('a push the store held during its cell is not late; notifications off explains it', async () => {
   const cell = {

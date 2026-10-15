@@ -481,6 +481,10 @@ export function parseNdjson(raw: string): LogLine[] {
         at: (parsed.timestamp ?? '').slice(11, 23),
         process: (parsed.processImagePath ?? '').split('/').pop() ?? '',
         message: parsed.eventMessage ?? '',
+        ...(parsed.messageType
+          ? { level: parsed.messageType.toLowerCase() }
+          : {}),
+        ...(parsed.subsystem ? { subsystem: parsed.subsystem } : {}),
       },
     ];
   } catch {
@@ -506,8 +510,17 @@ export function parseSyslog(raw: string): LogLine[] {
   // the run then blamed the SDK's log level for a log that never arrived.
   if (/^\[(?:connected|disconnected):/.test(line)) return [];
   const match = line.match(
-    /^(\w{3}\s+\d+\s[\d:.]+)\s+([^[(]+?)(?:\([^)]*\))?\[(\d+)\]\s*(?:<[^>]*>)?:\s?(.*)$/
+    /^(\w{3}\s+\d+\s[\d:.]+)\s+([^[(]+?)(?:\([^)]*\))?\[(\d+)\]\s*(?:<([^>]*)>)?:\s?(.*)$/
   );
   if (!match) return [{ at: '', process: '', message: line }];
-  return [{ at: match[1], process: match[2].trim(), message: match[4] }];
+  const level = match[4]?.toLowerCase();
+  return [
+    {
+      at: match[1],
+      process: match[2].trim(),
+      message: match[5],
+      // `<private>` is a redacted field, not a type.
+      ...(level && level !== 'private' ? { level } : {}),
+    },
+  ];
 }

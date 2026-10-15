@@ -10,6 +10,14 @@ export interface LogLine {
   at: string;
   process: string;
   message: string;
+  /**
+   * The log type the line was written at, lowercased (`debug`, `info`, `notice`, `error`…),
+   * when the reader says. A module can write at several types, so this, not its tag, says
+   * which level a library was set to.
+   */
+  level?: string;
+  /** The writer's subsystem, when the reader says (a simulator's does). */
+  subsystem?: string;
 }
 
 export interface LogCapture {
