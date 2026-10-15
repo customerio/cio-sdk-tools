@@ -311,11 +311,26 @@ export async function recheckPushEnabled(
     ?.checks.find(
       (each) => each.id === 'device_push_enabled' && each.verdict === 'warn'
     );
+  // iOS's own answer outranks Customer.io's lagging copy of it.
+  const said = input.authorization;
+  // The flag can still read true after notifications were turned off, so iOS saying no is a
+  // finding of its own, on the device's step.
+  if (!check && said?.allowed === false) {
+    ladder.rungs
+      .find((rung) => rung.id === 'device_ready')
+      ?.checks.push(
+        warn(
+          'notifications_allowed',
+          'iOS allows notifications for the app',
+          'device.notifications_not_allowed',
+          [`iOS says ${said.status}, as the SDK logged at ${said.at}`]
+        )
+      );
+    return undefined;
+  }
   if (!check || !input.environmentId || !input.userId || !input.token) {
     return undefined;
   }
-  // iOS's own answer outranks Customer.io's lagging copy of it.
-  const said = input.authorization;
   if (said?.allowed !== undefined) {
     const from = `iOS says ${said.status}, as the SDK logged at ${said.at}`;
     if (said.allowed) {

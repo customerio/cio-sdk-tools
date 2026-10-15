@@ -342,6 +342,13 @@ export const CAUSES: Record<string, PushCause> = {
     remedy:
       'Usually means two builds share a profile. Harmless for this run, but a send addressed to the profile may reach the other app.',
   },
+  'device.notifications_not_allowed': {
+    stage: 'device_ready',
+    severity: 'warning',
+    summary: "iOS says the app's notifications aren't allowed.",
+    remedy:
+      "Allow notifications for the app: accept its prompt, or turn them on in the device's Settings under Notifications. Until then a push can still arrive, and be counted as delivered, without anything showing. Read from the SDK's own log line, so it is iOS's current answer, not Customer.io's copy of it.",
+  },
   'profile.push_disabled': {
     stage: 'profile_linked',
     severity: 'warning',

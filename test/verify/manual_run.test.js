@@ -398,3 +398,20 @@ test("iOS's own answer on notifications decides push_disabled, over Customer.io'
   assert.strictEqual(denied.verdict, 'warn');
   assert.match(denied.evidence.at(-1), /iOS says notDetermined/);
 });
+
+test('iOS saying no is a warning even while the flag still reads true', async () => {
+  const device = { id: 'device_ready', checks: [] };
+  const rungs = [device, { id: 'profile_linked', checks: [] }];
+  await recheckPushEnabled(
+    { rungs },
+    {
+      environmentId: '1',
+      userId: 'a@b.c',
+      token: 'tok',
+      authorization: { status: 'denied', at: '00:50:00.000', allowed: false },
+    },
+    async () => assert.fail('nothing to re-read')
+  );
+  assert.strictEqual(device.checks[0].cause, 'device.notifications_not_allowed');
+  assert.match(device.checks[0].evidence[0], /iOS says denied/);
+});
