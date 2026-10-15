@@ -4,10 +4,11 @@ import { cioApi } from '../../../platform/cio/cli';
  * Customer.io's own record of a test push.
  *
  * Once Customer.io keeps test pushes, the send returns a `delivery_id`, and
- * `GET /v1/environments/{id}/deliveries/{delivery_id}` reads that delivery back for 24 hours
- * in the shape of a campaign push's: `sent`, then `delivered` and `opened` as the device's SDK
- * reports them, or `failed` when the provider refused it. Until then the send returns no id
- * and there is nothing to read.
+ * `GET /v1/environments/{id}/test_deliveries/{delivery_id}` reads that delivery back for 24
+ * hours (a 404 after): `sent`, or `failed` with the provider's reason when it refused the
+ * push, then `delivered` and `opened` as the device's SDK reports them. Until then the send
+ * returns no id and there is nothing to read. Test deliveries are kept apart from real ones,
+ * so the delivery routes never show them.
  *
  * It proves what the SDK reported for this exact push. It cannot say where a tap went: the
  * deep link's outcome is only ever in the device's log.
@@ -19,17 +20,14 @@ export interface DeliveryRecord {
   delivered?: number;
   opened?: number;
   failed?: number;
+  /** The HTTP status the provider (APNs or FCM) answered the send with. */
+  providerStatus?: number;
+  /**
+   * The provider's reason for a refusal, e.g. BadDeviceToken. Null for a login that can't
+   * see recipients, though `providerStatus` still shows the refusal.
+   */
   failureMessage?: string;
-  /** The provider's answer for each device the push went to, from `meta.reason`. */
-  devices: DeviceOutcome[];
-}
-
-export interface DeviceOutcome {
-  status?: number;
-  /** The provider's error, empty when it took the push. */
-  detail?: string;
-  /** The device reported delivered. */
-  delivered: boolean;
+  failureDetail?: string;
 }
 
 export type DeliveryRead =
@@ -43,15 +41,16 @@ export type ReadDelivery = (
 
 type Time = number | string | null | undefined;
 
-interface RawDelivery {
+interface RawTestDelivery {
   id?: string;
+  state?: string;
   sent?: Time;
+  failed?: Time;
   delivered?: Time;
   opened?: Time;
-  failed?: Time;
+  provider_status?: number | null;
   failure_message?: string | null;
-  meta?: { reason?: string | null } | null;
-  metrics?: { [metric: string]: Time } | null;
+  failure_detail?: string | null;
 }
 
 export async function readDelivery(
@@ -59,8 +58,8 @@ export async function readDelivery(
   deliveryId: string,
   api: typeof cioApi = cioApi
 ): Promise<DeliveryRead> {
-  const res = await api<{ delivery?: RawDelivery } & RawDelivery>(
-    '/v1/environments/{environment_id}/deliveries/{delivery_id}',
+  const res = await api<{ test_delivery?: RawTestDelivery }>(
+    '/v1/environments/{environment_id}/test_deliveries/{delivery_id}',
     { environment_id: environmentId, delivery_id: deliveryId }
   );
   if (!res.ok) {
@@ -69,22 +68,26 @@ export async function readDelivery(
   }
   return {
     ok: true,
-    record: parseDelivery(deliveryId, res.data?.delivery ?? res.data),
+    record: parseDelivery(deliveryId, res.data?.test_delivery),
   };
 }
 
-/** A delivery's times, whichever of its two shapes carries each one. */
-export function parseDelivery(id: string, raw?: RawDelivery): DeliveryRecord {
-  const at = (metric: 'sent' | 'delivered' | 'opened' | 'failed') =>
-    unixTime(raw?.[metric] ?? raw?.metrics?.[metric]);
+export function parseDelivery(
+  id: string,
+  raw?: RawTestDelivery
+): DeliveryRecord {
   return {
     id: raw?.id || id,
-    sent: at('sent'),
-    delivered: at('delivered'),
-    opened: at('opened'),
-    failed: at('failed'),
+    sent: unixTime(raw?.sent),
+    delivered: unixTime(raw?.delivered),
+    opened: unixTime(raw?.opened),
+    failed: unixTime(raw?.failed),
+    providerStatus:
+      typeof raw?.provider_status === 'number' && raw.provider_status > 0
+        ? raw.provider_status
+        : undefined,
     failureMessage: raw?.failure_message || undefined,
-    devices: devicesIn(raw?.meta?.reason),
+    failureDetail: raw?.failure_detail || undefined,
   };
 }
 
@@ -92,25 +95,6 @@ function unixTime(value: Time): number | undefined {
   if (value === null || value === undefined || value === '') return undefined;
   const at = Number(value);
   return Number.isFinite(at) && at > 0 ? at : undefined;
-}
-
-/** `meta.reason` is a JSON string holding one entry per device. */
-function devicesIn(reason?: string | null): DeviceOutcome[] {
-  if (!reason) return [];
-  try {
-    const parsed = JSON.parse(reason);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map((device) => ({
-      status: typeof device?.status === 'number' ? device.status : undefined,
-      detail:
-        typeof device?.detail === 'string' && device.detail
-          ? device.detail
-          : undefined,
-      delivered: device?.delivered === true,
-    }));
-  } catch {
-    return [];
-  }
 }
 
 /** Which of the device's reports to wait for. Neither means read once. */

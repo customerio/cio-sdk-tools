@@ -19,30 +19,21 @@ const { CAUSES } = require('../../dist/verify/areas/push/causes');
 
 const ID = 'dgS_ugcNBQAAAaE52sEAXhwKfTOyn06Bxg==';
 
-// The contract's example: a test delivery, opened, in the shape of a real push delivery.
+// The read route's shape (services #29645, GET /test_deliveries/{delivery_id}): a test push,
+// accepted by APNs, then reported delivered and opened by the device's SDK.
 const OPENED = {
-  delivery: {
+  test_delivery: {
     id: ID,
-    environment_id: 122175,
-    test: true,
+    token: '806f516ee6e5…',
+    platform: 'ios',
     state: 'opened',
-    created: 1791972000,
     sent: 1791972000,
+    failed: null,
     delivered: 1791972003,
     opened: 1791972041,
-    failed: null,
+    provider_status: 200,
     failure_message: null,
-    recipient: '["<token>"]',
-    action_type: 'push_action',
-    meta: {
-      status: '200 OK',
-      reason:
-        '[{"id":"<token>","platform":"ios","status":200,"detail":"","bounced":false,"suppressed":false,"delivered":true}]',
-    },
-    metrics: { sent: '1791972000', delivered: '1791972003', opened: '1791972041' },
-    campaign_id: null,
-    action_id: null,
-    customer_id: null,
+    failure_detail: null,
   },
 };
 
@@ -67,7 +58,7 @@ test("a refused send keeps the id from the error's meta, so its failure can be r
     ok: false,
     error: 'API error 400: BadDeviceToken',
     errorBody: {
-      errors: [{ detail: 'BadDeviceToken', meta: { full_error_message: '…', delivery_id: ID } }],
+      errors: [{ detail: 'BadDeviceToken', status: 400, meta: { full_error_message: '…', delivery_id: ID } }],
     },
   });
   assert.strictEqual(refused.accepted, false);
@@ -85,9 +76,9 @@ test("a refused send keeps the id from the error's meta, so its failure can be r
 
 // --- reading one delivery --------------------------------------------------------
 
-test("a test delivery reads back with its times, from either shape, and each device's answer", async () => {
+test("a test delivery reads back with its times and the provider's answer", async () => {
   const read = await readDelivery('122175', ID, async (path, params) => {
-    assert.strictEqual(path, '/v1/environments/{environment_id}/deliveries/{delivery_id}');
+    assert.strictEqual(path, '/v1/environments/{environment_id}/test_deliveries/{delivery_id}');
     assert.deepStrictEqual(params, { environment_id: '122175', delivery_id: ID });
     return { ok: true, data: OPENED };
   });
@@ -98,11 +89,14 @@ test("a test delivery reads back with its times, from either shape, and each dev
     delivered: 1791972003,
     opened: 1791972041,
     failed: undefined,
+    providerStatus: 200,
     failureMessage: undefined,
-    devices: [{ status: 200, detail: undefined, delivered: true }],
+    failureDetail: undefined,
   });
-  // Only the metrics shape, as strings.
-  assert.strictEqual(parseDelivery(ID, { metrics: { opened: '1791972041' } }).opened, 1791972041);
+  // Nothing reported yet is null, and reads as not happened.
+  const fresh = parseDelivery(ID, { ...OPENED.test_delivery, delivered: null, opened: null });
+  assert.strictEqual(fresh.delivered, undefined);
+  assert.strictEqual(fresh.opened, undefined);
 });
 
 test('a 404 is told apart from other errors', async () => {
@@ -120,7 +114,7 @@ test('a 404 is told apart from other errors', async () => {
 test('a record that already holds what is waited for answers on the first read', async () => {
   let reads = 0;
   const answer = await awaitRecord('122175', [ID], { delivered: true, opened: true }, {
-    read: async () => (reads++, record(OPENED.delivery)),
+    read: async () => (reads++, record(OPENED.test_delivery)),
     limits: QUICK,
   });
   assert.strictEqual(reads, 1);
@@ -131,7 +125,7 @@ test('the record is read again until the open lands', async () => {
   let reads = 0;
   const answer = await awaitRecord('122175', [ID], { delivered: true, opened: true }, {
     read: async () =>
-      ++reads < 3 ? record({ sent: 1791972000, delivered: 1791972003 }) : record(OPENED.delivery),
+      ++reads < 3 ? record({ sent: 1791972000, delivered: 1791972003 }) : record(OPENED.test_delivery),
     limits: QUICK,
   });
   assert.strictEqual(reads, 3);
@@ -152,7 +146,7 @@ test('a 404 is read again in case the read beat the write, and reported when it 
   let reads = 0;
   const late = await awaitRecord('122175', [ID], { delivered: true, opened: false }, {
     read: async () =>
-      ++reads === 1 ? { ok: false, notFound: true, error: 'API error 404' } : record(OPENED.delivery),
+      ++reads === 1 ? { ok: false, notFound: true, error: 'API error 404' } : record(OPENED.test_delivery),
     limits: QUICK,
   });
   assert.strictEqual(late.record.delivered, 1791972003);
@@ -178,7 +172,7 @@ test('a failed delivery ends the wait: nothing more will land on it', async () =
 test('of a send and its re-send, the one the device reported is the one kept', async () => {
   const answer = await awaitRecord('122175', ['first', 'resent'], { delivered: true, opened: true }, {
     read: async (environmentId, id) =>
-      id === 'resent' ? record({ ...OPENED.delivery, id: 'resent' }) : record({ id: 'first', sent: 1 }),
+      id === 'resent' ? record({ ...OPENED.test_delivery, id: 'resent' }) : record({ id: 'first', sent: 1 }),
     limits: QUICK,
   });
   assert.strictEqual(answer.record.id, 'resent');
@@ -252,7 +246,7 @@ test('nothing sent means nothing to read, said as that', async () => {
 
 test('end to end: each push recorded as delivered, and opened where tapped, passes', async () => {
   const { read } = reader({
-    k: record({ ...OPENED.delivery, id: 'k' }),
+    k: record({ ...OPENED.test_delivery, id: 'k' }),
     b: record({ id: 'b', sent: 1791972000, delivered: 1791972002 }),
   });
   const result = await readBack({
@@ -267,7 +261,7 @@ test('end to end: each push recorded as delivered, and opened where tapped, pass
   const [killed, background] = result.recorded.cells;
   assert.strictEqual(killed.verdict, 'pass');
   assert.strictEqual(killed.summary, 'delivered · opened');
-  assert.match(killed.evidence[0], /delivery k, sent 10:00:00Z, delivered 3s later, opened 41s later/);
+  assert.match(killed.evidence[0], /delivery k, provider 200, sent 10:00:00Z, delivered 3s later, opened 41s later/);
   assert.strictEqual(background.verdict, 'pass');
   assert.strictEqual(background.summary, 'delivered');
   // The record is a fact on the device's cells too.
@@ -301,10 +295,12 @@ test('a refusal Customer.io recorded fails with the same cause as the send, and 
   const { read, reads } = reader({
     k: record({
       id: 'k',
-      sent: 1791972000,
+      state: 'failed',
+      sent: null,
       failed: 1791972000,
+      provider_status: 400,
       failure_message: 'BadDeviceToken',
-      meta: { reason: '[{"status":400,"detail":"BadDeviceToken","delivered":false}]' },
+      failure_detail: '{"reason":"BadDeviceToken"}',
     }),
   });
   const result = await readBack({
@@ -320,8 +316,8 @@ test('a refusal Customer.io recorded fails with the same cause as the send, and 
   const [cell] = result.recorded.cells;
   assert.strictEqual(cell.verdict, 'fail');
   assert.strictEqual(cell.cause, 'send.provider_rejected');
-  assert.ok(cell.evidence.includes('the provider answered 400 BadDeviceToken'));
-  assert.match(cell.evidence.at(-1), /recorded it as failed: BadDeviceToken/);
+  assert.match(cell.evidence[0], /delivery k, provider 400, failed 10:00:00Z/);
+  assert.match(cell.evidence.at(-1), /recorded it as failed: BadDeviceToken \(\{"reason":"BadDeviceToken"\}\)/);
   // A push the device never got is read once, not waited on.
   assert.deepStrictEqual(reads, ['k']);
 });
@@ -342,7 +338,7 @@ test('an id the send returned that reads as 404 is its own cause', async () => {
 });
 
 test('on the device, only an open the log could not prove is read, and the record settles it', async () => {
-  const { read, reads } = reader({ k: record({ ...OPENED.delivery, id: 'k' }) });
+  const { read, reads } = reader({ k: record({ ...OPENED.test_delivery, id: 'k' }) });
   const result = await readBack({
     environmentId: '122175',
     judge: false,

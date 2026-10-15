@@ -248,7 +248,7 @@ function recordedCell(plan: Plan, answer?: RecordAnswer): MatrixCell {
     deliveryId: record.id,
     durationMs,
   };
-  const evidence = [describe(record), ...providerSaid(record)];
+  const evidence = [describe(record)];
   if (record.failed !== undefined) {
     return {
       ...base,
@@ -258,7 +258,7 @@ function recordedCell(plan: Plan, answer?: RecordAnswer): MatrixCell {
         ...evidence,
         `Customer.io recorded it as failed${
           record.failureMessage ? `: ${record.failureMessage}` : ''
-        }`,
+        }${record.failureDetail ? ` (${record.failureDetail})` : ''}`,
       ],
     };
   }
@@ -297,9 +297,15 @@ function recordedCell(plan: Plan, answer?: RecordAnswer): MatrixCell {
   return { ...base, verdict: 'pass', summary: got.join(' · '), evidence };
 }
 
-/** "Customer.io's record: delivery dgS_…, sent 14:02:11Z, delivered 3s later, opened …". */
+/**
+ * "Customer.io's record: delivery dgS_…, provider 200, sent 14:02:11Z, delivered 3s later,
+ * opened …".
+ */
 function describe(record: DeliveryRecord): string {
   const parts = [`delivery ${record.id}`];
+  if (record.providerStatus !== undefined) {
+    parts.push(`provider ${record.providerStatus}`);
+  }
   if (record.sent !== undefined) parts.push(`sent ${clock(record.sent)}`);
   for (const [name, at] of [
     ['delivered', record.delivered],
@@ -314,18 +320,6 @@ function describe(record: DeliveryRecord): string {
     );
   }
   return `Customer.io's record: ${parts.join(', ')}`;
-}
-
-/** The provider's own words, for each device it did not take the push for. */
-function providerSaid(record: DeliveryRecord): string[] {
-  return record.devices
-    .filter((device) => device.detail)
-    .map(
-      (device) =>
-        `the provider answered ${
-          device.status !== undefined ? `${device.status} ` : ''
-        }${device.detail}`
-    );
 }
 
 function clock(unixSeconds: number): string {
