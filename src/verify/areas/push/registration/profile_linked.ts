@@ -315,16 +315,22 @@ export async function recheckPushEnabled(
   const said = input.authorization;
   // The flag can still read true after notifications were turned off, so iOS saying no is a
   // finding of its own, on the device's step.
-  if (!check && said?.allowed === false) {
+  if (!check && said?.allowed !== undefined) {
+    const label = 'iOS allows notifications for the app';
+    const evidence = [
+      `iOS says ${said.status}, as the SDK logged at ${said.at}`,
+    ];
     ladder.rungs
       .find((rung) => rung.id === 'device_ready')
       ?.checks.push(
-        warn(
-          'notifications_allowed',
-          'iOS allows notifications for the app',
-          'device.notifications_not_allowed',
-          [`iOS says ${said.status}, as the SDK logged at ${said.at}`]
-        )
+        said.allowed
+          ? pass('notifications_allowed', label, evidence)
+          : warn(
+              'notifications_allowed',
+              label,
+              'device.notifications_not_allowed',
+              evidence
+            )
       );
     return undefined;
   }

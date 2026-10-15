@@ -415,3 +415,19 @@ test('iOS saying no is a warning even while the flag still reads true', async ()
   assert.strictEqual(device.checks[0].cause, 'device.notifications_not_allowed');
   assert.match(device.checks[0].evidence[0], /iOS says denied/);
 });
+
+test('iOS saying yes is recorded as a passing check, with no flag to correct', async () => {
+  const device = { id: 'device_ready', checks: [] };
+  await recheckPushEnabled(
+    { rungs: [device, { id: 'profile_linked', checks: [] }] },
+    {
+      environmentId: '1',
+      userId: 'a@b.c',
+      token: 'tok',
+      authorization: { status: 'authorized', at: '00:55:00.000', allowed: true },
+    },
+    async () => assert.fail('nothing to re-read')
+  );
+  assert.strictEqual(device.checks[0].verdict, 'pass');
+  assert.match(device.checks[0].evidence[0], /iOS says authorized/);
+});
