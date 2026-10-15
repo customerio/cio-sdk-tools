@@ -56,6 +56,16 @@ export function simulatorPredicate(
 /** The SDK starts every line with its tag; `[Push]` is the module these checks read. */
 export const SDK_PUSH_LINE = /^\[Push\] /;
 
+/**
+ * A line from one of the SDK's modules that write at debug level in a normal run. Any one
+ * shows the SDK's log level lets debug lines through, whatever the push module said: on a
+ * simulator with notifications off, the extension never ran and the push module was silent,
+ * while the in-app module logged its heartbeat. `[Location]` is left out: it wrote at error
+ * level on an iPhone set to error.
+ */
+export const SDK_DEBUG_LINE =
+  /^\[(?:Push|InApp|Init|Geofence|LiveActivities|CIO-Inbox|SSE|Polling)\] /;
+
 /** Causes that mean something only if the SDK was writing its lines at all. */
 const NEEDS_SDK_LINES = [
   'runtime.no_evidence',

@@ -289,3 +289,40 @@ test('a temp folder nobody removed is removed when the run ends', async () => {
   await removed.remove();
   assert.strictEqual(fs.existsSync(removed.path), false);
 });
+
+const { SDK_DEBUG_LINE } = require('../../dist/verify/areas/push/on_device/sdk_lines');
+const { markLateArrivals } = require('../../dist/verify/areas/push/on_device/send');
+const { explainNotificationsOff } = require('../../dist/verify/areas/push/on_device');
+
+test('an SDK whose in-app module logged is at debug level, though push said nothing', () => {
+  // The iPhone 16 simulator, notifications never allowed: these were the run's only lines.
+  const s1 = [
+    "[InApp] SseService: → Server event - type: 'heartbeat'",
+    '[InApp] SSE Manager: Heartbeat received (interval: 30.0s, timeout: 35.0s)',
+  ];
+  assert.ok(s1.some((line) => SDK_DEBUG_LINE.test(line)));
+  // The iPhone at log level error still wrote these, so none of them counts.
+  for (const line of ['[Location] x', '[Telemetry] x', '[TLSCBQ] x', '[FBSScene] x']) {
+    assert.doesNotMatch(line, SDK_DEBUG_LINE);
+  }
+});
+
+test('a push the store held during its cell is not late; notifications off explains it', async () => {
+  const cell = {
+    state: 'killed',
+    title: 'cio verify EFTG7 · killed',
+    verdict: 'skip',
+    cause: 'runtime.no_evidence',
+    arrived: true,
+    evidence: ['arrived: "cio verify EFTG7 · killed" is in the notification store'],
+  };
+  const [same] = await markLateArrivals([cell], async () => true);
+  assert.strictEqual(same.cause, 'runtime.no_evidence');
+
+  const off = explainNotificationsOff({ metric: 'delivered', cells: [same] }, true);
+  assert.strictEqual(off.cells[0].cause, 'device.notifications_disabled');
+
+  // One that was not seen in its window still is.
+  const [late] = await markLateArrivals([{ ...cell, arrived: undefined }], async () => true);
+  assert.strictEqual(late.cause, 'runtime.push_arrived_late');
+});

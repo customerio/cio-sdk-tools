@@ -45,6 +45,8 @@ export interface MatrixCell extends Cell {
   sentIds?: string[];
   /** On an opened cell: the person said they tapped the push. */
   tapped?: boolean;
+  /** The OS's notification store held this push while its cell was waiting. */
+  arrived?: boolean;
 }
 
 /**

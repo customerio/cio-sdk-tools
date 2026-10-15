@@ -248,7 +248,14 @@ export async function markLateArrivals(
 ): Promise<MatrixCell[]> {
   const out: MatrixCell[] = [];
   for (const cell of cells) {
-    if (!cell.title || !cell.cause || !NOT_SEEN.includes(cell.cause)) {
+    // A push the store already held during its cell was on time; what went wrong is
+    // something else, and calling it late hid that.
+    if (
+      !cell.title ||
+      !cell.cause ||
+      !NOT_SEEN.includes(cell.cause) ||
+      cell.arrived
+    ) {
       out.push(cell);
       continue;
     }

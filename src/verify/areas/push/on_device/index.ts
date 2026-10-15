@@ -6,7 +6,7 @@ import { LogCapture } from '../../../platform/logs';
 import {
   NSE_MARKERS,
   blameStoppedCapture,
-  SDK_PUSH_LINE,
+  SDK_DEBUG_LINE,
   deliveryIdsIn,
   explainSdkSilence,
   sdkWasQuiet,
@@ -172,7 +172,7 @@ export async function runDeliveredMatrix(
     }
     const silence = {
       appSpoke: capture.lines.length > 0,
-      sdkSpoke: capture.lines.some((line) => SDK_PUSH_LINE.test(line.message)),
+      sdkSpoke: capture.lines.some((line) => SDK_DEBUG_LINE.test(line.message)),
       how: "the app's processes logged",
     };
     section.cells = explainSdkSilence(section.cells, silence, options.reporter);
@@ -578,6 +578,7 @@ async function runCellBody(
     state,
     title,
     deliveryId,
+    arrived: stored ? true : undefined,
     ...judge({
       localProbe,
       available: capture.available,
