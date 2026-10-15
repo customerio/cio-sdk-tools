@@ -161,7 +161,7 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
      --check-opens --deep-link myapp://some/screen
    ```
 
-   Use a deep link your app actually routes. Any other URL makes the SDK log "Deep link was not handled", which reads as a failure. Without `--deep-link` the open is still checked.
+   Use a deep link your app actually routes. A link nothing on the device can open fails the tap. On iOS, a link on the app's own scheme that the app's deep link callback doesn't claim goes back to the app through iOS, and nothing logs whether the app routed it, so that tap is reported as a warning rather than a pass. Without `--deep-link` the open is still checked.
 
    ### Sending real pushes
 

@@ -35,12 +35,22 @@ export function blameStoppedCapture(
  * usually called NotificationService-something, which the substring keeps covering when the
  * project does not say.
  */
-export function simulatorPredicate(extensionName?: string): string {
+export function simulatorPredicate(
+  extensionName?: string,
+  /** The app's process: iOS's word that it could not open a link the SDK handed it. */
+  appProcess?: string
+): string {
+  const quoted = (name: string) => `"${name.replace(/["\\]/g, '')}"`;
   const named =
     extensionName && !extensionName.includes('NotificationService')
-      ? ` OR process == "${extensionName.replace(/["\\]/g, '')}"`
+      ? ` OR process == ${quoted(extensionName)}`
       : '';
-  return `subsystem == "io.customer.sdk" OR processImagePath CONTAINS "NotificationService"${named}`;
+  const openFailed = appProcess
+    ? ` OR (process == ${quoted(
+        appProcess
+      )} AND eventMessage BEGINSWITH "Failed to open URL")`
+    : '';
+  return `subsystem == "io.customer.sdk" OR processImagePath CONTAINS "NotificationService"${named}${openFailed}`;
 }
 
 /** The SDK starts every line with its tag; `[Push]` is the module these checks read. */
@@ -52,7 +62,16 @@ const NEEDS_SDK_LINES = [
   'runtime.push_not_handled',
   'runtime.tap_not_seen',
   'runtime.tap_lines_lost',
+  // An SDK that writes nothing writes nothing during a launch either: a cold tap with no SDK
+  // line was read as the SDK set up too late, a false failure with the wrong fix.
+  'runtime.cold_tap_not_handled',
+  'runtime.opened_not_tracked',
 ];
+
+/** The SDK wrote not one line in a run where the app was plainly at work. */
+export function sdkWasQuiet(seen: { appSpoke: boolean; sdkSpoke: boolean }) {
+  return seen.appSpoke && !seen.sdkSpoke;
+}
 
 /**
  * A run where the app was plainly there and the SDK wrote not one line did not show an SDK
@@ -71,20 +90,22 @@ export function explainSdkSilence(
   },
   reporter?: { cell(state: string): { done(cell: MatrixCell): void } }
 ): MatrixCell[] {
-  if (!seen.appSpoke || seen.sdkSpoke) return cells;
+  if (!sdkWasQuiet(seen)) return cells;
   return cells.map((cell) => {
     if (!cell.cause || !NEEDS_SDK_LINES.includes(cell.cause)) return cell;
     const quiet: MatrixCell = {
       ...cell,
       verdict: 'skip',
       cause: 'runtime.sdk_logging_off',
-      summary: undefined,
+      // The row is printed again under the same state, so its summary says what changed; a
+      // longer label ran past the state column.
+      summary: 'unproven: the SDK logged nothing',
       evidence: [
         ...cell.evidence,
         `not one [Push] line from the SDK in this run, though ${seen.how} (was: ${cell.cause})`,
       ],
     };
-    reporter?.cell(`${cell.state}, SDK quiet`).done(quiet);
+    reporter?.cell(cell.state).done(quiet);
     return quiet;
   });
 }

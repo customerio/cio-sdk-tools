@@ -16,6 +16,7 @@ import {
   loadProject,
   productFilename,
   absolutePath,
+  urlSchemes,
 } from '../../../platform/ios/xcode';
 import {
   SourceSignals,
@@ -61,6 +62,8 @@ export interface WiringResult {
   processNames?: string[];
   /** The extension's process: a line from it is the OS's word that the extension ran. */
   extensionName?: string;
+  /** The URL schemes the app declares, lowercased. */
+  urlSchemes?: string[];
 }
 
 /**
@@ -191,6 +194,7 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
       .filter((target): target is Target => Boolean(target))
       .map((target) => target.settings.PRODUCT_NAME || target.name),
     extensionName: nse ? nse.settings.PRODUCT_NAME || nse.name : undefined,
+    urlSchemes: await urlSchemes(model.projectPath, app),
   };
 }
 

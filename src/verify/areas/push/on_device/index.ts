@@ -9,6 +9,7 @@ import {
   SDK_PUSH_LINE,
   deliveryIdsIn,
   explainSdkSilence,
+  sdkWasQuiet,
   extensionRanIn,
   simulatorPredicate,
 } from './sdk_lines';
@@ -66,6 +67,8 @@ export interface MatrixOptions {
   cellTimeoutMs?: number;
   /** Ask for a tap on the push of these states, once it arrives. */
   tap?: TapPlan;
+  /** The URL schemes the app declares, lowercased. */
+  appSchemes?: string[];
 }
 
 /**
@@ -113,7 +116,10 @@ export async function runDeliveredMatrix(
     options.evidenceDirectory,
     {
       processes: options.processNames,
-      predicate: simulatorPredicate(options.extensionName),
+      predicate: simulatorPredicate(
+        options.extensionName,
+        options.processNames?.[0]
+      ),
     }
   );
 
@@ -170,6 +176,7 @@ export async function runDeliveredMatrix(
       how: "the app's processes logged",
     };
     section.cells = explainSdkSilence(section.cells, silence, options.reporter);
+    if (sdkWasQuiet(silence)) section.sdkQuiet = true;
     tapped.splice(
       0,
       tapped.length,
@@ -313,6 +320,7 @@ async function runCell(
             evidenceDirectory: options.evidenceDirectory,
             reporter: options.reporter,
             appProcess: options.processNames?.[0],
+            appSchemes: options.appSchemes,
           },
           capture,
           tapHandle

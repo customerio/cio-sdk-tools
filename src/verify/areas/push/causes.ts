@@ -286,8 +286,7 @@ export const CAUSES: Record<string, PushCause> = {
     severity: 'blocker',
     summary: 'The SDK has no push token stored on this target.',
     remedy:
-      'Register for notifications and accept the permission prompt, then background and foreground the app. Without a token there is no address to send to.',
-    docs: IOS_PUSH_DOCS,
+      'Open the app, and run again: the SDK stores a token the first time the app starts with push set up. If the app has been opened, check it registers for push at launch, and background and foreground it once. Without a token there is no address to send to.',
   },
   'device.identity_anonymous': {
     stage: 'device_ready',
@@ -346,9 +345,10 @@ export const CAUSES: Record<string, PushCause> = {
   'profile.push_disabled': {
     stage: 'profile_linked',
     severity: 'warning',
-    summary: 'The linked device reports push_enabled false.',
+    summary:
+      'The linked device reports push_enabled false: notifications may be off for the app.',
     remedy:
-      'Treat this as a hint, not a verdict — it has read false while permission was genuinely granted, and a later identify flipped it true. The registered token is the stronger evidence.',
+      "Allow notifications for the app: accept its prompt, or turn them on in the device's Settings under Notifications. Until then a push can still arrive, and on iOS be counted as delivered, without anything showing. The flag lags a new Allow until the app next starts or comes to the front, so a run that sends pushes reads it again after them.",
   },
   'send.provider_rejected': {
     stage: 'delivered_matrix',
@@ -494,7 +494,15 @@ export const CAUSES: Record<string, PushCause> = {
     severity: 'blocker',
     summary: 'The SDK reported the open, and the deep link went nowhere.',
     remedy:
-      'The SDK tried the link and nothing claimed it. Check the URL against what the app actually routes — a scheme the app declares but whose host it does not handle fails exactly this way — and check the `deepLinkCallback` returns true once it has navigated.',
+      "Nothing could open the link: the app's deep link callback did not claim it, and no app on the device handles its scheme. Check the URL is one the app routes: a scheme it declares (CFBundleURLTypes on iOS, an intent filter on Android) or a universal or app link it handles, and that `deepLinkCallback` returns true once it has navigated.",
+  },
+  'runtime.deep_link_back_to_app': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      "The deep link went back to the app through iOS, and where it went from there isn't logged.",
+    remedy:
+      "Nothing in the app claimed the link, so the SDK handed it to iOS (\"Deep link handled by system\"). Its scheme is the app's own, so iOS opened the app with it again, through the app or scene delegate's URL handler, and nothing logs whether that handler routed it: a link the app can't route lands here too. Check the screen the tap landed on. To have it proven, handle the link in `deepLinkCallback` and return true once you've navigated, so the SDK logs it as handled.",
   },
   'runtime.deep_link_absent': {
     stage: 'delivered_matrix',

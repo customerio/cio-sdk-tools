@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { readPlist, run } from '../../core/exec';
+import { scratchDirectory } from '../../core/cleanup';
 
 export type TargetKind = 'simulator' | 'device';
 
@@ -117,17 +117,18 @@ async function listSimulators(): Promise<Target[]> {
 }
 
 async function listPhysicalDevices(): Promise<Target[]> {
-  const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'cio-verify-'));
-  const output = path.join(scratch, 'devices.json');
+  const scratch = await scratchDirectory();
+  const output = path.join(scratch.path, 'devices.json');
   const { code } = await run(
     'xcrun',
     ['devicectl', 'list', 'devices', '--json-output', output],
     90_000
   );
-  if (code !== 0) return [];
-
-  const text = await fs.readFile(output, 'utf8').catch(() => undefined);
-  await fs.rm(scratch, { recursive: true, force: true });
+  const text =
+    code === 0
+      ? await fs.readFile(output, 'utf8').catch(() => undefined)
+      : undefined;
+  await scratch.remove();
   if (!text) return [];
 
   try {
@@ -265,10 +266,11 @@ async function locateDeviceApp(
   target: Target,
   bundleId: string
 ): Promise<AppLocation> {
-  const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'cio-verify-'));
-  const cleanup = () => fs.rm(scratch, { recursive: true, force: true });
+  // Holds a copy of the app's data: removed by `cleanup`, or at exit if a run is interrupted.
+  const scratch = await scratchDirectory();
+  const cleanup = scratch.remove;
 
-  const listing = path.join(scratch, 'apps.json');
+  const listing = path.join(scratch.path, 'apps.json');
   const apps = await run(
     'xcrun',
     [
@@ -300,7 +302,7 @@ async function locateDeviceApp(
 
   // The SDK's stores live in the app's own data container, which is readable for a
   // development build. Copying the whole Preferences directory is one round trip.
-  const destination = path.join(scratch, 'pulled');
+  const destination = path.join(scratch.path, 'pulled');
   await fs.mkdir(destination, { recursive: true });
   const copy = await run(
     'xcrun',
@@ -433,14 +435,14 @@ async function nestedPlist(
   const base64 = await plistString(file, keyPath);
   if (!base64) return undefined;
 
-  const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'cio-verify-'));
-  const nested = path.join(scratch, 'nested.plist');
+  const scratch = await scratchDirectory();
+  const nested = path.join(scratch.path, 'nested.plist');
   try {
     await fs.writeFile(nested, Buffer.from(base64, 'base64'));
     const { stdout, code } = await run('plutil', ['-p', nested], 30_000);
     return code === 0 ? stdout : undefined;
   } finally {
-    await fs.rm(scratch, { recursive: true, force: true });
+    await scratch.remove();
   }
 }
 
@@ -524,8 +526,10 @@ export async function tokenFreshness(
   preferencesDirectory: string,
   bundleId: string
 ): Promise<Freshness> {
+  // The folder that holds the bundle, not the bundle: `simctl install` keeps the build's
+  // timestamps on the `.app`, so a build from a month ago installed today read as a month old.
   const installedAt = appPath
-    ? (await fs.stat(appPath).catch(() => undefined))?.mtime
+    ? (await fs.stat(path.dirname(appPath)).catch(() => undefined))?.mtime
     : undefined;
   // The newest of the SDK's own store and the CDP layer's store, because the SDK rewrites
   // its file only when the token actually changes: re-registering with the same token

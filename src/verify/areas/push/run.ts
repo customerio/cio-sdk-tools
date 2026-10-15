@@ -227,11 +227,14 @@ export async function runPush(
     // that installed the build before calling us leaves nothing to watch, and that run is
     // honestly a `read` — the freshness note is where its recency shows up.
     provenance: climbed.observed ? 'observed' : 'read',
-    advice: climbed.freshnessNote
-      ? [
-          `${climbed.freshnessNote} — a run that watches a fresh install proves more; see --watch-registration`,
-        ]
-      : undefined,
+    advice: advice([
+      ...(climbed.notes ?? []),
+      ...(climbed.freshnessNote
+        ? [
+            `${climbed.freshnessNote} — a run that watches a fresh install proves more; see --watch-registration`,
+          ]
+        : []),
+    ]),
     consent: climbed.consent,
     tool: { name: packageJson.name, version: packageJson.version },
     command: 'verify push',
@@ -291,4 +294,8 @@ async function choosePushes(
     ],
     { flag: '--app-states <list> and --check-opens' }
   );
+}
+
+function advice(notes: string[]): string[] | undefined {
+  return notes.length > 0 ? notes : undefined;
 }

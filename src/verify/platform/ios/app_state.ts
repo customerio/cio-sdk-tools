@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { run } from '../../core/exec';
+import { scratchDirectory } from '../../core/cleanup';
 import { AppState, StateResult } from '../app_state';
 import { Target } from './device';
 
@@ -194,8 +194,8 @@ async function devicePid(
 ): Promise<string | undefined> {
   if (!executableName) return undefined;
 
-  const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'cio-verify-'));
-  const output = path.join(scratch, 'processes.json');
+  const scratch = await scratchDirectory();
+  const output = path.join(scratch.path, 'processes.json');
   const { code } = await run(
     'xcrun',
     [
@@ -213,7 +213,7 @@ async function devicePid(
 
   const text =
     code === 0 ? await fs.readFile(output, 'utf8').catch(() => '') : '';
-  await fs.rm(scratch, { recursive: true, force: true });
+  await scratch.remove();
   if (!text) return undefined;
 
   try {

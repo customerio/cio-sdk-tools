@@ -1,4 +1,5 @@
 import { ChildProcess } from 'child_process';
+import { atExit } from '../core/cleanup';
 
 /**
  * What every log capture hands back, whichever platform it reads: the lines so far, a way to
@@ -97,27 +98,11 @@ export interface StreamAgreement {
  * which is the exact condition this module works hardest to tell apart from an SDK that
  * did nothing. One was found alive 25 hours after the run that started it.
  */
-const live = new Set<ChildProcess>();
-let cleanupInstalled = false;
+const tracked = new WeakSet<ChildProcess>();
 
 export function trackCapture(child: ChildProcess): void {
-  track(child);
-}
-
-function track(child: ChildProcess): void {
-  live.add(child);
-  child.once('exit', () => live.delete(child));
-  if (cleanupInstalled) return;
-  cleanupInstalled = true;
-  const killAll = (): void => {
-    for (const process of live) process.kill('SIGKILL');
-    live.clear();
-  };
-  process.once('exit', killAll);
-  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
-    process.once(signal, () => {
-      killAll();
-      process.exit(130);
-    });
-  }
+  if (tracked.has(child)) return;
+  tracked.add(child);
+  const forget = atExit(() => child.kill('SIGKILL'));
+  child.once('exit', forget);
 }

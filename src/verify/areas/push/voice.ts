@@ -58,17 +58,38 @@ export const PUSH_VOICE: Voice = {
     // Name what was actually proven, and only that. On the device: the push arrived and,
     // when the tap test ran, the tap reached the SDK. End to end: Customer.io recorded both.
     const opened = ran.some((section) => section.metric === 'opened');
+    // iOS runs the extension, and the SDK reports delivered, for an app whose notifications
+    // were never allowed: the pushes pass and nobody saw one. A tapped push was seen.
+    const hidden =
+      !opened &&
+      report.causes.some((cause) => cause.code === 'profile.push_disabled')
+        ? [
+            'the device still reports notifications off, so the pushes may have arrived without showing: allow notifications for the app.',
+          ]
+        : [];
     if (ran.some((section) => section.metric === 'recorded')) {
       return [
         opened
           ? 'push works end to end: each push arrived, each tap reached the SDK, and Customer.io recorded both.'
           : 'push works end to end: each push arrived, and Customer.io recorded it as delivered.',
+        ...hidden,
       ];
     }
+    // Arrival is read from the OS either way. That the app handled a push is read from the
+    // SDK's lines, so an SDK that wrote none proved arrival and nothing more.
+    const quiet = ran.some((section) => section.sdkQuiet);
     return [
       opened
         ? 'push works on the device: each push arrived and each tap reached the SDK.'
+        : quiet
+        ? 'each push arrived on the device.'
         : 'push works on the device: each push arrived and the app handled it.',
+      ...hidden,
+      ...(quiet
+        ? [
+            "the SDK logged nothing, so only arrival was proven: set the SDK's log level to debug to see it handle them.",
+          ]
+        : []),
       "Customer.io's record of them wasn't checked: --depth end-to-end reads it.",
     ];
   },

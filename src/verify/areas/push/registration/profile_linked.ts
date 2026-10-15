@@ -10,6 +10,13 @@ import { fail, pass, warn } from '../../../core/report/ladder';
 import { Rung } from '../../../core/report/types';
 import { RUNG_TITLES } from '../types';
 
+/**
+ * How long a login or a new device may take to reach Customer.io. Read straight after a
+ * login on an Android emulator, the profile was missing at 5s and there by 80s; on an iOS
+ * simulator it was there within 10s.
+ */
+export const SETTLE = { maxMs: 90_000, pollMs: 5_000 };
+
 export interface ProfileInput {
   cio: CioContext;
   environmentId?: string;
@@ -25,6 +32,10 @@ export interface ProfileInput {
    */
   candidates?: Workspace[];
   onSweep?: (workspace: Workspace) => void;
+  /** Said while waiting for a login or a device to reach Customer.io. */
+  onWait?: (text: string) => void;
+  find?: typeof findProfile;
+  settle?: Partial<typeof SETTLE>;
 }
 
 /**
@@ -61,12 +72,45 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
     return rung;
   }
 
-  const profile = await findProfile(input.environmentId, identifier);
-  const linked = profile?.devices.some((device) => device.id === input.token);
+  const find = input.find ?? findProfile;
+  const environmentId = input.environmentId;
+  const holds = (found: Profile | null) =>
+    Boolean(found?.devices.some((device) => device.id === input.token));
+  let profile = await find(environmentId, identifier);
+  let linked = holds(profile);
 
   // Sweep only when the chosen workspace has not answered the question.
   const hits = !profile || !linked ? await sweep(input, identifier) : [];
   const elsewhere = describeHits(hits);
+
+  // A login seconds old, or the device it just registered, may not have reached Customer.io
+  // yet: read straight after a login, a check failed a profile that turned up a minute
+  // later. So the chosen workspace is read again for a while before anything is called
+  // missing, unless another workspace already holds the device, which explains it.
+  const waited: string[] = [];
+  if ((!profile || !linked) && !hits.some((hit) => hit.hasToken)) {
+    const settle = { ...SETTLE, ...input.settle };
+    const startedAt = Date.now();
+    while (Date.now() - startedAt + settle.pollMs <= settle.maxMs) {
+      input.onWait?.(
+        `waiting for ${
+          profile ? 'this device' : identifier
+        } to reach Customer.io (${Math.round(
+          (Date.now() - startedAt) / 1000
+        )}s of ${settle.maxMs / 1000}s)`
+      );
+      await new Promise((resolve) => setTimeout(resolve, settle.pollMs));
+      profile = await find(environmentId, identifier);
+      linked = holds(profile);
+      if (profile && linked) break;
+    }
+    const seconds = Math.round((Date.now() - startedAt) / 1000);
+    waited.push(
+      profile && linked
+        ? `there after ${seconds}s: a new login or device takes a while to reach Customer.io`
+        : `read again for ${seconds}s, in case a new login had not reached Customer.io yet`
+    );
+  }
 
   if (!profile) {
     rung.checks.push(
@@ -81,13 +125,7 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
         [
           `exact match on id and email in environment ${input.environmentId}`,
           ...elsewhere,
-          // Only worth saying when nothing was found anywhere: once the profile has been
-          // located in another workspace, sync latency is not the explanation.
-          ...(hits.length === 0
-            ? [
-                'profile sync runs on a cycle, so a login seconds old may not be there yet',
-              ]
-            : []),
+          ...waited,
         ]
       )
     );
@@ -104,6 +142,7 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
       `${profile.devices.length} device${
         profile.devices.length === 1 ? '' : 's'
       } linked`,
+      ...waited,
     ])
   );
 
@@ -227,8 +266,8 @@ export function deviceLinkChecks(profile: Profile, input: ProfileInput) {
     );
   }
 
-  // Deliberately a warning: this field has read false while permission was granted, and a
-  // later identify flipped it true. The token is the stronger evidence, and it is present.
+  // Deliberately a warning: this field has read false while permission was granted, until
+  // the app next reported. It is read again after the pushes (see recheckPushEnabled).
   if (linked.pushEnabled === 'false') {
     checks.push(
       warn(
@@ -241,4 +280,45 @@ export function deviceLinkChecks(profile: Profile, input: ProfileInput) {
   }
 
   return checks;
+}
+
+/**
+ * The SDK reports push_enabled when the app starts or comes to the front, so the flag lags a
+ * new Allow: it read false at the start of a run straight after one, and true once the run's
+ * launches had reported. Read again after the pushes, a false that is still there means what
+ * it says; one that flipped is no finding at all.
+ *
+ * Returns a note for the end of the report when it flipped.
+ */
+export async function recheckPushEnabled(
+  ladder: { rungs: Rung[] },
+  input: { environmentId?: string; userId?: string; token?: string },
+  find: typeof findProfile = findProfile
+): Promise<string | undefined> {
+  const check = ladder.rungs
+    .find((rung) => rung.id === 'profile_linked')
+    ?.checks.find(
+      (each) => each.id === 'device_push_enabled' && each.verdict === 'warn'
+    );
+  if (!check || !input.environmentId || !input.userId || !input.token) {
+    return undefined;
+  }
+  const profile = await find(input.environmentId, input.userId).catch(
+    () => null
+  );
+  const now = profile?.devices.find((device) => device.id === input.token)
+    ?.pushEnabled;
+  if (now === 'true') {
+    check.verdict = 'pass';
+    check.cause = undefined;
+    check.evidence = ['push_enabled: false before the pushes, true after them'];
+    return 'push_enabled read false at the start and true after the pushes: it lags a new Allow until the app next reports';
+  }
+  check.evidence = [
+    ...(check.evidence ?? []),
+    now === 'false'
+      ? 'still false after the pushes, which started the app again'
+      : 'could not be read again after the pushes',
+  ];
+  return undefined;
 }

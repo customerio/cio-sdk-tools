@@ -60,6 +60,11 @@ export interface MatrixSection extends Section {
    */
   metric: 'delivered' | 'opened' | 'recorded';
   cells: MatrixCell[];
+  /**
+   * The app was at work and the SDK wrote not one line: the OS proved each push arrived,
+   * and nothing proved the app handled it.
+   */
+  sdkQuiet?: boolean;
 }
 
 /** A ladder whose sections are push's: one per metric. */

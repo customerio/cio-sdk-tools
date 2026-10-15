@@ -20,7 +20,10 @@ import { explainNotificationsOff, runDeliveredMatrix } from './on_device';
 import { whyNoSend } from './on_device/send';
 import { ALL_STATES, AppState } from '../../platform/app_state';
 import { deviceReady, gatherDevice } from './registration/device_ready';
-import { profileLinked } from './registration/profile_linked';
+import {
+  profileLinked,
+  recheckPushEnabled,
+} from './registration/profile_linked';
 import { projectWiring } from './registration/project_wiring';
 import {
   gatherWorkspace,
@@ -138,6 +141,7 @@ export async function climb(
       candidates: selection.resolution.candidates,
       onSweep: (workspace) =>
         profileRung.phase(`looking in ${workspace.name ?? workspace.id}`),
+      onWait: (text) => profileRung.phase(text),
       bundleId: wiring.bundleId,
     });
     ladder.adopt(profile, profileTimer());
@@ -190,12 +194,27 @@ export async function climb(
         sandbox: wiring.apsEnvironment !== 'production',
         processNames: wiring.processNames,
         extensionName: wiring.extensionName,
+        appSchemes: wiring.urlSchemes,
       });
     }
+    // Only pushes that went out started the app again, which is what updates the flag.
+    const pushEnabledNote =
+      options.send &&
+      !options.dryRun &&
+      !unreadable &&
+      !offline &&
+      consent?.granted !== false
+        ? await recheckPushEnabled(ladder, {
+            environmentId: workspace.resolution?.workspace?.id,
+            userId: device.sdk?.userId,
+            token: device.sdk?.pushDeviceToken,
+          })
+        : undefined;
 
     return {
       projectName: wiring.model.projectName,
       observed,
+      notes: pushEnabledNote ? [pushEnabledNote] : undefined,
       freshnessNote: freshness({
         installedAt: device.freshness?.installedAt,
         observed,
@@ -320,6 +339,7 @@ async function matrix(
     extensionName?: string;
     /** The profile reports push_enabled false. */
     pushDisabled?: boolean;
+    appSchemes?: string[];
   }
 ): Promise<void> {
   // Registration sends nothing, and says so in its closing line rather than as a skipped
@@ -354,6 +374,7 @@ async function matrix(
     provider: inputs.provider,
     processNames: inputs.processNames,
     extensionName: inputs.extensionName,
+    appSchemes: inputs.appSchemes,
     states,
     dryRun: options.dryRun,
     resend: options.resend,

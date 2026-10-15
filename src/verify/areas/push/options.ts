@@ -108,9 +108,17 @@ export function parseStates(list?: string): AppState[] | undefined {
 export function evidenceDirectoryFor(options: VerifyPushOptions): string {
   return (
     options.evidence ??
-    path.join(
-      os.tmpdir(),
-      `cio-verify-${new Date().toISOString().slice(0, 19)}`
-    )
+    path.join(os.tmpdir(), `cio-verify-${localStamp(new Date())}`)
   );
+}
+
+/**
+ * `2026-10-15T23:15:06` in the machine's own time, which is what the device log and the
+ * person's clock show: a folder named in UTC read four hours off against both.
+ */
+export function localStamp(at: Date): string {
+  const two = (value: number) => String(value).padStart(2, '0');
+  return `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(
+    at.getDate()
+  )}T${two(at.getHours())}:${two(at.getMinutes())}:${two(at.getSeconds())}`;
 }

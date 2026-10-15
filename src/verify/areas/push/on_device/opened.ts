@@ -41,6 +41,13 @@ export const OPENED_MARKERS = {
   linkHandled:
     /Deep link handled by (?:host app callback implementation|internal host app navigation|system)/,
   linkUnhandled: /Deep link was not handled/,
+  /** The SDK handed the link to iOS. The SDK says this whatever iOS then does with it. */
+  linkBySystem: /Deep link handled by system/,
+  /**
+   * iOS could not open what it was handed, logged by LaunchServices in the app's own process
+   * (`Code=-10814`: no app for the URL). The URL itself is redacted on a phone.
+   */
+  linkOpenFailed: /^Failed to open URL /,
   /**
    * iOS itself handing the tap to the app, logged by UIKit in the app's own process. It
    * proves the tap happened whatever the SDK does next — on a phone, a cold launch from a
@@ -114,6 +121,15 @@ export const TAP_TIMEOUT_MS = 180_000;
  */
 const TAP_SEQUENCE_TIMEOUT_MS = 30_000;
 const TAP_POLL_MS = 500;
+/** How long iOS gets to say it could not open a link the SDK handed it. */
+const LINK_ANSWER_MS = 1_500;
+
+/** A URL's scheme, lowercased: `apn-uikit` for `apn-uikit://settings`. */
+export function schemeOf(url?: string): string | undefined {
+  return url
+    ? /^([a-z][a-z0-9+.-]*):/i.exec(url)?.[1].toLowerCase()
+    : undefined;
+}
 
 /**
  * Ask for a tap on the push a delivered cell just sent, and read what the SDK did with it.
@@ -132,6 +148,8 @@ export async function tapIosPush(
     reporter?: Reporter;
     /** The app's process name, so a launch from the tap can be caught on a phone. */
     appProcess?: string;
+    /** The URL schemes the app declares, lowercased. */
+    appSchemes?: string[];
   },
   capture: LogCapture,
   handle?: CellHandle
@@ -194,6 +212,14 @@ export async function tapIosPush(
     ) {
       await sleep(TAP_POLL_MS);
     }
+    // The SDK says it handed the link to iOS before iOS answers; a failure to open it follows
+    // within tens of milliseconds, so it is given a moment to arrive.
+    const handedOver = observeOpened(
+      capture.since(push.mark).map((line) => line.message)
+    ).observed;
+    if (handedOver.linkBySystem && !handedOver.linkOpenFailed) {
+      await sleep(LINK_ANSWER_MS);
+    }
   }
 
   const launch = await cold?.finish();
@@ -204,6 +230,10 @@ export async function tapIosPush(
   // the delivered check's lines reads as a tap.
   const lines = capture.since(push.mark).map((line) => line.message);
   const { observed, deliveryId } = observeOpened(lines);
+  const linkToOwnApp = Boolean(
+    options.tap.link &&
+      options.appSchemes?.includes(schemeOf(options.tap.link) ?? '')
+  );
   const matched =
     push.expectedId && deliveryId ? deliveryId === push.expectedId : undefined;
 
@@ -214,6 +244,17 @@ export async function tapIosPush(
     if (!options.tap.link) {
       evidence.push(
         'no deep link was sent, so where the tap goes was not checked'
+      );
+    }
+    if (observed.linkOpenFailed) {
+      evidence.push(
+        'the SDK handed the link to iOS ("handled by system"), and iOS logged "Failed to open URL": nothing could open it'
+      );
+    } else if (observed.linkBySystem && linkToOwnApp) {
+      evidence.push(
+        `the SDK handed the link to iOS ("handled by system"), and its scheme is the app's own (${schemeOf(
+          options.tap.link
+        )}), so iOS opened the app with it again; whether the app routed it is not logged`
       );
     }
     if (deliveryId) {
@@ -247,6 +288,7 @@ export async function tapIosPush(
       lossy: launch?.complete ? false : capture.lossy,
       matched,
       linkSent: Boolean(options.tap.link),
+      linkToOwnApp,
       ...observed,
     }),
     evidence,
@@ -487,6 +529,10 @@ export function observeOpened(lines: string[]): {
     .map((line) => OPENED_MARKERS.tracked.exec(line)?.[1])
     .find(Boolean);
   const linkAttempted = seen(OPENED_MARKERS.linkHandling);
+  // Only a failure after the SDK handed the link over is about this link.
+  const handedOver = lines.findIndex((line) =>
+    OPENED_MARKERS.linkBySystem.test(line)
+  );
   return {
     observed: {
       clicked: seen(OPENED_MARKERS.clicked) || linkAttempted,
@@ -496,6 +542,12 @@ export function observeOpened(lines: string[]): {
       linkAttempted,
       linkHandled: seen(OPENED_MARKERS.linkHandled),
       linkUnhandled: seen(OPENED_MARKERS.linkUnhandled),
+      linkBySystem: handedOver >= 0,
+      linkOpenFailed:
+        handedOver >= 0 &&
+        lines
+          .slice(handedOver + 1)
+          .some((line) => OPENED_MARKERS.linkOpenFailed.test(line)),
       osDelivered: seen(OPENED_MARKERS.osDelivered),
     },
     deliveryId,
@@ -526,6 +578,15 @@ export function judgeOpened(observed: {
   linkAttempted: boolean;
   linkHandled: boolean;
   linkUnhandled: boolean;
+  /** The SDK handed the link to iOS. */
+  linkBySystem?: boolean;
+  /** iOS then said it could not open it. */
+  linkOpenFailed?: boolean;
+  /**
+   * The link's scheme is one the app declares, so iOS hands it straight back to the app:
+   * "handled by system" then says nothing about where it went.
+   */
+  linkToOwnApp?: boolean;
   /**
    * The push carried a deep link. Without one, where the tap goes is not judged: the open is
    * the whole claim. Absent counts as sent, the way every push used to carry one.
@@ -566,7 +627,9 @@ export function judgeOpened(observed: {
   if (observed.linkSent === false) return { verdict: 'pass' };
   // The open was handled. The deep link is a second, independent claim: a push that opens
   // but routes nowhere is a real defect, and a common one — when the SDK says so.
-  if (observed.linkUnhandled) {
+  // The SDK says "handled by system" as soon as it hands the link over, whatever iOS does
+  // next; iOS's own failure to open it is the answer.
+  if (observed.linkUnhandled || observed.linkOpenFailed) {
     return { verdict: 'fail', cause: 'runtime.deep_link_not_handled' };
   }
   // Started and never finished is not the same claim. On a phone the app was suspended by
@@ -576,6 +639,11 @@ export function judgeOpened(observed: {
   }
   if (!observed.linkAttempted) {
     return { verdict: 'warn', cause: 'runtime.deep_link_absent' };
+  }
+  // Nothing in the app claimed the link, and iOS opened the app with it again: whether the
+  // app's URL handler then routed it is logged nowhere this run reads.
+  if (observed.linkBySystem && observed.linkToOwnApp) {
+    return { verdict: 'warn', cause: 'runtime.deep_link_back_to_app' };
   }
   return { verdict: 'pass' };
 }

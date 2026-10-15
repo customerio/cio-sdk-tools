@@ -5,7 +5,7 @@ import { startAndroidCapture } from '../../../platform/android/logcat';
 import { ANDROID_MARKERS, androidDeliveryIds } from './sdk_lines';
 import { setAndroidState } from '../../../platform/android/app_state';
 import { LogCapture } from '../../../platform/logs';
-import { SDK_PUSH_LINE, explainSdkSilence } from './sdk_lines';
+import { SDK_PUSH_LINE, explainSdkSilence, sdkWasQuiet } from './sdk_lines';
 import {
   eachState,
   markLateArrivals,
@@ -100,6 +100,7 @@ export async function runAndroidDeliveredMatrix(
       how: "the notification list showed this run's pushes",
     };
     section.cells = explainSdkSilence(section.cells, silence, options.reporter);
+    if (sdkWasQuiet(silence)) section.sdkQuiet = true;
     tapped.splice(
       0,
       tapped.length,

@@ -405,6 +405,31 @@ export async function apsEnvironment(
   return typeof value === 'string' ? value : undefined;
 }
 
+/**
+ * The URL schemes the app declares (`CFBundleURLTypes`), lowercased. A link on one of them
+ * that the SDK hands to iOS comes straight back to this app, so iOS opening it proves nothing
+ * about where it went.
+ */
+export async function urlSchemes(
+  projectPath: string,
+  target: Target
+): Promise<string[]> {
+  const plistPath = absolutePath(projectPath, target.settings.INFOPLIST_FILE);
+  if (!plistPath) return [];
+  const plist = await readPlist<Record<string, unknown>>(plistPath);
+  const types = plist?.['CFBundleURLTypes'];
+  if (!Array.isArray(types)) return [];
+  return types.flatMap((type: Record<string, unknown>) =>
+    Array.isArray(type?.['CFBundleURLSchemes'])
+      ? (type['CFBundleURLSchemes'] as unknown[])
+          .filter((scheme): scheme is string => typeof scheme === 'string')
+          .map((scheme) =>
+            expandBuildVariables(scheme, target.settings).toLowerCase()
+          )
+      : []
+  );
+}
+
 export function entitlementsPath(
   projectPath: string,
   target: Target

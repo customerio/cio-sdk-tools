@@ -11,6 +11,8 @@ export interface ClimbResult {
   observed?: boolean;
   /** Advice, never an assertion: how old the build under test is. */
   freshnessNote?: string;
+  /** Other advice for the end of the report. */
+  notes?: string[];
 }
 
 /**

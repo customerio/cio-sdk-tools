@@ -17,9 +17,13 @@ import {
 import {
   androidDeviceReady,
   gatherAndroidDevice,
+  stoppedBeforeRun,
 } from './registration/android_device';
 import { androidWiring } from './registration/android_wiring';
-import { profileLinked } from './registration/profile_linked';
+import {
+  profileLinked,
+  recheckPushEnabled,
+} from './registration/profile_linked';
 import {
   gatherWorkspace,
   workspaceReady,
@@ -108,7 +112,11 @@ export async function climbAndroid(
     return { projectName: wiring.model.appModuleName };
   }
 
-  const deviceRungResult = androidDeviceReady(device, packageName);
+  const deviceRungResult = androidDeviceReady(
+    device,
+    packageName,
+    options.send && !options.dryRun
+  );
   ladder.adopt(deviceRungResult, deviceMs);
   deviceRung.done(deviceRungResult);
   if (ladder.halted) {
@@ -128,6 +136,7 @@ export async function climbAndroid(
     candidates: selection.resolution.candidates,
     onSweep: (workspace) =>
       profileRung.phase(`looking in ${workspace.name ?? workspace.id}`),
+    onWait: (text) => profileRung.phase(text),
     bundleId: packageName,
   });
   ladder.adopt(profile, profileTimer());
@@ -160,10 +169,22 @@ export async function climbAndroid(
       token: device.sdk?.deviceToken,
     });
   }
+  const sent = options.send && !options.dryRun && consent?.granted !== false;
+  const pushEnabledNote = sent
+    ? await recheckPushEnabled(ladder, {
+        environmentId: workspace.resolution?.workspace?.id,
+        userId: device.sdk?.userId,
+        token: device.sdk?.deviceToken,
+      })
+    : undefined;
 
   return {
     projectName: wiring.model.appModuleName,
     observed,
+    notes: [
+      ...(sent ? [stoppedBeforeRun(device)] : []),
+      pushEnabledNote,
+    ].filter((note): note is string => Boolean(note)),
     freshnessNote: androidFreshness.note,
     consent,
   };
