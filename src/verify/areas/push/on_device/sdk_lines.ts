@@ -1,5 +1,5 @@
 import { LogLine } from '../../../platform/logs';
-import { MatrixCell } from '../types';
+import { MatrixCell, NotificationAuthorization } from '../types';
 
 /**
  * What push reads in a log: the SDK's own sentences, the extension's process, and the
@@ -51,6 +51,30 @@ export function simulatorPredicate(
       )} AND eventMessage BEGINSWITH "Failed to open URL")`
     : '';
   return `subsystem == "io.customer.sdk" OR processImagePath CONTAINS "NotificationService"${named}${openFailed}`;
+}
+
+/** The SDK's line with iOS's answer on notifications for the app. */
+export const NOTIFICATION_AUTHORIZATION =
+  /^\[Push\] Notification authorization: (\S+)/;
+
+/** The latest answer the SDK logged, or nothing when it never read one in the run. */
+export function lastAuthorization(
+  lines: LogLine[]
+): NotificationAuthorization | undefined {
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const status = NOTIFICATION_AUTHORIZATION.exec(lines[index].message)?.[1];
+    if (!status) continue;
+    return {
+      status,
+      at: lines[index].at,
+      allowed: ['authorized', 'provisional'].includes(status)
+        ? true
+        : ['denied', 'notDetermined'].includes(status)
+        ? false
+        : undefined,
+    };
+  }
+  return undefined;
 }
 
 /** The SDK starts every line with its tag; `[Push]` is the module these checks read. */

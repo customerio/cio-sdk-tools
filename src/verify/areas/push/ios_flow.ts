@@ -208,6 +208,9 @@ export async function climb(
             environmentId: workspace.resolution?.workspace?.id,
             userId: device.sdk?.userId,
             token: device.sdk?.pushDeviceToken,
+            authorization: ladder.matrices.find(
+              (section) => section.metric === 'delivered'
+            )?.notificationAuthorization,
             // A tap, or a background or foreground state, starts the app.
             appStarted:
               Boolean(options.opened) ||

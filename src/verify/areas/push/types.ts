@@ -50,6 +50,21 @@ export interface MatrixCell extends Cell {
 }
 
 /**
+ * iOS's own answer on notifications for the app, from the SDK's debug line
+ * `[Push] Notification authorization: <status>`, which it writes when it reads the status
+ * for its device update. Customer.io's push_enabled is a copy of the same answer that
+ * reached the profile 30-60s later on a simulator.
+ */
+export interface NotificationAuthorization {
+  /** `authorized`, `denied`, `notDetermined`, `provisional`, or `other(n)`. */
+  status: string;
+  /** When the SDK read it, as the log stamps the line. */
+  at: string;
+  /** Whether iOS lets the app's notifications show; unknown for a status it has not named. */
+  allowed?: boolean;
+}
+
+/**
  * One cell per app state, and every cell runs: a push that works in one state and not in
  * another is exactly the bug worth catching.
  */
@@ -67,6 +82,8 @@ export interface MatrixSection extends Section {
    * and nothing proved the app handled it.
    */
   sdkQuiet?: boolean;
+  /** The last time in the run the SDK logged what iOS says about notifications. */
+  notificationAuthorization?: NotificationAuthorization;
 }
 
 /** A ladder whose sections are push's: one per metric. */

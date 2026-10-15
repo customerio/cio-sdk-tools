@@ -8,7 +8,7 @@ import {
 import { Workspace } from '../../../platform/cio/workspace';
 import { fail, pass, warn } from '../../../core/report/ladder';
 import { Rung } from '../../../core/report/types';
-import { RUNG_TITLES } from '../types';
+import { NotificationAuthorization, RUNG_TITLES } from '../types';
 
 /**
  * How long a login or a new device may take to reach Customer.io. Read straight after a
@@ -301,6 +301,8 @@ export async function recheckPushEnabled(
      * and the app is what reports the flag, so after those alone it cannot have changed.
      */
     appStarted?: boolean;
+    /** What iOS said, as the SDK logged it during the run; decides without the profile. */
+    authorization?: NotificationAuthorization;
   },
   find: typeof findProfile = findProfile
 ): Promise<string | undefined> {
@@ -310,6 +312,19 @@ export async function recheckPushEnabled(
       (each) => each.id === 'device_push_enabled' && each.verdict === 'warn'
     );
   if (!check || !input.environmentId || !input.userId || !input.token) {
+    return undefined;
+  }
+  // iOS's own answer outranks Customer.io's lagging copy of it.
+  const said = input.authorization;
+  if (said?.allowed !== undefined) {
+    const from = `iOS says ${said.status}, as the SDK logged at ${said.at}`;
+    if (said.allowed) {
+      check.verdict = 'pass';
+      check.cause = undefined;
+      check.evidence = ['push_enabled: false in Customer.io', from];
+      return `push_enabled read false, and ${from}: the flag lags iOS`;
+    }
+    check.evidence = [...(check.evidence ?? []), from];
     return undefined;
   }
   if (input.appStarted === false) {

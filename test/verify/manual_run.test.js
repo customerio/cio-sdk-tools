@@ -367,3 +367,34 @@ test('push_enabled is not read again after pushes that never started the app', a
   assert.strictEqual(check.verdict, 'warn');
   assert.match(check.evidence.at(-1), /no push in this run started the app/);
 });
+
+const { lastAuthorization } = require('../../dist/verify/areas/push/on_device/sdk_lines');
+
+test("iOS's own answer on notifications decides push_disabled, over Customer.io's lagging flag", async () => {
+  const lines = [
+    { at: '00:40:01.000', process: 'APN UIKit', message: '[Push] Notification authorization: notDetermined' },
+    { at: '00:41:02.500', process: 'APN UIKit', message: '[Push] Notification authorization: authorized' },
+  ];
+  const said = lastAuthorization(lines);
+  assert.deepStrictEqual(said, { status: 'authorized', at: '00:41:02.500', allowed: true });
+  assert.strictEqual(lastAuthorization([]), undefined);
+  assert.strictEqual(lastAuthorization([{ ...lines[0], message: '[Push] Notification authorization: other(4)' }]).allowed, undefined);
+
+  const warned = () => ({ id: 'device_push_enabled', verdict: 'warn', cause: 'profile.push_disabled', evidence: ['push_enabled: false'] });
+  const input = { environmentId: '1', userId: 'a@b.c', token: 'tok', appStarted: false };
+  const never = async () => assert.fail('the profile is not read when iOS has answered');
+
+  const allowed = warned();
+  const note = await recheckPushEnabled({ rungs: [{ id: 'profile_linked', checks: [allowed] }] }, { ...input, authorization: said }, never);
+  assert.strictEqual(allowed.verdict, 'pass');
+  assert.match(note, /iOS says authorized, as the SDK logged at 00:41:02\.500: the flag lags iOS/);
+
+  const denied = warned();
+  await recheckPushEnabled(
+    { rungs: [{ id: 'profile_linked', checks: [denied] }] },
+    { ...input, authorization: lastAuthorization([lines[0]]) },
+    never
+  );
+  assert.strictEqual(denied.verdict, 'warn');
+  assert.match(denied.evidence.at(-1), /iOS says notDetermined/);
+});

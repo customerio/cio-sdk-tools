@@ -10,6 +10,7 @@ import {
   deliveryIdsIn,
   explainSdkSilence,
   sdkWasQuiet,
+  lastAuthorization,
   extensionRanIn,
   simulatorPredicate,
 } from './sdk_lines';
@@ -177,6 +178,7 @@ export async function runDeliveredMatrix(
     };
     section.cells = explainSdkSilence(section.cells, silence, options.reporter);
     if (sdkWasQuiet(silence)) section.sdkQuiet = true;
+    section.notificationAuthorization = lastAuthorization(capture.lines);
     tapped.splice(
       0,
       tapped.length,
