@@ -16,6 +16,7 @@ const {
 const {
   observeOpened,
   judgeOpened,
+  linkOutcome,
   schemeOf,
 } = require('../../dist/verify/areas/push/on_device/opened');
 const { PUSH_VOICE } = require('../../dist/verify/areas/push/voice');
@@ -190,6 +191,12 @@ test("a link on the app's own scheme that came back through iOS is unproven, not
   assert.deepStrictEqual(
     judgeOpened({ available: true, linkSent: true, linkToOwnApp: true, ...claimed }),
     { verdict: 'pass' }
+  );
+  assert.strictEqual(linkOutcome(observed), 'handed to iOS');
+  assert.strictEqual(linkOutcome(claimed), 'handled by the app');
+  assert.strictEqual(
+    linkOutcome(observeOpened(HANDED_TO_IOS).observed),
+    'handed to iOS, which could not open it'
   );
   assert.strictEqual(schemeOf('APN-UIKit://settings'), 'apn-uikit');
   assert.strictEqual(schemeOf(undefined), undefined);

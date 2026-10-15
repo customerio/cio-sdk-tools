@@ -124,6 +124,21 @@ const TAP_POLL_MS = 500;
 /** How long iOS gets to say it could not open a link the SDK handed it. */
 const LINK_ANSWER_MS = 1_500;
 
+/**
+ * What the SDK's lines say became of the link, in the words of the evidence line. "Handled:
+ * true" for a link the SDK handed to iOS read as proof right above a warning that it was not.
+ */
+export function linkOutcome(
+  observed: ReturnType<typeof observeOpened>['observed']
+): string {
+  if (observed.linkOpenFailed) return 'handed to iOS, which could not open it';
+  if (observed.linkUnhandled) return 'not handled';
+  if (observed.linkBySystem) return 'handed to iOS';
+  if (observed.linkHandled) return 'handled by the app';
+  if (observed.linkAttempted) return 'started, no outcome logged';
+  return 'none';
+}
+
 /** A URL's scheme, lowercased: `apn-uikit` for `apn-uikit://settings`. */
 export function schemeOf(url?: string): string | undefined {
   return url
@@ -239,7 +254,11 @@ export async function tapIosPush(
 
   if (capture.available) {
     evidence.push(
-      `log: ${lines.length} lines, click seen: ${observed.clicked}, opened tracked: ${observed.tracked}, deep link handled: ${observed.linkHandled}`
+      `log: ${lines.length} lines, click seen: ${
+        observed.clicked
+      }, opened tracked: ${observed.tracked}, deep link: ${linkOutcome(
+        observed
+      )}`
     );
     if (!options.tap.link) {
       evidence.push(
