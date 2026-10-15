@@ -19,6 +19,7 @@ import {
   SendResult,
   eachState,
   markLateArrivals,
+  unstagedCell,
   rejectedCell,
   sendVerifyPush,
 } from './send';
@@ -369,6 +370,7 @@ async function runCellBody(
   );
   evidence.push(`state via ${staged.how}`);
   if (staged.error) evidence.push(`state warning: ${staged.error}`);
+  if (!staged.ok) return unstagedCell(state, evidence);
 
   const mark = capture.mark();
   const sinceMs = Date.now() - 1_000;

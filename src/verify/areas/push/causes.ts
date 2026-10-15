@@ -569,6 +569,14 @@ export const CAUSES: Record<string, PushCause> = {
     remedy:
       'Suspect the capture, not the push: check the log tool is streaming (a filter that matches no process name returns silence), and that the app is the build you think it is. On a phone, make sure nothing else is reading its log (`pgrep -fl idevicesyslog` on the Mac): streams left running load the phone until its log stops delivering to anyone, and unplugging and replugging it resets the log relay.',
   },
+  'runtime.app_state_not_set': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      'The app could not be put in this state, so no push was sent for it.',
+    remedy:
+      'The run launches, backgrounds or stops the app itself to reach each state, and the evidence has the error. On a phone, keep it unlocked during the run (a locked phone will not launch an app) and verify a development build; on Android the app needs a launcher activity. Then run the state again.',
+  },
   'runtime.app_force_stopped': {
     stage: 'delivered_matrix',
     severity: 'warning',

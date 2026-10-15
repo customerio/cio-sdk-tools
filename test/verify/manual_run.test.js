@@ -389,3 +389,16 @@ test('a phone push that left no line at all was not seen; the capture is not bla
     cause: 'runtime.no_evidence',
   });
 });
+
+const { unstagedCell } = require('../../dist/verify/areas/push/on_device/send');
+
+test('a state the app could not be put in sends nothing and claims nothing', () => {
+  const { cell, noPush } = unstagedCell('background', [
+    'state via devicectl process launch',
+    'state warning: The application failed to launch because the device was locked.',
+  ]);
+  assert.deepStrictEqual([cell.verdict, cell.cause], ['skip', 'runtime.app_state_not_set']);
+  assert.match(cell.evidence.at(-1), /no push was sent/);
+  assert.match(noPush, /could not be put in this state/);
+  assert.match(CAUSES['runtime.app_state_not_set'].remedy, /unlocked/);
+});

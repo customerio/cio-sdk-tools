@@ -224,6 +224,26 @@ export async function eachState(
   return cells;
 }
 
+/**
+ * A state the app could not be put in gets no push. Sent anyway, the row claimed a state the
+ * app was never in: a background push "received" by an app that never launched.
+ */
+export function unstagedCell(
+  state: MatrixCell['state'],
+  evidence: string[]
+): { cell: MatrixCell; noPush: string } {
+  return {
+    cell: {
+      state,
+      verdict: 'skip',
+      cause: 'runtime.app_state_not_set',
+      evidence: [...evidence, 'no push was sent for this state'],
+    },
+    noPush:
+      'the app could not be put in this state, so no push was sent to tap',
+  };
+}
+
 /** Causes that mean a push was not seen to arrive within its cell's window. */
 const NOT_SEEN = [
   'runtime.push_never_arrived',

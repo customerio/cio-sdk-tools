@@ -9,6 +9,7 @@ import { SDK_PUSH_LINE, explainSdkSilence, sdkWasQuiet } from './sdk_lines';
 import {
   eachState,
   markLateArrivals,
+  unstagedCell,
   rejectedCell,
   sendVerifyPush,
 } from './send';
@@ -198,6 +199,7 @@ async function runCellBody(
   );
   evidence.push(`state via ${staged.how}`);
   if (staged.error) evidence.push(`state warning: ${staged.error}`);
+  if (!staged.ok) return unstagedCell(state, evidence);
 
   const stopped = await packageStopped(options.serial, options.packageName);
   if (stopped) {
