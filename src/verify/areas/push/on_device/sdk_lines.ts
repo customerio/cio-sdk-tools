@@ -73,13 +73,19 @@ export function lastAuthorization(
     return {
       status,
       at: lines[index].at,
-      allowed: ['authorized', 'provisional', 'granted'].includes(status)
-        ? true
-        : ['denied', 'notDetermined'].includes(status)
-        ? false
-        : undefined,
+      source: 'sdk',
+      allowed: notificationsAllowed(status),
     };
   }
+  return undefined;
+}
+
+/** Whether a status lets the app's notifications show; unknown for one iOS has not named. */
+export function notificationsAllowed(status: string): boolean | undefined {
+  if (['authorized', 'provisional', 'ephemeral', 'granted'].includes(status)) {
+    return true;
+  }
+  if (['denied', 'notDetermined'].includes(status)) return false;
   return undefined;
 }
 

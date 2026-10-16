@@ -36,7 +36,7 @@ export interface Voice {
   matrixTitle?(section: string): string;
   /** A cell's roll-up phrase, when the cell did not write its own. */
   cellSummary(cell: Cell, section: string): string;
-  /** A cell named in a sentence about the whole run: "killed opened". */
+  /** A cell named in a sentence about the whole run: "killed tap". */
   cellLabel(cell: Cell, section: string): string;
   /** The closing line when a section of cells did not pass. */
   failed: string;

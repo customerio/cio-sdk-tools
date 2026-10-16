@@ -57,8 +57,13 @@ export interface MatrixCell extends Cell {
 export interface NotificationAuthorization {
   /** iOS: `authorized`, `denied`, `notDetermined`, `provisional`, `other(n)`; Android: `granted`, `denied`. */
   status: string;
-  /** When the SDK read it, as the log stamps the line. */
+  /** When the SDK read it, as the log stamps the line, or when the tool read the setting. */
   at: string;
+  /**
+   * The SDK's line, or the simulator's own notification settings: both are iOS's answer,
+   * and the second needs neither the app to run nor its SDK to log at debug.
+   */
+  source?: 'sdk' | 'simulator settings';
   /** Whether iOS lets the app's notifications show; unknown for a status it has not named. */
   allowed?: boolean;
 }

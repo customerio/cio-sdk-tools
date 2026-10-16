@@ -42,13 +42,10 @@ export const PUSH_VOICE: Voice = {
     }
   },
 
+  // Names a row, never says how it went: "killed received" read as a claim the push came.
   cellLabel: (cell: Cell, section: string) =>
-    `${(cell as MatrixCell).state} ${
-      section === 'opened'
-        ? 'opened'
-        : section === 'recorded'
-        ? 'recorded'
-        : 'received'
+    `${(cell as MatrixCell).state}${
+      section === 'opened' ? ' tap' : section === 'recorded' ? ' record' : ''
     }`,
 
   failed: 'a real push was tried and did not pass.',

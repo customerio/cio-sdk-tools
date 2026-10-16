@@ -378,11 +378,11 @@ const iphone = [
 test('a run with one cell it could not read says how much was proven and names that cell', () => {
   assert.strictEqual(
     unprovenLine(iphone, PUSH_VOICE),
-    '4 of 5 proven; not proven: killed opened. Skipped is not passed.'
+    '4 of 5 proven; not proven: killed tap. Skipped is not passed.'
   );
   assert.strictEqual(
     unprovenLine(iphone, PUSH_VOICE, true),
-    '4 of 5 proven; not proven: killed opened (runtime.tap_lines_lost). Skipped is not passed.',
+    '4 of 5 proven; not proven: killed tap (runtime.tap_lines_lost). Skipped is not passed.',
     'verbose names the cause code'
   );
   assert.strictEqual(

@@ -250,7 +250,7 @@ test('a cause names the rows it explains, and a note shown at the start is not r
     })
   );
   const text = out.text();
-  assert.match(text, /why  background opened: The SDK reported the open/);
+  assert.match(text, /why  background tap: The SDK reported the open/);
   assert.strictEqual(text.split('restart the simulator if nothing arrives').length, 2);
   assert.match(text, /note\s+this build was installed 3 days ago/);
 });

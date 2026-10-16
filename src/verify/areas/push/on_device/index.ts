@@ -1,6 +1,6 @@
 import { Target } from '../../../platform/ios/device';
 import { Verdict } from '../../../core/report/types';
-import { MatrixCell, MatrixSection } from '../types';
+import { MatrixCell, MatrixSection, NotificationAuthorization } from '../types';
 import { startCapture } from '../../../platform/ios/logs';
 import { LogCapture } from '../../../platform/logs';
 import {
@@ -11,6 +11,7 @@ import {
   explainSdkSilence,
   sdkWasQuiet,
   lastAuthorization,
+  notificationsAllowed,
   extensionRanIn,
   simulatorPredicate,
 } from './sdk_lines';
@@ -33,6 +34,7 @@ import { ALL_STATES, AppState } from '../../../platform/app_state';
 import { stopwatch } from '../../../core/clock';
 import { CellHandle, Reporter } from '../../../core/report/render';
 import { ProbeResult, probeLocalDelivery } from './probe';
+import { simulatorNotificationStatus } from '../../../platform/ios/notification_settings';
 import {
   StoredNotification,
   waitForNotification,
@@ -179,7 +181,9 @@ export async function runDeliveredMatrix(
     };
     section.cells = explainSdkSilence(section.cells, silence, options.reporter);
     if (sdkWasQuiet(silence)) section.sdkQuiet = true;
-    section.notificationAuthorization = lastAuthorization(capture.lines);
+    section.notificationAuthorization =
+      lastAuthorization(capture.lines) ??
+      (await simulatorAuthorization(options.target, options.bundleId));
     tapped.splice(
       0,
       tapped.length,
@@ -597,6 +601,9 @@ async function runCellBody(
     }),
     evidence,
   };
+  if (cell.cause === 'device.notifications_wedged') {
+    cell.detail = `restart it: ${restartSimulator(options.target.udid)}`;
+  }
   if (stored === false) {
     return {
       cell,
@@ -622,6 +629,33 @@ const SILENT = [
   'runtime.nse_did_not_run',
   'runtime.push_not_seen',
 ];
+
+/**
+ * On a simulator, iOS's answer is also in its notification settings, read when the SDK
+ * logged none: an app at the SDK's default log level says nothing, and a run whose pushes
+ * all went missing may never have started it.
+ */
+async function simulatorAuthorization(
+  target: Target,
+  bundleId: string
+): Promise<NotificationAuthorization | undefined> {
+  if (target.kind !== 'simulator') return undefined;
+  const status = await simulatorNotificationStatus(target.udid, bundleId);
+  if (!status) return undefined;
+  return {
+    status,
+    at: localTime(new Date()),
+    source: 'simulator settings',
+    allowed: notificationsAllowed(status),
+  };
+}
+
+function localTime(at: Date): string {
+  const two = (value: number) => String(value).padStart(2, '0');
+  return `${two(at.getHours())}:${two(at.getMinutes())}:${two(
+    at.getSeconds()
+  )}`;
+}
 
 /**
  * When no state received anything and iOS says notifications are not allowed, say that,
@@ -651,6 +685,7 @@ export function explainNotificationsOff(
         verdict: 'fail',
         cause: 'device.notifications_disabled',
         summary: undefined,
+        detail: undefined,
         evidence: [
           ...cell.evidence,
           `nothing reached the app in any state, and iOS says notifications are not allowed (was: ${cell.cause})`,
@@ -674,6 +709,10 @@ const OFF_EXPLAINS = [
   'runtime.no_evidence',
   'runtime.nse_did_not_run',
   'runtime.push_not_seen',
+  // Even a locally injected push did not show. Injection skips Apple's servers, so a stale
+  // link cannot explain it, and a simulator whose app has notifications denied shows none
+  // (2026-10-16): the permission explains it, and a restart would not.
+  'device.notifications_wedged',
 ];
 
 /**

@@ -444,7 +444,7 @@ export const CAUSES: Record<string, PushCause> = {
     summary:
       'This target is not delivering notifications at all, so nothing was proven about the integration.',
     remedy:
-      'Even a locally injected push did not display. Restart the target — `xcrun simctl shutdown <udid> && xcrun simctl boot <udid>` — and run again. A simulator in this state accepts sends and silently drops every one of them, which reads exactly like a broken integration.',
+      "Even a locally injected push did not display, though iOS did not say the app's notifications are off. Restart the simulator with the command shown with this finding, then run again. A simulator in this state accepts sends and silently drops every one of them, which reads exactly like a broken integration.",
   },
   'runtime.opened_not_tracked': {
     stage: 'delivered_matrix',

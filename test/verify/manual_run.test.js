@@ -354,7 +354,7 @@ test("iOS's own answer, as the SDK logged it, is the only verdict on notificatio
     { at: '00:41:02.500', process: 'NotificationServiceExtension', message: '[Push] Notification permission: authorized' },
   ];
   const said = lastAuthorization(lines);
-  assert.deepStrictEqual(said, { status: 'authorized', at: '00:41:02.500', allowed: true });
+  assert.deepStrictEqual(said, { status: 'authorized', at: '00:41:02.500', source: 'sdk', allowed: true });
   assert.strictEqual(lastAuthorization([]), undefined);
   assert.strictEqual(
     lastAuthorization([{ ...lines[0], message: '[Push] Notification permission: other(4)' }]).allowed,
@@ -404,4 +404,58 @@ test('a state the app could not be put in sends nothing and claims nothing', () 
   assert.match(cell.evidence.at(-1), /no push was sent/);
   assert.match(noPush, /could not be put in this state/);
   assert.match(CAUSES['runtime.app_state_not_set'].remedy, /unlocked/);
+});
+
+const { authorizationIn } = require('../../dist/verify/platform/ios/notification_settings');
+const { notificationsAllowed } = require('../../dist/verify/areas/push/on_device/sdk_lines');
+
+test("a simulator's notification settings name iOS's status, wherever the archive keeps it", () => {
+  // The shape of one app's entry in BulletinBoard/VersionedSectionInfo.plist, cut down.
+  const archive = (status) => ({
+    $archiver: 'NSKeyedArchiver',
+    $objects: ['$null', { sectionID: { 'CF$UID': 2 } }, 'io.example', { authorizationStatus: status, pushSettings: 63 }],
+    $top: { root: { 'CF$UID': 1 } },
+  });
+  assert.strictEqual(authorizationIn(archive(1)), 'denied');
+  assert.strictEqual(authorizationIn(archive(2)), 'authorized');
+  assert.strictEqual(authorizationIn(archive(0)), 'notDetermined');
+  assert.strictEqual(authorizationIn(archive(9)), 'other(9)');
+  assert.strictEqual(authorizationIn({ $objects: ['$null'] }), undefined);
+  assert.strictEqual(authorizationIn(undefined), undefined);
+
+  assert.strictEqual(notificationsAllowed('denied'), false);
+  assert.strictEqual(notificationsAllowed('notDetermined'), false);
+  assert.strictEqual(notificationsAllowed('ephemeral'), true);
+  assert.strictEqual(notificationsAllowed('other(9)'), undefined);
+});
+
+test('a target that showed not even a local push, with notifications off, is the permission, not a restart', () => {
+  // The iPhone 16 simulator, 2026-10-16: notifications denied for the app, every state
+  // "not delivering notifications at all", and the fix offered was to restart it.
+  const wedged = (state) => ({
+    state,
+    verdict: 'skip',
+    cause: 'device.notifications_wedged',
+    detail: 'restart it: xcrun simctl shutdown X && xcrun simctl boot X',
+    evidence: [],
+  });
+  const section = { metric: 'delivered', cells: ['killed', 'background', 'foreground'].map(wedged) };
+  const off = explainNotificationsOff(section, true);
+  assert.deepStrictEqual(
+    off.cells.map((cell) => [cell.cause, cell.verdict, cell.detail]),
+    Array(3).fill(['device.notifications_disabled', 'fail', undefined])
+  );
+  // Allowed, or not known: a simulator that shows nothing is still the simulator.
+  assert.strictEqual(explainNotificationsOff(section, false), section);
+
+  const ladder = { rungs: [{ id: 'device_ready', checks: [] }] };
+  judgeNotificationPermission(ladder, {
+    status: 'denied',
+    at: '20:15:02',
+    source: 'simulator settings',
+    allowed: false,
+  });
+  const [check] = ladder.rungs[0].checks;
+  assert.strictEqual(check.cause, 'device.notifications_not_allowed');
+  assert.match(check.evidence[0], /in the simulator's notification settings at 20:15:02/);
 });
