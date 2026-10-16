@@ -601,7 +601,13 @@ async function runCellBody(
     }),
     evidence,
   };
-  if (cell.cause === 'device.notifications_wedged') {
+  // A restart is the fix only when nothing else explains the silence: an app whose
+  // notifications are off shows no push either, and the run says that instead.
+  if (
+    cell.cause === 'device.notifications_wedged' &&
+    (await simulatorAuthorization(options.target, options.bundleId))
+      ?.allowed !== false
+  ) {
     cell.detail = `restart it: ${restartSimulator(options.target.udid)}`;
   }
   if (stored === false) {

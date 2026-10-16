@@ -459,3 +459,8 @@ test('a target that showed not even a local push, with notifications off, is the
   assert.strictEqual(check.cause, 'device.notifications_not_allowed');
   assert.match(check.evidence[0], /in the simulator's notification settings at 20:15:02/);
 });
+
+test('the note on notifications names no source: it may be the SDK or the simulator', () => {
+  assert.doesNotMatch(CAUSES['device.notifications_not_allowed'].remedy, /SDK's own log line/);
+  assert.match(CAUSES['device.notifications_not_allowed'].remedy, /iOS's own answer/);
+});

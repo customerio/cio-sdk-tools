@@ -347,10 +347,8 @@ export const CAUSES: Record<string, PushCause> = {
     severity: 'warning',
     summary: "iOS says the app's notifications aren't allowed.",
     remedy:
-      "Allow notifications for the app: accept its prompt, or turn them on in the device's Settings under Notifications. Until then a push can still arrive, and be counted as delivered, without anything showing. Read from the SDK's own log line, so it is iOS's current answer, not Customer.io's copy of it.",
+      "Allow notifications for the app: accept its prompt, or turn them on in the device's Settings under Notifications. Until then a push can still arrive, and be counted as delivered, without anything showing. This is iOS's own answer, read during the run, not Customer.io's copy of it.",
   },
-  // No longer emitted: push_enabled is Customer.io's lagging copy and is not judged. Kept so a
-  // consumer that learned the code still resolves it.
   'send.provider_rejected': {
     stage: 'delivered_matrix',
     severity: 'blocker',

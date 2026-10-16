@@ -129,7 +129,7 @@ export function createReporter(options: {
   setTracer(
     verbose
       ? (cmd, args, code, ms) => {
-          const head = `  $ ${cmd} ${args.join(' ')}`;
+          const head = `  $ ${redactTokens(`${cmd} ${args.join(' ')}`)}`;
           const tail = chalk.dim(`exit ${code} · ${formatMs(ms)}`);
           write(out, `${chalk.dim(head)}  ${tail}\n`);
         }
@@ -482,6 +482,17 @@ export function unprovenLine(
 
 function write(stream: { write(chunk: string): unknown }, text: string): void {
   stream.write(text);
+}
+
+/**
+ * A device token cut to its first 12 characters, as everywhere else in the output: a traced
+ * command carries the whole token, and verbose output is what gets pasted into a ticket.
+ * The send's `"to"`, and any long run of hex (an APNs token) anywhere else.
+ */
+export function redactTokens(text: string): string {
+  return text
+    .replace(/("to":")([^"]{12})[^"]{8,}"/g, '$1$2…"')
+    .replace(/\b([0-9a-fA-F]{12})[0-9a-fA-F]{28,}\b/g, '$1…');
 }
 
 /** Label-value rows, labels padded so the values line up. */

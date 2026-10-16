@@ -194,11 +194,15 @@ export async function climb(
         appSchemes: wiring.urlSchemes,
       });
     }
-    judgeNotificationPermission(
-      ladder,
-      ladder.matrices.find((section) => section.metric === 'delivered')
-        ?.notificationAuthorization
-    );
+    // Pushes that failed because notifications are off already say so; a note at Device
+    // ready would say it a second time.
+    if (!ladder.matrixHasCause('device.notifications_disabled')) {
+      judgeNotificationPermission(
+        ladder,
+        ladder.matrices.find((section) => section.metric === 'delivered')
+          ?.notificationAuthorization
+      );
+    }
 
     return {
       projectName: wiring.model.projectName,

@@ -463,3 +463,32 @@ test('a prompt gets the terminal to itself', () => {
   cell.done({ state: 'killed', verdict: 'pass', evidence: [] });
   assert.match(out.text(), /killed/);
 });
+
+const { redactTokens } = require('../../dist/verify/core/report/render');
+
+test('a traced command shows a device token only by its first 12 characters', () => {
+  const apns = 'ab'.repeat(80);
+  const fcm = 'crIeFOm_SXSoQ1:APA91bHf0' + 'x'.repeat(120);
+  const send = (to) =>
+    `cio api /v1/environments/{environment_id}/verify/push --json {"to":"${to}","platform":"ios","title":"cio verify F2ZE3 · foreground"}`;
+
+  assert.strictEqual(
+    redactTokens(send(apns)),
+    send(`${apns.slice(0, 12)}…`),
+    'an APNs token in the send'
+  );
+  assert.strictEqual(redactTokens(send(fcm)), send(`${fcm.slice(0, 12)}…`), 'an FCM token in the send');
+  assert.strictEqual(redactTokens(`token ${apns}`), `token ${apns.slice(0, 12)}…`);
+  const ordinary =
+    'plutil -extract segment\\.userId raw -o - com.segment.storage.45468ceeed7b7057c583.plist';
+  assert.strictEqual(redactTokens(ordinary), ordinary, 'nothing else is touched');
+});
+
+test('with --verbose the command trace redacts the token it prints', async () => {
+  const out = sink();
+  reporterOn('verbose', out);
+  await run('echo', [`{"to":"${'cd'.repeat(80)}"}`]);
+  setTracer(undefined);
+  assert.match(out.text(), /"to":"cdcdcdcdcdcd…"/);
+  assert.doesNotMatch(out.text(), /(cd){20}/);
+});
