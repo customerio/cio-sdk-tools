@@ -3,10 +3,13 @@ const assert = require('node:assert');
 
 const cli = require('../../dist/verify/platform/cio/cli');
 const {
+  API_FAILED_CAUSE,
   RATE_LIMITED_CAUSE,
   eachState,
   isRateLimited,
+  isServerError,
   rejectedCell,
+  sendResultOf,
   sendVerifyPush,
 } = require('../../dist/verify/areas/push/on_device/send');
 const { CAUSES } = require('../../dist/verify/areas/push/causes');
@@ -90,6 +93,24 @@ test('a rate-limited send is inconclusive with its own cause; any other refusal 
   );
   assert.strictEqual(refused.verdict, 'fail');
   assert.strictEqual(refused.cause, 'send.provider_rejected');
+});
+
+test("a 500 from Customer.io's API is its failure, inconclusive, never a refusal of the token", () => {
+  // The iPhone 16 simulator, 2026-10-16: "send rejected: API error 500: internal error" was
+  // reported as Customer.io refusing the send, and the run ended as a broken integration.
+  const failed = sendResultOf({ ok: false, error: 'API error 500: internal error' });
+  assert.strictEqual(failed.serverError, true);
+  assert.strictEqual(failed.rateLimited, false);
+  const cell = rejectedCell('killed', failed, []);
+  assert.strictEqual(cell.verdict, 'skip');
+  assert.strictEqual(cell.cause, API_FAILED_CAUSE);
+  assert.strictEqual(cell.detail, 'send rejected: API error 500: internal error');
+  assert.strictEqual(CAUSES[API_FAILED_CAUSE].severity, 'warning');
+
+  assert.strictEqual(isServerError('API error 503: unavailable'), true);
+  assert.strictEqual(isServerError('API error 400: BadDeviceToken'), false);
+  assert.strictEqual(isServerError(APPLE_429), false);
+  assert.strictEqual(isServerError(undefined), false);
 });
 
 test('after the first 429 nothing more is sent, and the rest are skipped rather than failed', async () => {
@@ -187,7 +208,7 @@ test('a rate-limited run is inconclusive, and the report carries the cause with 
 });
 
 test('the catalog holds the rate-limit cause', () => {
-  assert.strictEqual(Object.keys(CAUSES).length, 74);
+  assert.strictEqual(Object.keys(CAUSES).length, 75);
   assert.strictEqual(CAUSES[RATE_LIMITED_CAUSE].stage, 'delivered_matrix');
 });
 

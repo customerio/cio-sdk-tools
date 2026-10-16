@@ -492,3 +492,10 @@ test('with --verbose the command trace redacts the token it prints', async () =>
   assert.match(out.text(), /"to":"cdcdcdcdcdcd…"/);
   assert.doesNotMatch(out.text(), /(cd){20}/);
 });
+
+test('a closing sentence starts with a capital, unless its first word is cased its own way', () => {
+  const { sentence } = require('../../dist/verify/core/report/render');
+  assert.strictEqual(sentence('push works on the device.'), 'Push works on the device.');
+  assert.strictEqual(sentence('iOS says notifications are not allowed.'), 'iOS says notifications are not allowed.');
+  assert.strictEqual(sentence('iPhone 15 was not found.'), 'iPhone 15 was not found.');
+});

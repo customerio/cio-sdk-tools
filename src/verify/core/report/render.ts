@@ -502,8 +502,12 @@ export function factLines(facts: [string, string][]): string[] {
   );
 }
 
-/** A closing line reads as a sentence: it starts with a capital. */
-function sentence(text: string): string {
+/**
+ * A closing line reads as a sentence: it starts with a capital, unless its first word is a
+ * name already cased its own way. "iOS says…" became "IOS says…".
+ */
+export function sentence(text: string): string {
+  if (/^[a-z]+[A-Z]/.test(text)) return text;
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 

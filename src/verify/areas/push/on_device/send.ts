@@ -5,6 +5,7 @@ import { MatrixCell } from '../types';
 import { AppState } from '../../../platform/app_state';
 
 export const RATE_LIMITED_CAUSE = 'send.provider_rate_limited';
+export const API_FAILED_CAUSE = 'send.api_failed';
 
 export interface SendRequest {
   /** Print the request and send nothing, so the orchestration can be exercised safely. */
@@ -32,6 +33,8 @@ export interface SendResult {
   error?: string;
   /** Refused for sending too often: every send after it would be refused the same way. */
   rateLimited?: boolean;
+  /** Customer.io's API failed (a 5xx), which says nothing about the token or the app. */
+  serverError?: boolean;
   /** Set on a dry run: the payload that would have gone out, minus the token. */
   wouldSend?: Record<string, unknown>;
 }
@@ -97,6 +100,7 @@ export function sendResultOf(res: {
       accepted: false,
       error: res.error,
       rateLimited: isRateLimited(res.error),
+      serverError: isServerError(res.error),
       deliveryId: idIn((res.errorBody as SendBody | undefined)?.errors),
     };
   }
@@ -167,8 +171,17 @@ export function isRateLimited(error?: string): boolean {
 }
 
 /**
+ * A 5xx from Customer.io's API: its own failure. Blamed on the token as a refusal once, on
+ * the iPhone 16 simulator (2026-10-16), and ended the run as a broken integration.
+ */
+export function isServerError(error?: string): boolean {
+  return Boolean(error && /\bAPI error 5\d\d\b/.test(error));
+}
+
+/**
  * The cell for a send that was not accepted. A rate-limited send is inconclusive rather
- * than a conviction: the provider refused it before looking at the token or the app.
+ * than a conviction: the provider refused it before looking at the token or the app. So is
+ * one Customer.io's API failed on.
  */
 export function rejectedCell(
   state: AppState,
@@ -176,10 +189,15 @@ export function rejectedCell(
   evidence: string[],
   label = 'send rejected'
 ): MatrixCell {
+  const inconclusive = sent.rateLimited || sent.serverError;
   return {
     state,
-    verdict: sent.rateLimited ? 'skip' : 'fail',
-    cause: sent.rateLimited ? RATE_LIMITED_CAUSE : 'send.provider_rejected',
+    verdict: inconclusive ? 'skip' : 'fail',
+    cause: sent.rateLimited
+      ? RATE_LIMITED_CAUSE
+      : sent.serverError
+      ? API_FAILED_CAUSE
+      : 'send.provider_rejected',
     evidence: [
       ...evidence,
       `${label}: ${sent.error ?? 'unknown error'}${

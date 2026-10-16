@@ -356,6 +356,14 @@ export const CAUSES: Record<string, PushCause> = {
     remedy:
       'Read the error: it is usually the token, the credential, or a sandbox/production mismatch. Nothing about the SDK is proven either way until a send is accepted.',
   },
+  'send.api_failed': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      "Customer.io's API failed while sending the push, so nothing was proven.",
+    remedy:
+      "This is an error on Customer.io's side, not the app's, the token or the credential. Run again; if it repeats, report the error shown with the push.",
+  },
   'runtime.tap_lines_lost': {
     stage: 'delivered_matrix',
     severity: 'warning',
