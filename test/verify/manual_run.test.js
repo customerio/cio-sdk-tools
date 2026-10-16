@@ -185,7 +185,10 @@ test("the simulator's log includes the app's own open failures", () => {
   assert.doesNotMatch(simulatorPredicate(), /Failed to open URL/);
 });
 
-test("the app's URL schemes come from its Info.plist, lowercased", async () => {
+// Read with plutil, as iOS verification is: it runs only on macOS.
+const MACOS_ONLY = { skip: process.platform !== 'darwin' && 'plutil is macOS-only' };
+
+test("the app's URL schemes come from its Info.plist, lowercased", MACOS_ONLY, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cio-verify-test-'));
   try {
     fs.writeFileSync(

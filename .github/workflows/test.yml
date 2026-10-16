@@ -23,6 +23,18 @@ jobs:
       - name: Publish test
         run: npm publish --dry-run
 
+  verify-tests:
+    name: Verify command tests pass
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:verify
+
   assert-lint:
     name: Assert lint check passes and no lint errors exist
     runs-on: ubuntu-latest

@@ -1,4 +1,10 @@
 const test = require('node:test');
+
+// The prompts' timers are unref'd so a real run can exit, and a terminal's stdin keeps a real
+// run alive while it waits. These tests' streams hold nothing open, and Node 20's runner
+// cancels a file whose event loop empties, so the file holds it open until its tests finish.
+const keepAlive = setInterval(() => {}, 1_000);
+test.after(() => clearInterval(keepAlive));
 const assert = require('node:assert');
 const { PassThrough } = require('node:stream');
 
