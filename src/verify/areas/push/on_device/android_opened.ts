@@ -32,7 +32,14 @@ export const ANDROID_OPENED_MARKERS = {
   linkHandling:
     /Handling push notification deep link with payload: .* - pushClickBehavior: (\S+)/,
   linkHandled:
-    /Deep link handled by (?:host app callback implementation|internal host app navigation|external app|opening default host app)/,
+    /Deep link handled by (?:host app callback implementation|internal host app navigation|external app)/,
+  /**
+   * Nothing on the device could open the link, so the SDK opened the app's main screen
+   * (PushMessageProcessorImpl). The same line ends a tap that carried no link, where it is
+   * the whole job; with a link, the link went nowhere. Counted as handled, a link no app
+   * routes passed on the S24 (2026-10-16).
+   */
+  linkFellBack: /Deep link handled by opening default host app/,
   linkUnhandled: /Deep link was not handled/,
 };
 
@@ -100,7 +107,9 @@ export async function tapAndroidPush(
       seen(ANDROID_OPENED_MARKERS.failedClick) ||
       seen(ANDROID_OPENED_MARKERS.linkUnhandled) ||
       (seen(ANDROID_OPENED_MARKERS.tracked) &&
-        (!linkSent || seen(ANDROID_OPENED_MARKERS.linkHandled))),
+        (!linkSent ||
+          seen(ANDROID_OPENED_MARKERS.linkHandled) ||
+          seen(ANDROID_OPENED_MARKERS.linkFellBack))),
     TAP_SEQUENCE_TIMEOUT_MS
   );
 
@@ -109,6 +118,7 @@ export async function tapAndroidPush(
   const emptyId = seen(ANDROID_OPENED_MARKERS.skippedNoId);
   const failed = seen(ANDROID_OPENED_MARKERS.failedClick);
   const linkAttempted = seen(ANDROID_OPENED_MARKERS.linkHandling);
+  const linkWentNowhere = linkSent && seen(ANDROID_OPENED_MARKERS.linkFellBack);
 
   // The opened line names the tapped push by title and id, so an open of an older banner
   // is recognised as that rather than counted for this push.
@@ -126,11 +136,13 @@ export async function tapAndroidPush(
 
   if (capture.available) {
     evidence.push(
-      `log: ${
-        lines.length
-      } lines, opened tracked: ${tracked}, deep link handled: ${seen(
-        ANDROID_OPENED_MARKERS.linkHandled
-      )}`
+      `log: ${lines.length} lines, opened tracked: ${tracked}, deep link: ${
+        linkWentNowhere
+          ? "nothing could open it, so the SDK opened the app's main screen"
+          : seen(ANDROID_OPENED_MARKERS.linkHandled)
+          ? 'handled'
+          : 'not handled'
+      }`
     );
     if (opened) {
       evidence.push(
@@ -174,8 +186,12 @@ export async function tapAndroidPush(
       linkAttempted,
       linkHandled: seen(ANDROID_OPENED_MARKERS.linkHandled),
       linkUnhandled: seen(ANDROID_OPENED_MARKERS.linkUnhandled),
+      linkOpenFailed: linkWentNowhere,
       linkSent,
     }),
+    detail: linkWentNowhere
+      ? "nothing on the device could open the link, so the SDK opened the app's main screen"
+      : undefined,
     evidence,
   };
 }

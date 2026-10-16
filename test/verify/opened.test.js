@@ -252,10 +252,14 @@ test('the Android markers match that SDK sentence for sentence', () => {
     'Deep link handled by host app callback implementation',
     'Deep link handled by internal host app navigation',
     'Deep link handled by external app',
-    'Deep link handled by opening default host app',
   ]) {
     assert.ok(ANDROID_OPENED_MARKERS.linkHandled.test(line), line);
   }
+  // The launcher fallback is what the SDK does when nothing can open the link: with a
+  // link sent, the link went nowhere. It passed `cio-nowhere://x` on the S24 (2026-10-16).
+  const fallBack = 'Deep link handled by opening default host app';
+  assert.ok(!ANDROID_OPENED_MARKERS.linkHandled.test(fallBack));
+  assert.ok(ANDROID_OPENED_MARKERS.linkFellBack.test(fallBack));
   assert.ok(
     !ANDROID_OPENED_MARKERS.linkHandled.test('Deep link was not handled')
   );
