@@ -237,6 +237,9 @@ function recordedCell(plan: Plan, answer?: RecordAnswer): MatrixCell {
         ? 'backend.delivery_not_found'
         : 'backend.record_unreadable',
       evidence: [`${sentIds.join(' or ')}: ${error.message}`],
+      detail: error.notFound
+        ? `delivery ${sentIds.join(' or ')}`
+        : error.message,
       durationMs,
     };
   }
@@ -260,6 +263,11 @@ function recordedCell(plan: Plan, answer?: RecordAnswer): MatrixCell {
           record.failureMessage ? `: ${record.failureMessage}` : ''
         }${record.failureDetail ? ` (${record.failureDetail})` : ''}`,
       ],
+      detail: record.failureMessage
+        ? `the provider said: ${record.failureMessage}${
+            record.failureDetail ? ` (${record.failureDetail})` : ''
+          }`
+        : undefined,
     };
   }
   const missing = [

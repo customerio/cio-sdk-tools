@@ -10,27 +10,35 @@ export const PUSH_VOICE: Voice = {
   matrixTitle: (section: string) =>
     section === 'recorded' ? "Customer.io's record" : 'Pushes',
 
+  // A row says how the push did in a few words; why is said once, at the end, under the
+  // row's name. A cause code here was a term to look up rather than an answer.
   cellSummary(cell: Cell, section: string): string {
     if (section === 'recorded') {
-      return cell.verdict === 'pass'
-        ? 'recorded'
-        : cell.cause ?? (cell.verdict === 'fail' ? 'not recorded' : 'not read');
+      switch (cell.verdict) {
+        case 'pass':
+          return 'recorded';
+        case 'fail':
+          return 'failed';
+        case 'warn':
+          return 'recorded, see below';
+        default:
+          return 'not proven';
+      }
     }
     // What a cell proves happened on the device: the push was received, or the tap opened
     // it. Never "counted" or "reported": what Customer.io recorded is not checked here.
     const done = section === 'opened' ? 'opened' : 'received';
     switch (cell.verdict) {
       case 'pass':
-        // An opened cell's time includes the person finding and tapping the push.
         return section === 'opened' ? 'opened · tapped' : done;
       case 'fail':
-        return cell.cause ?? `not ${done}`;
+        return section === 'opened' ? 'tap failed' : 'failed';
       case 'warn':
-        return cell.cause ?? `${done}, with a caveat`;
+        return `${done}, see below`;
       default:
         // A skip is a dry run only when nothing named it; the rest are inconclusive cells
         // that did send, and labelling those "not sent" was simply wrong.
-        return cell.cause ?? 'not sent';
+        return cell.cause ? 'not proven' : 'not sent';
     }
   },
 
@@ -44,6 +52,7 @@ export const PUSH_VOICE: Voice = {
     }`,
 
   failed: 'a real push was tried and did not pass.',
+  reportKeys: { section: ['metric'], cell: ['state'] },
 
   conclusion(report: Report): string[] {
     const ran = report.sections.filter(

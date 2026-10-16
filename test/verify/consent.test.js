@@ -284,7 +284,7 @@ test('declining sends nothing and skips every section that would have sent', asy
     area: 'push',
     startedAt: '2026-09-17T00:00:00.000Z',
     finishedAt: '2026-09-17T00:00:01.000Z',
-    project: { path: '/p', framework: 'iOS' },
+    project: { path: '/p', platform: 'ios', framework: 'native' },
   });
   assert.deepStrictEqual(
     built.sections

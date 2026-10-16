@@ -176,7 +176,18 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
      --workspace WORKSPACE_ID --device SIMULATOR_NAME_UDID_OR_SERIAL > verify.json
    ```
 
-   `--json` prints only the report on stdout, with errors on stderr. `--report FILE` also writes the report to a file. `--dry-run` does everything except send. The report carries `area`, `level`, its sections in order, `rerun`, the command that repeats the run, and, when a check couldn't be proven either way, `rerunUnproven`, the command that tries only those app states again.
+   `--json` prints only the report on stdout, with errors on stderr. `--report FILE` also writes the report to a file. `--dry-run` does everything except send. The report carries `area`, `level`, `project` (`platform`, `framework`), the `verdict` and `exitCode`, its sections in order with the checks and pushes that didn't pass, each with a `cause` and, when the fix needs a value, a `detail`, then `causes` with each cause's `summary` and `remedy`, and, when a check couldn't be proven either way, `rerunUnproven`, the command that tries only those app states again.
+
+   ### Output
+
+   The output says what passed, what didn't, why, and what to change. The evidence behind each finding (log lines, file paths, delivery ids, timings, the commands the tool ran) is left out unless you add `--verbose`, on screen and in `--json` and `--report`, which then carry the full report. The device logs a run captures are deleted when it ends, unless you pass `--verbose` or `--evidence-dir`.
+
+   ### For agents
+
+   - Ask the person before a run that sends, then name `--depth`, `--workspace`, and `--device`: naming all three is the go-ahead to send real pushes, and a run missing one exits with code 2 and names it.
+   - Read `--json` from stdout and the exit code. Key on `causes[].code`; act on `remedy`, using the `detail` on the check or push it came from.
+   - Verify a fresh install: after integrating, delete the app, install it, launch it, log in, and answer the notification prompt, then run. A reinstall over an old build keeps its notification permission and registration, which can pass checks a new install would fail.
+   - Run `rerunUnproven` when the exit code is 21. Add `--verbose` only to debug the tool itself.
 
    ### Exit Codes
 
@@ -199,13 +210,13 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
    | `--evidence-dir DIR` | Keep the captured logs and screenshots here. |
    | `--watch-registration` | Watch the install, token, and login happen, instead of reading what they left behind. |
    | `--cio-profile NAME` | The `cio` CLI login to use. |
-   | `--verbose` / `--quiet` | Print every check and command, or only the verdict. |
+   | `--verbose` / `--quiet` | Print every check, command, and the evidence behind them, and keep the device logs; or print only the verdict. |
 
    > **Note**
    >
    > On a workspace with more than one app, test sends close together can hit Apple's limit of one token change every 20 minutes (`429 TooManyProviderTokenUpdates`). The tool stops sending and says so. Wait 20 minutes, or send one state with `--app-states killed`.
    >
-   > A simulator can lose its connection to Apple's push servers and not get it back. Apple still accepts every send, and nothing arrives. The tool reads the simulator's push service log: when it is offline, nothing is sent (or, if it drops mid-run, the push is marked unproven, not failed), and the fix is to restart the simulator.
+   > A simulator can lose its connection to Apple's push servers and not get it back. Apple still accepts every send, and nothing arrives. The tool reads the simulator's push service log: when it is offline, nothing is sent (or, if it drops mid-run, the push is marked unproven, not failed), and the fix is to restart the simulator. The link can also go stale while the log still reports it connected, so a run that sends to a simulator says at the start to restart it if a push doesn't arrive.
 
    View all options:
 

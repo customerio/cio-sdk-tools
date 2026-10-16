@@ -126,7 +126,8 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
           `exact match on id and email in environment ${input.environmentId}`,
           ...elsewhere,
           ...waited,
-        ]
+        ],
+        elsewhere[0]
       )
     );
     rung.summary =
@@ -157,7 +158,8 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
         'device_elsewhere',
         'This device belongs to the chosen workspace',
         'profile.device_in_other_workspace',
-        describeHits(hits)
+        describeHits(hits),
+        describeHits(hits)[0]
       )
     );
   } else if (!linked && hits.length > 0) {
@@ -166,7 +168,8 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
         'identity_elsewhere',
         'This identity exists only in the chosen workspace',
         'profile.identity_in_other_workspace',
-        describeHits(hits)
+        describeHits(hits),
+        describeHits(hits)[0]
       )
     );
   }
@@ -267,7 +270,8 @@ export function deviceLinkChecks(profile: Profile, input: ProfileInput) {
         'device_app_identifier',
         'Linked device belongs to this app',
         'profile.app_identifier_mismatch',
-        [`profile says ${linked.appIdentifier}`, `verifying ${input.bundleId}`]
+        [`profile says ${linked.appIdentifier}`, `verifying ${input.bundleId}`],
+        `the profile's device is ${linked.appIdentifier}; this app is ${input.bundleId}`
       )
     );
   }

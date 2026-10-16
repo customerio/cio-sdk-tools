@@ -185,7 +185,7 @@ export const CAUSES: Record<string, PushCause> = {
     summary:
       "The simulator has no connection to Apple's push servers, so no push can reach it.",
     remedy:
-      'Restart the simulator: the command is in the evidence, or use Device > Restart in Simulator. Its push service then reconnects, which its log shows as "Connected on 1 interfaces". Apple accepts a send whether or not the device is connected and keeps only the latest push for an app until it reconnects, so nothing about the send gives this away.',
+      'Restart the simulator with the command shown with this finding, or with Device > Restart in Simulator, then run again. Apple accepts a send whether or not the simulator is connected, so nothing about the send gives this away.',
   },
   'device.dns_unresolved': {
     stage: 'device_ready',
@@ -351,14 +351,6 @@ export const CAUSES: Record<string, PushCause> = {
   },
   // No longer emitted: push_enabled is Customer.io's lagging copy and is not judged. Kept so a
   // consumer that learned the code still resolves it.
-  'profile.push_disabled': {
-    stage: 'profile_linked',
-    severity: 'warning',
-    summary:
-      'The linked device reports push_enabled false: notifications may be off for the app.',
-    remedy:
-      "Allow notifications for the app: accept its prompt, or turn them on in the device's Settings under Notifications. Until then a push can still arrive, and on iOS be counted as delivered, without anything showing. The flag lags a new Allow until the app next starts or comes to the front, so a run that sends pushes reads it again after them.",
-  },
   'send.provider_rejected': {
     stage: 'delivered_matrix',
     severity: 'blocker',
@@ -575,7 +567,7 @@ export const CAUSES: Record<string, PushCause> = {
     summary:
       'The app could not be put in this state, so no push was sent for it.',
     remedy:
-      'The run launches, backgrounds or stops the app itself to reach each state, and the evidence has the error. On a phone, keep it unlocked during the run (a locked phone will not launch an app) and verify a development build; on Android the app needs a launcher activity. Then run the state again.',
+      'The run launches, backgrounds or stops the app itself to reach each state, and the error is shown with the push. On a phone, keep it unlocked during the run (a locked phone will not launch an app) and verify a development build; on Android the app needs a launcher activity. Then run the state again.',
   },
   'runtime.app_force_stopped': {
     stage: 'delivered_matrix',
@@ -606,14 +598,14 @@ export const CAUSES: Record<string, PushCause> = {
     summary:
       'Customer.io had no record under a delivery id its own send returned.',
     remedy:
-      "A test push's record is kept for 24 hours and read from the workspace that sent it, so this run should always find it. Run again, and if it repeats, report it with the delivery id in the evidence.",
+      "A test push's record is kept for 24 hours and read from the workspace that sent it, so this run should always find it. Run again, and if it repeats, report it with the delivery id shown with the push.",
   },
   'backend.record_unreadable': {
     stage: 'recorded',
     severity: 'warning',
     summary: "Customer.io's record of the push could not be read.",
     remedy:
-      'The error is in the evidence. The `cio` login needs permission to view deliveries in this workspace: check it with `cio auth status`, then run again.',
+      'The error is shown with the push. The `cio` login needs permission to view deliveries in this workspace: check it with `cio auth status`, then run again.',
   },
 };
 

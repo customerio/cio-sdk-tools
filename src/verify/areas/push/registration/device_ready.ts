@@ -113,7 +113,14 @@ export function deviceReady(facts: DeviceFacts, bundleId?: string): Rung {
               .filter((t) => !facts.ambiguous.includes(t))
               .map((t) => `named, but ${t.state}: ${t.name} (${t.udid})`),
             ...facts.usable.map((t) => `available: ${describeTarget(t)}`),
-          ]
+          ],
+          facts.ambiguous.length > 1
+            ? `--device ${facts.selector} names ${facts.ambiguous.length} running targets; pass one's UDID`
+            : `--device ${facts.selector} matched nothing usable${
+                facts.usable.length > 0
+                  ? `; available: ${facts.usable.map((t) => t.name).join(', ')}`
+                  : ''
+              }`
         )
       );
       return rung;
@@ -225,10 +232,16 @@ function pushServiceCheck(facts: DeviceFacts): Check | undefined {
   const label = "Simulator is connected to Apple's push servers";
   return state.connected
     ? pass('push_service_connected', label, [describePushService(state)])
-    : warn('push_service_connected', label, 'device.apns_offline', [
-        describePushService(state),
-        `restart it: ${restartSimulator(facts.target.udid)}`,
-      ]);
+    : warn(
+        'push_service_connected',
+        label,
+        'device.apns_offline',
+        [
+          describePushService(state),
+          `restart it: ${restartSimulator(facts.target.udid)}`,
+        ],
+        `restart it: ${restartSimulator(facts.target.udid)}`
+      );
 }
 
 function freshnessCheck(facts: DeviceFacts): Check | undefined {

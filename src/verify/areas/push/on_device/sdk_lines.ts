@@ -26,6 +26,7 @@ export function blameStoppedCapture(
     cause: 'runtime.capture_stopped',
     summary: undefined,
     evidence: [...cell.evidence, `${stoppedReason} (was: ${cell.cause})`],
+    detail: stoppedReason,
   };
 }
 

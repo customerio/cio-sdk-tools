@@ -112,9 +112,13 @@ function credentialCheck(facts: WorkspaceFacts): Check {
       : 'Workspace has an APNs push credential';
 
   if (facts.credentialError) {
-    return warn('push_credential', label, 'workspace.lookup_failed', [
-      facts.credentialError,
-    ]);
+    return warn(
+      'push_credential',
+      label,
+      'workspace.lookup_failed',
+      [facts.credentialError],
+      facts.credentialError
+    );
   }
   if (!facts.credential) {
     return fail(
@@ -195,6 +199,7 @@ function environmentCheck(
         [
           ...evidence,
           `a ${apsEnvironment} build needs a ${expected} credential`,
-        ]
+        ],
+        `a ${apsEnvironment} build needs a ${expected} credential`
       );
 }

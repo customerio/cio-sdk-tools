@@ -19,6 +19,11 @@ export interface Check {
   evidence?: string[];
   /** Set on every non-passing check, so nothing fails anonymously. */
   cause?: string;
+  /**
+   * The one fact a person needs to act on a check that did not pass: the value to change,
+   * the error to look up. Shown in every output; `evidence` only with `--verbose`.
+   */
+  detail?: string;
 }
 
 export interface Rung {
@@ -50,6 +55,8 @@ export interface Cell {
   verdict: Verdict;
   cause?: string;
   evidence: string[];
+  /** As on a check: the one fact needed to act on it, shown in every output. */
+  detail?: string;
   /**
    * Whether Customer.io recorded what this cell proved happened on the device, when its
    * record was read: `not_checked` otherwise. The device evidence never decides it.
@@ -105,7 +112,13 @@ export interface Report {
   level?: string;
   startedAt: string;
   finishedAt: string;
-  project: { path: string; framework: string; name?: string };
+  project: {
+    path: string;
+    platform: 'ios' | 'android';
+    /** What the app is built with: `native`, `react-native`, `expo` or `flutter`. */
+    framework: Framework;
+    name?: string;
+  };
   /** Everything the run checked, in order. */
   sections: ReportSection[];
   /**
@@ -142,6 +155,8 @@ export interface Report {
   causes: ReportedCause[];
   exitCode: number;
 }
+
+export type Framework = 'native' | 'react-native' | 'expo' | 'flutter';
 
 export interface Consent {
   granted: boolean;

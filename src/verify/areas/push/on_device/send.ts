@@ -186,6 +186,7 @@ export function rejectedCell(
         sent.deliveryId ? ` (delivery ${sent.deliveryId})` : ''
       }`,
     ],
+    detail: `${label}: ${sent.error ?? 'unknown error'}`,
   };
 }
 
@@ -230,7 +231,8 @@ export async function eachState(
  */
 export function unstagedCell(
   state: MatrixCell['state'],
-  evidence: string[]
+  evidence: string[],
+  error?: string
 ): { cell: MatrixCell; noPush: string } {
   return {
     cell: {
@@ -238,6 +240,7 @@ export function unstagedCell(
       verdict: 'skip',
       cause: 'runtime.app_state_not_set',
       evidence: [...evidence, 'no push was sent for this state'],
+      detail: error,
     },
     noPush:
       'the app could not be put in this state, so no push was sent to tap',

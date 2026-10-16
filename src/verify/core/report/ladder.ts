@@ -206,20 +206,22 @@ export function fail(
   id: string,
   label: string,
   cause: string,
-  evidence: string[] = []
+  evidence: string[] = [],
+  detail?: string
 ): Check {
-  return { id, verdict: 'fail', label, cause, evidence };
+  return { id, verdict: 'fail', label, cause, evidence, detail };
 }
 
 export function warn(
   id: string,
   label: string,
   cause: string,
-  evidence: string[] = []
+  evidence: string[] = [],
+  detail?: string
 ): Check {
-  return { id, verdict: 'warn', label, cause, evidence };
+  return { id, verdict: 'warn', label, cause, evidence, detail };
 }
 
 export function skipped(id: string, label: string, reason: string): Check {
-  return { id, verdict: 'skip', label, evidence: [reason] };
+  return { id, verdict: 'skip', label, evidence: [reason], detail: reason };
 }

@@ -94,7 +94,7 @@ function meta() {
     area: 'push',
     startedAt: '2026-09-17T00:00:00.000Z',
     finishedAt: '2026-09-17T00:00:01.000Z',
-    project: { path: '/tmp/App.xcodeproj', framework: 'iOS' },
+    project: { path: '/tmp/App.xcodeproj', platform: 'ios', framework: 'native' },
   };
 }
 
@@ -118,7 +118,7 @@ test('a rung records the time its evidence cost', () => {
     area: 'push',
     startedAt: '2026-09-17T00:00:00.000Z',
     finishedAt: '2026-09-17T00:02:44.000Z',
-    project: { path: '/p', framework: 'iOS' },
+    project: { path: '/p', platform: 'ios', framework: 'native' },
   });
   // One list, in the order things ran: the two rungs, then the section of cells.
   assert.deepStrictEqual(

@@ -2,7 +2,8 @@ import chalk from 'chalk';
 import ora, { Ora } from 'ora';
 import { formatMs, stopwatch } from '../clock';
 import { setTracer } from '../exec';
-import { Cell, Report, Rung, Section, Verdict } from './types';
+import { BriefKeys } from './brief';
+import { Cell, Check, Report, Rung, Section, Verdict } from './types';
 
 /**
  * Everything a person reads comes from here.
@@ -41,6 +42,8 @@ export interface Voice {
   failed: string;
   /** The closing lines of a run that passed: what it proved, in the area's words. */
   conclusion(report: Report): string[];
+  /** What names the area's sections and cells, kept when the report is cut down. */
+  reportKeys?: BriefKeys;
 }
 
 /** Used when no area speaks: says what passed and claims nothing more. */
@@ -143,6 +146,8 @@ export function createReporter(options: {
   let currentSection = voice.firstSection;
   let matrices = 0;
   let timer: NodeJS.Timeout | undefined;
+  /** Notes already printed in a block, so the closing facts do not say them twice. */
+  const shownNotes = new Set<string>();
 
   function paint(): void {
     if (spinner) spinner.text = spinnerText;
@@ -169,6 +174,25 @@ export function createReporter(options: {
     timer = undefined;
     spinner?.stop();
     spinner = undefined;
+  }
+
+  function remember(facts: [string, string][]): void {
+    for (const [label, value] of facts) {
+      if (label === 'note' && !quiet) shownNotes.add(value);
+    }
+  }
+
+  /**
+   * Under a row that did not pass: the fact needed to act on it, and with `--verbose` the
+   * evidence and the cause code behind it.
+   */
+  function findings(item: Pick<Check, 'detail' | 'evidence' | 'cause'>): void {
+    if (item.detail) line(`         ${item.detail}`);
+    if (!verbose) return;
+    for (const evidence of item.evidence ?? []) {
+      if (evidence !== item.detail) line(`         ${chalk.dim(evidence)}`);
+    }
+    if (item.cause) line(`         ${chalk.dim(item.cause)}`);
   }
 
   /** Expo's logWrap: a spinner has to be stopped before a line is written over it. */
@@ -212,6 +236,7 @@ export function createReporter(options: {
       line();
       line(`${chalk.bold(voice.command)} ${chalk.dim('·')} ${subject}`);
       factLines(facts).forEach((text) => line(text));
+      remember(facts);
       line();
     },
 
@@ -219,6 +244,7 @@ export function createReporter(options: {
       line();
       line(chalk.bold(title));
       factLines(facts).forEach((text) => line(text));
+      remember(facts);
       line();
     },
 
@@ -237,7 +263,7 @@ export function createReporter(options: {
               glyph(verdict),
               title,
               rung.skipped ?? rung.summary ?? summarise(rung),
-              rung.durationMs ?? ms,
+              verbose ? rung.durationMs ?? ms : undefined,
               columns
             )
           );
@@ -247,12 +273,10 @@ export function createReporter(options: {
             : rung.checks.filter((c) => c.verdict !== 'pass');
           for (const check of shown) {
             line(`     ${glyph(check.verdict)} ${check.label}`);
-            for (const evidence of check.evidence ?? []) {
-              line(`         ${chalk.dim(evidence)}`);
-            }
-            if (check.cause && check.verdict !== 'pass') {
-              line(`         ${chalk.dim(check.cause)}`);
-            }
+            findings({
+              ...check,
+              cause: check.verdict === 'pass' ? undefined : check.cause,
+            });
           }
         },
       };
@@ -263,7 +287,10 @@ export function createReporter(options: {
       // A later block of cells is set apart from the rows above it.
       if (matrices++ > 0) line();
       const title = voice.matrixTitle?.(section) ?? `${section} matrix`;
-      line(`${chalk.bold(title)}${how ? chalk.dim(`   (${how})`) : ''}`);
+      // How the log is read is the tool's business, unless someone is debugging it.
+      line(
+        `${chalk.bold(title)}${how && verbose ? chalk.dim(`   (${how})`) : ''}`
+      );
     },
 
     cell(state: string, section?: string): CellHandle {
@@ -279,16 +306,11 @@ export function createReporter(options: {
               state,
               cell.summary ??
                 voice.cellSummary(cell, section ?? currentSection),
-              cell.durationMs ?? ms,
+              verbose ? cell.durationMs ?? ms : undefined,
               columns
             )
           );
-          if (verbose || cell.verdict !== 'pass') {
-            for (const evidence of cell.evidence) {
-              line(`         ${chalk.dim(evidence)}`);
-            }
-            if (cell.cause) line(`         ${chalk.dim(cell.cause)}`);
-          }
+          if (verbose || cell.verdict !== 'pass') findings(cell);
         },
       };
     },
@@ -319,12 +341,17 @@ export function createReporter(options: {
       const ordered = [...report.causes].sort((a, b) =>
         a.severity === b.severity ? 0 : a.severity === 'blocker' ? -1 : 1
       );
+      const where = findingsByCause(report, voice);
       for (const cause of ordered) {
         const head =
           cause.severity === 'blocker'
             ? chalk.red('why')
             : chalk.yellow('note');
-        body.push(`  ${head}  ${cause.summary}`);
+        // Which rows it explains, so two failures are not left to be matched up by eye.
+        const rows = where.get(cause.code);
+        body.push(
+          `  ${head}  ${rows ? `${chalk.bold(rows)}: ` : ''}${cause.summary}`
+        );
         body.push(`       ${cause.remedy}`);
         if (cause.docs) body.push(`       ${chalk.dim(cause.docs)}`);
         body.push('');
@@ -374,7 +401,9 @@ export function createReporter(options: {
       } else if (report.verdict === 'fail') {
         body.push(chalk.red(`${glyph('fail')} ${sentence(voice.failed)}`));
       } else if (report.verdict === 'skip') {
-        body.push(chalk.yellow(`- ${sentence(unprovenLine(cells, voice))}`));
+        body.push(
+          chalk.yellow(`- ${sentence(unprovenLine(cells, voice, verbose))}`)
+        );
       } else {
         // Only the area knows what its run proved, and it says that and nothing more.
         const [claim, ...caveats] = voice.conclusion(report);
@@ -390,20 +419,18 @@ export function createReporter(options: {
         new Date(report.startedAt).getTime();
       const evidencePath = cells.find((section) => section.logs?.evidencePath)
         ?.logs?.evidencePath;
-      const facts: [string, string][] = [
-        ...(report.advice ?? []).map((note): [string, string] => [
-          'note',
-          note,
-        ]),
-      ];
-      if (report.provenance === 'observed') {
-        facts.push(['watched', 'the install, push token and login happen']);
+      const facts: [string, string][] = (report.advice ?? [])
+        .filter((note) => !shownNotes.has(note))
+        .map((note): [string, string] => ['note', note]);
+      // How the run knows and how long it took are for whoever is debugging it.
+      if (verbose) {
+        if (report.provenance === 'observed') {
+          facts.push(['watched', 'the install, push token and login happen']);
+        }
+        facts.push(['took', formatMs(totalMs)]);
+        if (evidencePath) facts.push(['evidence', evidencePath]);
       }
-      facts.push(['took', formatMs(totalMs)]);
-      if (evidencePath) facts.push(['evidence', evidencePath]);
-      if (level === 'human' && report.causes.length === 0) {
-        facts.push(['detail', 're-run with --verbose']);
-      }
+      if (level === 'human') facts.push(['detail', 're-run with --verbose']);
       body.push('', ...factLines(facts), '');
       write(out, body.join('\n'));
     },
@@ -417,7 +444,8 @@ export function createReporter(options: {
  */
 export function unprovenLine(
   sections: (Section & { kind: 'cells' })[],
-  voice: Voice
+  voice: Voice,
+  withCodes = false
 ): string {
   const cells = sections
     .filter((section) => !section.skipped)
@@ -439,7 +467,7 @@ export function unprovenLine(
         .map(
           ({ cell, section }) =>
             `${voice.cellLabel(cell, section)}${
-              cell.cause ? ` (${cell.cause})` : ''
+              cell.cause && withCodes ? ` (${cell.cause})` : ''
             }`
         )
         .join(', ')}`
@@ -468,14 +496,42 @@ function sentence(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/**
+ * Which rows each cause explains: the rung's title for a check, the area's name for a cell.
+ * A cause named nowhere — a note about the run as a whole — gets no prefix.
+ */
+function findingsByCause(report: Report, voice: Voice): Map<string, string> {
+  const rows = new Map<string, string[]>();
+  const add = (code: string | undefined, label: string) => {
+    if (!code) return;
+    const labels = rows.get(code) ?? [];
+    if (!labels.includes(label)) labels.push(label);
+    rows.set(code, labels);
+  };
+  for (const section of report.sections) {
+    if (section.kind === 'checks') {
+      for (const check of section.checks) {
+        if (check.verdict !== 'pass') add(check.cause, section.title);
+      }
+      continue;
+    }
+    const name = voice.sectionName(section);
+    for (const cell of section.cells) {
+      if (cell.verdict !== 'pass') add(cell.cause, voice.cellLabel(cell, name));
+    }
+  }
+  return new Map([...rows].map(([code, labels]) => [code, labels.join(', ')]));
+}
+
 function row(
   glyphText: string,
   title: string,
   summary: string,
-  ms: number,
+  ms: number | undefined,
   columns?: number
 ): string {
   const head = `${glyphText} ${title.padEnd(TITLE_WIDTH)} ${summary}`;
+  if (ms === undefined) return head;
   const took = formatMs(ms);
   const width = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, columns ?? MIN_WIDTH));
   const pad = Math.max(2, width - visibleLength(head) - took.length);
@@ -489,11 +545,9 @@ export function visibleLength(text: string): number {
 }
 
 function summarise(rung: Rung): string {
-  // A cause code says more than a count, and it is the thing worth searching for.
+  // The checks that did not pass are listed under the row, and explained at the end.
   const failed = rung.checks.filter((c) => c.verdict === 'fail');
-  if (failed.length > 0) {
-    return failed[0].cause ?? `${failed.length} failed`;
-  }
+  if (failed.length > 0) return `${failed.length} failed`;
   const warned = rung.checks.filter((c) => c.verdict === 'warn').length;
   if (warned > 0) return `${warned} to look at`;
   return `${rung.checks.length} checks`;

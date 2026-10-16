@@ -199,7 +199,7 @@ async function runCellBody(
   );
   evidence.push(`state via ${staged.how}`);
   if (staged.error) evidence.push(`state warning: ${staged.error}`);
-  if (!staged.ok) return unstagedCell(state, evidence);
+  if (!staged.ok) return unstagedCell(state, evidence, staged.error);
 
   const stopped = await packageStopped(options.serial, options.packageName);
   if (stopped) {

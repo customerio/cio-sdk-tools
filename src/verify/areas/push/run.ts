@@ -7,6 +7,8 @@ import { Asker } from '../../core/prompt';
 import { Ladder } from '../../core/report/ladder';
 import { Report } from '../../core/report/types';
 import { RunContext, ToolFailure } from '../../core/run';
+import { scratchDirectory } from '../../core/cleanup';
+import { FRAMEWORK_NAMES, detectFramework } from '../../platform/framework';
 import {
   AndroidProjectModel,
   loadAndroidProject,
@@ -60,7 +62,7 @@ export async function runPush(
   pathArg: string,
   flags: PushFlags,
   given: Given,
-  { reporter, asker }: RunContext
+  { reporter, asker, verbose }: RunContext
 ): Promise<Report> {
   const options = settingsFrom(flags);
   // Set once, before any credential is read.
@@ -114,10 +116,15 @@ export async function runPush(
   options.states = states?.join(',');
   options.named = given.depth && given.workspace && given.device;
 
-  // One evidence folder per sending run, settled here so every section writes into it. The
-  // opened section used to keep its log only on request, so the one run that most needed
-  // reading afterwards — a tap the tool said it never saw — left nothing behind.
-  if (options.send) options.evidence = evidenceDirectoryFor(options);
+  // One evidence folder per sending run, settled here so every section writes into it. It
+  // holds the device's log, so it outlives the run only when asked for: `--evidence-dir`
+  // names where, `--verbose` keeps the default one. Otherwise it goes when the run ends.
+  if (options.send) {
+    options.evidence =
+      options.evidence || verbose
+        ? evidenceDirectoryFor(options)
+        : (await scratchDirectory()).path;
+  }
 
   // Decided before anything is touched: a run nobody can answer sends only where it was
   // told to.
@@ -172,20 +179,33 @@ export async function runPush(
     });
   }
 
+  // Said before anything is sent, because it explains a push that never comes: a simulator
+  // can lose Apple's push servers while still reporting itself connected.
+  const startNotes: [string, string][] =
+    options.send && !options.dryRun && selection.targetKind === 'simulator'
+      ? [['note', SIMULATOR_NOTE]]
+      : [];
+  const framework = await detectFramework(detected.path);
+  const platformName = detected.platform === 'android' ? 'Android' : 'iOS';
   reporter.start(
     `${path.basename(detected.path, path.extname(detected.path))} ${chalk.dim(
-      `· ${detected.platform === 'android' ? 'Android' : 'iOS'}`
+      `· ${platformName}${
+        framework === 'native' ? '' : ` · ${FRAMEWORK_NAMES[framework]}`
+      }`
     )}`,
-    selectionFacts(selection, {
-      dryRun: options.dryRun,
-      depth: level.id,
-      depthSource: given.depth ? 'flag' : levelAsked ? 'picked' : undefined,
-      taps: openedStatesToSend({
-        opened: options.opened && !options.dryRun,
-        interactive: asker.interactive,
-        delivered: selection.states,
+    [
+      ...selectionFacts(selection, {
+        dryRun: options.dryRun,
+        depth: level.id,
+        depthSource: given.depth ? 'flag' : levelAsked ? 'picked' : undefined,
+        taps: openedStatesToSend({
+          opened: options.opened && !options.dryRun,
+          interactive: asker.interactive,
+          delivered: selection.states,
+        }),
       }),
-    })
+      ...startNotes,
+    ]
   );
 
   const climbed =
@@ -228,6 +248,7 @@ export async function runPush(
     // honestly a `read` — the freshness note is where its recency shows up.
     provenance: climbed.observed ? 'observed' : 'read',
     advice: advice([
+      ...startNotes.map(([, note]) => note),
       ...(climbed.notes ?? []),
       ...(climbed.freshnessNote
         ? [
@@ -260,7 +281,8 @@ export async function runPush(
     finishedAt: new Date().toISOString(),
     project: {
       path: detected.path,
-      framework: detected.platform === 'android' ? 'Android' : 'iOS',
+      platform: detected.platform,
+      framework,
       name: climbed.projectName,
     },
   });
@@ -295,6 +317,9 @@ async function choosePushes(
     { flag: '--app-states <list> and --check-opens' }
   );
 }
+
+export const SIMULATOR_NOTE =
+  "a simulator can lose its link to Apple's push servers without showing it: if a push doesn't arrive, restart the simulator and run again";
 
 function advice(notes: string[]): string[] | undefined {
   return notes.length > 0 ? notes : undefined;

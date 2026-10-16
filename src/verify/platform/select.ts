@@ -37,6 +37,8 @@ export interface Picked {
   /** Its udid or serial, beside the name. */
   id?: string;
   source?: AnswerSource;
+  /** iOS: a simulator or a phone, when the run could tell which it named. */
+  kind?: 'simulator' | 'device';
 }
 
 export interface PickInput {
@@ -150,6 +152,7 @@ export async function chooseIosTarget(input: PickInput): Promise<Picked> {
       name: named?.name,
       id: named?.udid,
       source: 'flag',
+      kind: named?.kind,
     };
   }
   const usable = targets.filter(isUsable);
@@ -160,6 +163,7 @@ export async function chooseIosTarget(input: PickInput): Promise<Picked> {
       name: usable[0].name,
       id: usable[0].udid,
       source: 'only one',
+      kind: usable[0].kind,
     };
   }
   const picked = await input.asker.select(
@@ -176,6 +180,7 @@ export async function chooseIosTarget(input: PickInput): Promise<Picked> {
     name: picked.name,
     id: picked.udid,
     source: 'picked',
+    kind: picked.kind,
   };
 }
 

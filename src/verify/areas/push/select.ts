@@ -40,6 +40,8 @@ export interface Selection {
   targetName?: string;
   targetId?: string;
   targetSource?: AnswerSource;
+  /** iOS: a simulator or a phone, when the run could tell which it named. */
+  targetKind?: 'simulator' | 'device';
   states?: AppState[];
 }
 
@@ -66,6 +68,7 @@ export async function selectForIos(
     targetName: target.name,
     targetId: target.id,
     targetSource: target.source,
+    targetKind: target.kind,
     states: statesToSend(input),
   };
 }

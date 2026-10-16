@@ -76,7 +76,7 @@ const pushCommand = new Command('push')
   )
   .option(
     '--evidence-dir <dir>',
-    'keep captured logs and screenshots here (default: a new temp folder)'
+    'keep captured logs and screenshots here (by default they are deleted when the run ends, unless --verbose keeps them in a temp folder)'
   )
   .action(async (pathArg: string, _flags: PushFlags, command: Command) => {
     const flags = command.optsWithGlobals() as PushFlags & OutputOptions;

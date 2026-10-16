@@ -89,7 +89,8 @@ function pushModuleCheck(model: AndroidProjectModel): Check {
         'push_module',
         'Push module is a dependency',
         'wiring.push_module_missing',
-        [`modules found: ${model.sdkModules.join(', ') || 'none'}`]
+        [`modules found: ${model.sdkModules.join(', ') || 'none'}`],
+        `Customer.io modules found: ${model.sdkModules.join(', ') || 'none'}`
       );
 }
 
@@ -159,7 +160,10 @@ function googleServicesCheck(model: AndroidProjectModel): Check {
         [
           `applicationId: ${applicationId}`,
           `packages in file: ${services.packageNames.join(', ') || 'none'}`,
-        ]
+        ],
+        `the app is ${applicationId}; google-services.json lists ${
+          services.packageNames.join(', ') || 'none'
+        }`
       );
 }
 

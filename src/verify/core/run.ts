@@ -9,6 +9,7 @@ import {
   createAsker,
   describeMissingInput,
 } from './prompt';
+import { briefReport } from './report/brief';
 import { Level, Reporter, Voice, createReporter } from './report/render';
 import { Report } from './report/types';
 import { wrapCommand } from './replay';
@@ -32,7 +33,7 @@ export function addOutputOptions(command: Command): Command {
     .option('--report <file>', 'also write the JSON report to a file')
     .option(
       '-v, --verbose',
-      'print every check, command and phase (env: CIO_VERBOSE=1)'
+      'print every check, command, phase and the evidence behind them, and keep the device logs; with --json or --report, the full report (env: CIO_VERBOSE=1)'
     )
     .option('-q, --quiet', 'print only the verdict and what to do about it')
     .option(
@@ -46,6 +47,8 @@ export interface RunContext {
   level: Level;
   reporter: Reporter;
   asker: Asker;
+  /** `--verbose` was asked for, with or without `--json`: keep the evidence. */
+  verbose: boolean;
 }
 
 /**
@@ -69,9 +72,14 @@ export class ToolFailure extends Error {
  */
 export function outputLevel(options: OutputOptions): Level {
   if (options.json) return 'json';
-  if (options.verbose || process.env.CIO_VERBOSE === '1') return 'verbose';
+  if (wantsVerbose(options)) return 'verbose';
   if (options.quiet) return 'quiet';
   return 'human';
+}
+
+/** Asked for the detail behind the verdict: on screen, or in `--json` and `--report`. */
+export function wantsVerbose(options: OutputOptions): boolean {
+  return Boolean(options.verbose) || process.env.CIO_VERBOSE === '1';
 }
 
 /**
@@ -99,7 +107,12 @@ export async function runArea(
 
   let report: Report;
   try {
-    report = await body({ level, reporter, asker });
+    report = await body({
+      level,
+      reporter,
+      asker,
+      verbose: wantsVerbose(options),
+    });
   } catch (error) {
     if (error instanceof ToolFailure) {
       return toolError(options, error.message, error.code, {
@@ -120,7 +133,7 @@ export async function runArea(
     throw error;
   }
 
-  await emit(report, reporter, options);
+  await emit(report, reporter, options, voice);
   const human = level === 'human' || level === 'verbose';
   // A run that had to ask hands over the command that would not have: the next run, the
   // CI job, the agent. One that asked nothing was already that command, and one whose
@@ -137,19 +150,28 @@ export async function runArea(
   return report.exitCode;
 }
 
+/**
+ * The JSON is cut to what a customer acts on — verdicts, causes, fixes — unless `--verbose`
+ * asked for the evidence too: an agent reading a failing command keeps only so much of it,
+ * and log lines crowded out the fix.
+ */
 async function emit(
   built: Report,
   reporter: Reporter,
-  options: OutputOptions
+  options: OutputOptions,
+  voice: Voice
 ): Promise<void> {
+  const shown = wantsVerbose(options)
+    ? built
+    : briefReport(built, voice.reportKeys);
   if (options.report) {
     await fs.writeFile(
       path.resolve(process.cwd(), options.report),
-      `${JSON.stringify(built, null, 2)}\n`,
+      `${JSON.stringify(shown, null, 2)}\n`,
       'utf8'
     );
   }
-  if (options.json) process.stdout.write(`${JSON.stringify(built, null, 2)}\n`);
+  if (options.json) process.stdout.write(`${JSON.stringify(shown, null, 2)}\n`);
   else reporter.summary(built);
 }
 

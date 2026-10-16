@@ -33,7 +33,7 @@ const report = ({ rungs = [], matrices = [], ...overrides } = {}) => ({
   area: 'push',
   startedAt: '2026-09-17T00:00:00.000Z',
   finishedAt: '2026-09-17T00:00:05.300Z',
-  project: { path: '/p', framework: 'iOS' },
+  project: { path: '/p', platform: 'ios', framework: 'native' },
   sections: [
     ...rungs.map((rung) => ({ kind: 'checks', ...rung })),
     ...matrices.map((section) => ({ kind: 'cells', ...section })),
@@ -66,32 +66,40 @@ test('the roll-up shows one line per rung and hides the evidence behind a pass',
   );
 
   const text = out.text();
-  assert.match(text, /Device ready\s+cio-verify-poc · token 806f516e…\s+3\.3s/);
+  assert.match(text, /Device ready\s+cio-verify-poc · token 806f516e…\n/);
+  assert.ok(!text.includes('3.3s'), 'a timing was printed without --verbose');
   assert.ok(!text.includes('App is installed'), 'a passing check was printed');
   assert.ok(!text.includes('160 chars'), 'passing evidence was printed');
 });
 
-test('a rung that did not pass expands in place, because that is the detail worth having', () => {
-  const out = sink();
-  const reporter = reporterOn('human', out);
-  reporter.rung('Profile linked').done(
-    rung('Profile linked', [
-      { id: 'exists', verdict: 'pass', label: 'Profile exists' },
+test('a rung that did not pass names the check and the fact to act on; --verbose adds the evidence', () => {
+  const failing = () =>
+    rung('Workspace ready', [
+      { id: 'exists', verdict: 'pass', label: 'Credential exists' },
       {
-        id: 'linked',
+        id: 'environment',
         verdict: 'fail',
-        label: 'This device is linked to the profile',
-        evidence: ['target token: 806f…'],
-        cause: 'profile.token_not_linked',
+        label: "Credential environment matches the build's",
+        evidence: ['credential is production', 'aps-environment development'],
+        cause: 'workspace.env_mismatch',
+        detail: 'a development build needs a sandbox credential',
       },
-    ])
-  );
+    ]);
 
+  const out = sink();
+  reporterOn('human', out).rung('Workspace ready').done(failing());
   const text = out.text();
-  assert.ok(!text.includes('Profile exists'), 'the passing check leaked');
-  assert.match(text, /This device is linked to the profile/);
-  assert.match(text, /target token: 806f…/);
-  assert.match(text, /profile\.token_not_linked/);
+  assert.ok(!text.includes('Credential exists'), 'the passing check leaked');
+  assert.match(text, /Workspace ready\s+1 failed/);
+  assert.match(text, /Credential environment matches the build's/);
+  assert.match(text, /a development build needs a sandbox credential/);
+  assert.ok(!text.includes('credential is production'), 'evidence printed without --verbose');
+  assert.ok(!text.includes('workspace.env_mismatch'), 'a cause code printed without --verbose');
+
+  const loud = sink();
+  reporterOn('verbose', loud).rung('Workspace ready').done(failing());
+  assert.match(loud.text(), /credential is production/);
+  assert.match(loud.text(), /workspace\.env_mismatch/);
 });
 
 test('verbose shows every check, and the command trace it installs', async () => {
@@ -164,13 +172,13 @@ test('json mode writes nothing — stdout belongs to the report', () => {
   assert.strictEqual(out.text(), '');
 });
 
-test('the closing facts carry the time, the evidence path and, when watched, that', () => {
+test('with --verbose the closing facts carry the time, the evidence path and, when watched, that', () => {
   for (const [provenance, watched] of [
     ['read', false],
     ['observed', true],
   ]) {
     const out = sink();
-    reporterOn('human', out).summary(
+    reporterOn('verbose', out).summary(
       report({
         provenance,
         matrices: [
@@ -197,6 +205,55 @@ test('the closing facts carry the time, the evidence path and, when watched, tha
   }
 });
 
+test('without --verbose the closing facts leave out the time and the evidence, and point at --verbose', () => {
+  const out = sink();
+  reporterOn('human', out).summary(
+    report({
+      provenance: 'observed',
+      verdict: 'fail',
+      matrices: [
+        { metric: 'delivered', cells: [], logs: { evidencePath: '/tmp/ev.log' } },
+      ],
+    })
+  );
+  const text = out.text();
+  assert.doesNotMatch(text, /took|\/tmp\/ev\.log|watched/);
+  assert.match(text, /detail\s+re-run with --verbose/);
+});
+
+test('a cause names the rows it explains, and a note shown at the start is not repeated', () => {
+  const out = sink();
+  const reporter = reporterOn('human', out);
+  reporter.start('APN UIKit', [['note', 'restart the simulator if nothing arrives']]);
+  reporter.summary(
+    report({
+      verdict: 'fail',
+      advice: ['restart the simulator if nothing arrives', 'this build was installed 3 days ago'],
+      matrices: [
+        {
+          metric: 'opened',
+          cells: [
+            { state: 'background', verdict: 'fail', cause: 'runtime.deep_link_not_handled', evidence: [] },
+          ],
+        },
+      ],
+      causes: [
+        {
+          code: 'runtime.deep_link_not_handled',
+          stage: 'delivered_matrix',
+          severity: 'blocker',
+          summary: 'The SDK reported the open, and the deep link went nowhere.',
+          remedy: 'Check the URL is one the app routes.',
+          evidence: [],
+        },
+      ],
+    })
+  );
+  const text = out.text();
+  assert.match(text, /why  background opened: The SDK reported the open/);
+  assert.strictEqual(text.split('restart the simulator if nothing arrives').length, 2);
+  assert.match(text, /note\s+this build was installed 3 days ago/);
+});
 test('the closing line names the tap when opened ran too, and claims nothing was recorded', () => {
   const out = sink();
   reporterOn('human', out).summary(
@@ -276,11 +333,33 @@ test('a cell says "received" or "opened" without its evidence, and expands when 
   });
 
   const text = out.text();
-  assert.match(text, /killed\s+received\s+12\.4s/);
-  assert.match(text, /killed\s+opened · tapped\s+20\.1s/);
+  assert.match(text, /killed\s+received\n/);
+  assert.match(text, /killed\s+opened · tapped\n/);
   assert.ok(!text.includes('79 lines'), 'a passing cell printed its evidence');
-  assert.match(text, /background\s+runtime\.nse_did_not_run\s+45\.0s/);
+  assert.match(text, /background\s+failed\n/);
+  assert.ok(!text.includes('log: 120 lines'), 'log evidence printed without --verbose');
+  assert.ok(!text.includes('nse_did_not_run'), 'a cause code printed without --verbose');
+  assert.ok(!text.includes('(simctl)'), 'the log command printed without --verbose');
+});
+
+test('with --verbose a cell shows its time, the log command, its evidence and its cause code', () => {
+  const out = sink();
+  const reporter = reporterOn('verbose', out);
+  reporter.matrix('simctl', 'delivered');
+  reporter.cell('background').done({
+    state: 'background',
+    verdict: 'fail',
+    cause: 'runtime.nse_did_not_run',
+    evidence: ['log: 120 lines'],
+    detail: 'the provider said: BadDeviceToken',
+    durationMs: 45_000,
+  });
+  const text = out.text();
+  assert.match(text, /Pushes\s+\(simctl\)/);
+  assert.match(text, /background\s+failed\s+45\.0s/);
+  assert.match(text, /the provider said: BadDeviceToken/);
   assert.match(text, /log: 120 lines/);
+  assert.match(text, /runtime\.nse_did_not_run/);
 });
 
 test('every cell says Customer.io\u2019s record was not checked', () => {

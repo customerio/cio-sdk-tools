@@ -370,7 +370,7 @@ async function runCellBody(
   );
   evidence.push(`state via ${staged.how}`);
   if (staged.error) evidence.push(`state warning: ${staged.error}`);
-  if (!staged.ok) return unstagedCell(state, evidence);
+  if (!staged.ok) return unstagedCell(state, evidence, staged.error);
 
   const mark = capture.mark();
   const sinceMs = Date.now() - 1_000;
@@ -471,6 +471,7 @@ async function runCellBody(
             describePushService(service),
             `restart it: ${restartSimulator(options.target.udid)}`,
           ],
+          detail: `restart it: ${restartSimulator(options.target.udid)}`,
         },
         noPush:
           "the simulator has no connection to Apple's push servers, so nothing arrived to tap",

@@ -295,7 +295,8 @@ async function pushCapabilityChecks(
           'push_capability',
           'App declares the push notification capability',
           'wiring.entitlements_missing',
-          [`no CODE_SIGN_ENTITLEMENTS for target ${app.name}`]
+          [`no CODE_SIGN_ENTITLEMENTS for target ${app.name}`],
+          `no CODE_SIGN_ENTITLEMENTS for target ${app.name}`
         ),
       ],
     };
@@ -310,7 +311,8 @@ async function pushCapabilityChecks(
           'push_capability',
           'App declares the push notification capability',
           'wiring.push_capability_missing',
-          [`no aps-environment in ${readable}`]
+          [`no aps-environment in ${readable}`],
+          `no aps-environment in ${readable}`
         ),
       ],
     };
@@ -388,7 +390,8 @@ async function nseChecksFor(
           'nse_present',
           'Exactly one Notification Service Extension is embedded',
           'wiring.nse_multiple',
-          embedded.map((t) => `${t.name} (${productFilename(t)})`)
+          embedded.map((t) => `${t.name} (${productFilename(t)})`),
+          `embedded: ${embedded.map((t) => t.name).join(', ')}`
         ),
       ],
     };
@@ -516,7 +519,8 @@ async function appGroupCheck(
       'app_group_agreement',
       'App Group agrees across app, extension and code',
       'wiring.app_group_mismatch',
-      evidence
+      evidence,
+      evidence.join('; ')
     );
   }
 
