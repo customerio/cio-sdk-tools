@@ -202,6 +202,11 @@ test('a missing token and a denied permission are separate failures', () => {
     'io.example.app'
   );
   assert.deepStrictEqual(causes(denied), ['device.notification_permission_denied']);
+  // The fix is this device's and this app's command, not a template to fill in.
+  assert.strictEqual(
+    denied.checks.find((c) => c.id === 'notification_permission').detail,
+    'grant it: adb -s emulator-5554 shell pm grant io.example.app android.permission.POST_NOTIFICATIONS'
+  );
 
   const noToken = androidDeviceReady(
     {

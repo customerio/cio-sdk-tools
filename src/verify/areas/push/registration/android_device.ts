@@ -120,7 +120,7 @@ export function androidDeviceReady(
   // Nothing downstream means anything if Firebase cannot connect.
   if (network?.verdict === 'fail') return rung;
 
-  rung.checks.push(permissionCheck(facts));
+  rung.checks.push(permissionCheck(facts, packageName));
   const stopped = stoppedCheck(facts, sending);
   if (stopped) rung.checks.push(stopped);
   rung.checks.push(tokenCheck(facts));
@@ -168,7 +168,10 @@ function networkCheck(facts: AndroidDeviceFacts): Check | undefined {
   ]);
 }
 
-function permissionCheck(facts: AndroidDeviceFacts): Check {
+function permissionCheck(
+  facts: AndroidDeviceFacts,
+  packageName: string
+): Check {
   if (facts.permissionGranted === undefined) {
     return warn(
       'notification_permission',
@@ -183,7 +186,11 @@ function permissionCheck(facts: AndroidDeviceFacts): Check {
         'notification_permission',
         'Notification permission is granted',
         'device.notification_permission_denied',
-        ['POST_NOTIFICATIONS: granted=false']
+        ['POST_NOTIFICATIONS: granted=false'],
+        // The command for this device and app, so the fix is a paste, not a template.
+        `grant it: adb${
+          facts.target ? ` -s ${facts.target.serial}` : ''
+        } shell pm grant ${packageName} android.permission.POST_NOTIFICATIONS`
       );
 }
 

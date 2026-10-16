@@ -200,7 +200,7 @@ export const CAUSES: Record<string, PushCause> = {
     severity: 'blocker',
     summary: 'Notification permission is not granted on this target.',
     remedy:
-      'Grant it with `adb shell pm grant <package> android.permission.POST_NOTIFICATIONS`, or accept the prompt in the app. Deliveries are counted either way; nothing is displayed.',
+      'Grant it with the command shown with this finding, or accept the prompt in the app. Deliveries are counted either way; nothing is displayed.',
   },
   'workspace.fcm_credential_missing': {
     stage: 'workspace_ready',
