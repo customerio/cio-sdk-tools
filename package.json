@@ -13,7 +13,8 @@
     "test:doctor:global": "./scripts/test-doctor/run.sh --global",
     "test:doctor:compare": "./scripts/test-doctor/run.sh --compare",
     "start": "npx tsc && node dist/index.js",
-    "compile": "npx tsc"
+    "compile": "npx tsc",
+    "test:verify": "npx tsc && node --test test/verify/*.test.js"
   },
   "bin": {
     "cio-sdk-tools": "./dist/index.js"
@@ -21,6 +22,9 @@
   "files": [
     "dist/"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/customerio/cio-sdk-tools.git"
@@ -34,6 +38,7 @@
   "dependencies": {
     "chalk": "^4.1.2",
     "commander": "^11.0.0",
+    "ora": "^5.4.1",
     "winston": "^3.10.0",
     "xcode": "^3.0.1",
     "xml2js": "^0.6.2"
