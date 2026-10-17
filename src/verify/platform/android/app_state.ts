@@ -23,26 +23,8 @@ export async function setAndroidState(
   await adb(serial, ['shell', 'am', 'force-stop', packageName], 60_000);
   await sleep(1_500);
 
-  const launch = await adb(
-    serial,
-    [
-      'shell',
-      'monkey',
-      '-p',
-      packageName,
-      '-c',
-      'android.intent.category.LAUNCHER',
-      '1',
-    ],
-    120_000
-  );
-  if (launch.code !== 0) {
-    return {
-      ok: false,
-      how: 'monkey launch',
-      error: launch.stderr.trim().split('\n')[0],
-    };
-  }
+  const launch = await launchAndroidApp(serial, packageName);
+  if (!launch.ok) return launch;
   await sleep(6_000);
 
   if (state === 'foreground') {
@@ -88,4 +70,35 @@ async function processRunning(
 ): Promise<boolean> {
   const { stdout } = await adb(serial, ['shell', 'pidof', packageName]);
   return stdout.trim().length > 0;
+}
+
+/**
+ * Brings the app to the foreground, starting it if it isn't running, without stopping it
+ * first. An app sent to the background has no network on recent Android, so whatever it
+ * queued there, a login included, waits until it is opened again.
+ */
+export async function launchAndroidApp(
+  serial: string,
+  packageName: string
+): Promise<StateResult> {
+  const launch = await adb(
+    serial,
+    [
+      'shell',
+      'monkey',
+      '-p',
+      packageName,
+      '-c',
+      'android.intent.category.LAUNCHER',
+      '1',
+    ],
+    120_000
+  );
+  return launch.code === 0
+    ? { ok: true, how: 'monkey launch' }
+    : {
+        ok: false,
+        how: 'monkey launch',
+        error: launch.stderr.trim().split('\n')[0],
+      };
 }
