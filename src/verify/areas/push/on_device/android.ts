@@ -271,7 +271,12 @@ async function runCellBody(
   for (;;) {
     const now = messages();
     if (!listed) listed = (await postedTitles(options.serial)).includes(title);
-    if (receivedBySdk(now, title) && (listed || shownBySdk(now, title))) break;
+    if (
+      sdkReceived(now, title).received &&
+      (listed || shownBySdk(now, title))
+    ) {
+      break;
+    }
     if (Date.now() >= deadline) break;
     await sleep(1_500);
   }
@@ -283,7 +288,7 @@ async function runCellBody(
   const lines = since();
   const now = lines.map((line) => line.message);
   const titledId = androidIdForTitle(now, title);
-  const received = receivedBySdk(now, title);
+  const { received, byWorker } = sdkReceived(now, title);
   const shown = shownBySdk(now, title);
   const has = (marker: RegExp) => now.some((message) => marker.test(message));
   const duplicate = has(ANDROID_MARKERS.duplicate);
@@ -305,7 +310,11 @@ async function runCellBody(
   );
   if (capture.available) {
     evidence.push(
-      `log: ${lines.length} lines, SDK received it: ${received}, SDK showed it: ${shown}` +
+      `log: ${lines.length} lines, SDK received it: ${received}` +
+        (byWorker
+          ? ' (its delivered-metric worker ran; the SDK wrote no line)'
+          : '') +
+        `, SDK showed it: ${shown}` +
         (duplicate ? ', deduplicated' : '')
     );
     evidence.push(
@@ -361,6 +370,24 @@ function receivedBySdk(messages: string[], title: string): boolean {
     androidIdForTitle(messages, title) !== undefined ||
     messages.some((message) => ANDROID_MARKERS.received.test(message))
   );
+}
+
+/**
+ * Did the SDK receive this push, by its own line or by the delivered-metric worker it queues
+ * for each push it processes? The SDK logs its receipt before it queues the worker, so a
+ * worker with no receipt line at all is an SDK that isn't writing at debug level: a React
+ * Native app started for a push runs no JavaScript, which is where its SDK's level is set.
+ */
+export function sdkReceived(
+  messages: string[],
+  title: string
+): { received: boolean; byWorker: boolean } {
+  if (receivedBySdk(messages, title))
+    return { received: true, byWorker: false };
+  const byWorker = messages.some((message) =>
+    ANDROID_MARKERS.metricsWorker.test(message)
+  );
+  return { received: byWorker, byWorker };
 }
 
 function shownBySdk(messages: string[], title: string): boolean {

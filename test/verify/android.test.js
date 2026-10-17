@@ -322,3 +322,24 @@ test('a mark survives the retention window dropping lines', () => {
   assert.strictEqual(parsed.process, '[CIO]');
   assert.ok(parsed.process.includes('CIO'));
 });
+
+test("a silent SDK's delivered-metric worker says it received the push", () => {
+  const { sdkReceived } = require('../../dist/verify/areas/push/on_device/android');
+  const worker =
+    'Worker result SUCCESS for Work [ id=d371dd2c, tags={ io.customer.messagingpush.processor.PushDeliveryMetricsWorker,cio-requests,cio-push-delivery } ]';
+  const title = 'cio verify Q3S95 · killed';
+
+  // A React Native app started for a push: no JavaScript, so its SDK writes nothing.
+  assert.deepStrictEqual(sdkReceived([worker], title), { received: true, byWorker: true });
+  // Another app's forwarded line does not hide it.
+  assert.deepStrictEqual(sdkReceived(['[Push] Getting current device token', worker], title), {
+    received: true,
+    byWorker: true,
+  });
+  // The SDK's own receipt line comes first when it writes one.
+  assert.deepStrictEqual(sdkReceived(['Received new message with deliveryId: dgS_abc', worker], title), {
+    received: true,
+    byWorker: false,
+  });
+  assert.deepStrictEqual(sdkReceived([], title), { received: false, byWorker: false });
+});
