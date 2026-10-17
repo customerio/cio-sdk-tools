@@ -39,9 +39,14 @@ test("React Native's forwarded SDK lines are the SDK's own, read as the native S
 });
 
 test('a module the build only compiles against is not shipped with the app', () => {
+  // As cio-core.gradle declares it: shipped only when a Gradle property turns it on.
   const gradle = [
     'api "io.customer.android:messaging-push-fcm:$cioAndroidSDKVersion"',
+    'if (project.cioLocationEnabled) {',
+    '    api "io.customer.android:location:$cioAndroidSDKVersion"',
+    '} else {',
     '    compileOnly "io.customer.android:location:$cioAndroidSDKVersion"',
+    '}',
   ].join('\n');
   assert.deepStrictEqual(sdkModulesFrom(gradle), ['messaging-push-fcm']);
 });
