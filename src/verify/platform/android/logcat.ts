@@ -129,9 +129,16 @@ const FORWARDED = '[CIO] ';
  * The SDK's own line, or nothing. React Native forwards the native SDK's lines to its
  * JavaScript console, so they reach logcat under `ReactNativeJS` with `[CIO] ` in front of
  * the message. The prefix is dropped, so they read exactly as the native SDK writes them.
+ *
+ * WorkManager's lines about the SDK's workers are kept too. WorkManager writes them at its
+ * own level, so they still speak when the SDK logs nothing: a React Native app started for a
+ * push runs no JavaScript, and its SDK's log level is set from there.
  */
 export function sdkLine(line: LogLine): LogLine | undefined {
   if (line.process.includes('CIO')) return line;
+  if (line.process.startsWith('WM-') && line.message.includes('io.customer.')) {
+    return line;
+  }
   return line.message.startsWith(FORWARDED)
     ? { ...line, message: line.message.slice(FORWARDED.length) }
     : undefined;

@@ -38,6 +38,17 @@ test("React Native's forwarded SDK lines are the SDK's own, read as the native S
   assert.strictEqual(sdkLine(parseLogcat('10-17 18:02:11.420 I/ReactNativeJS( 4242): Running "main"')), undefined);
 });
 
+test("WorkManager's lines about the SDK's workers are kept, and its other lines are not", () => {
+  const worker = parseLogcat(
+    '10-17 23:17:50.248 I/WM-WorkerWrapper( 7267): Worker result SUCCESS for Work [ id=d371dd2c, tags={ io.customer.messagingpush.processor.PushDeliveryMetricsWorker,cio-requests,cio-push-delivery } ]'
+  );
+  assert.strictEqual(sdkLine(worker), worker);
+  const other = parseLogcat(
+    '10-17 23:17:50.248 I/WM-WorkerWrapper( 7267): Worker result SUCCESS for Work [ id=1, tags={ com.example.SyncWorker } ]'
+  );
+  assert.strictEqual(sdkLine(other), undefined);
+});
+
 test('a module the build only compiles against is not shipped with the app', () => {
   // As cio-core.gradle declares it: shipped only when a Gradle property turns it on.
   const gradle = [
