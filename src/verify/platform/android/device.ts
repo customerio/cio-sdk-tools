@@ -1,0 +1,313 @@
+import { adb, prefString, readAppFile } from './adb';
+
+export interface AndroidTarget {
+  serial: string;
+  model?: string;
+  isEmulator: boolean;
+  apiLevel?: number;
+  state: 'device' | 'offline' | 'unauthorized';
+}
+
+export function describeAndroidTarget(target: AndroidTarget): string {
+  const api = target.apiLevel ? ` API ${target.apiLevel}` : '';
+  return `${target.model ?? target.serial} (${
+    target.isEmulator ? 'emulator' : 'device'
+  }${api}, ${target.state})`;
+}
+
+export async function listAndroidTargets(): Promise<AndroidTarget[]> {
+  const { stdout, code } = await adb(undefined, ['devices', '-l'], 60_000);
+  if (code !== 0) return [];
+
+  const targets: AndroidTarget[] = [];
+  for (const line of stdout.split('\n').slice(1)) {
+    const match = line.match(/^(\S+)\s+(device|offline|unauthorized)\b(.*)$/);
+    if (!match) continue;
+    const serial = match[1];
+    const model = match[3].match(/model:(\S+)/)?.[1];
+    targets.push({
+      serial,
+      model,
+      // Serial naming is the reliable tell; `ro.kernel.qemu` has moved around between
+      // images and is missing on recent ones.
+      isEmulator: serial.startsWith('emulator-'),
+      state: match[2] as AndroidTarget['state'],
+    });
+  }
+
+  for (const target of targets) {
+    if (target.state !== 'device') continue;
+    const api = await adb(target.serial, [
+      'shell',
+      'getprop',
+      'ro.build.version.sdk',
+    ]);
+    const parsed = Number(api.stdout.trim());
+    if (!Number.isNaN(parsed)) target.apiLevel = parsed;
+  }
+
+  return targets;
+}
+
+export function selectAndroidTarget(
+  targets: AndroidTarget[],
+  selector?: string
+): { target?: AndroidTarget; usable: AndroidTarget[] } {
+  // Emulators and phones alike. The earlier emulator-only filter existed so a run could
+  // not silently pick whichever phone was plugged in — the target prompt now covers that,
+  // and a physical device is where the failures this tool cares about actually happen
+  // (Doze, battery optimisation, an OEM killing the process).
+  const usable = targets.filter((t) => t.state === 'device');
+  if (selector) {
+    return {
+      target: usable.find((t) => t.serial === selector || t.model === selector),
+      usable,
+    };
+  }
+  return { target: usable.length === 1 ? usable[0] : undefined, usable };
+}
+
+export async function packageInstalled(
+  serial: string,
+  packageName: string
+): Promise<boolean> {
+  const { stdout, code } = await adb(serial, [
+    'shell',
+    'pm',
+    'list',
+    'packages',
+    packageName,
+  ]);
+  if (code !== 0) return false;
+  return stdout
+    .split('\n')
+    .some((line) => line.trim() === `package:${packageName}`);
+}
+
+/**
+ * Android's stopped state, which is the single most misleading thing about testing push
+ * here: a force-stopped app is not delivered to at all, by design. A developer who stops
+ * the app from Settings and then sends a push sees nothing and concludes push is broken.
+ */
+/**
+ * When this build went on the device.
+ *
+ * `lastUpdateTime` is the one that matters — `firstInstallTime` survives reinstalls of
+ * later builds, so it answers a different question. Both come out of the `dumpsys package`
+ * call this module already makes for the stopped state, which is why freshness costs
+ * nothing to know on Android and needed the app bundle's mtime on iOS.
+ */
+export function installTimesFrom(dump: string): {
+  firstInstall?: Date;
+  lastUpdate?: Date;
+} {
+  const parse = (label: string): Date | undefined => {
+    const match = dump.match(
+      new RegExp(`${label}=(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})`)
+    );
+    if (!match) return undefined;
+    // dumpsys prints device-local time with no zone, which is the best available.
+    const parsed = new Date(match[1].replace(' ', 'T'));
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  };
+  return {
+    firstInstall: parse('firstInstallTime'),
+    lastUpdate: parse('lastUpdateTime'),
+  };
+}
+
+export async function packageStopped(
+  serial: string,
+  packageName: string
+): Promise<boolean | undefined> {
+  const { stdout, code } = await adb(serial, [
+    'shell',
+    'dumpsys',
+    'package',
+    packageName,
+  ]);
+  if (code !== 0) return undefined;
+  const match = stdout.match(/User \d+:[^\n]*stopped=(true|false)/);
+  return match ? match[1] === 'true' : undefined;
+}
+
+export async function packageInstalledAt(
+  serial: string,
+  packageName: string
+): Promise<Date | undefined> {
+  const { stdout, code } = await adb(serial, [
+    'shell',
+    'dumpsys',
+    'package',
+    packageName,
+  ]);
+  if (code !== 0) return undefined;
+  const times = installTimesFrom(stdout);
+  return times.lastUpdate ?? times.firstInstall;
+}
+
+export async function notificationPermission(
+  serial: string,
+  packageName: string
+): Promise<boolean | undefined> {
+  const { stdout, code } = await adb(serial, [
+    'shell',
+    'dumpsys',
+    'package',
+    packageName,
+  ]);
+  if (code !== 0) return undefined;
+  const match = stdout.match(
+    /android\.permission\.POST_NOTIFICATIONS: granted=(true|false)/
+  );
+  return match ? match[1] === 'true' : undefined;
+}
+
+export interface Connectivity {
+  /** Raw IP reachability: the network is up at all. */
+  ip: boolean;
+  /** Name resolution, which is what Firebase actually needs. */
+  dns: boolean;
+}
+
+/**
+ * Can this target reach Firebase?
+ *
+ * An emulator that loses DNS — which happens whenever the host's resolver changes under a
+ * running instance — keeps its IP route and answers pings, so everything looks healthy
+ * while no push can ever arrive. Reporting that as "the push never arrived" blames the
+ * integration for the emulator's plumbing, and it cost a full matrix run to find.
+ */
+export async function connectivity(serial: string): Promise<Connectivity> {
+  const ip = await adb(
+    serial,
+    ['shell', 'ping', '-c', '1', '-W', '2', '8.8.8.8'],
+    30_000
+  );
+  const dns = await adb(
+    serial,
+    ['shell', 'ping', '-c', '1', '-W', '2', 'fcm.googleapis.com'],
+    30_000
+  );
+  return {
+    ip: /1 received|1 packets received/.test(ip.stdout),
+    dns: !/unknown host/i.test(dns.stdout + dns.stderr) && dns.code === 0,
+  };
+}
+
+export interface AndroidSdkState {
+  deviceToken?: string;
+  userId?: string;
+  anonymousId?: string;
+  siteId?: string;
+  writeKey?: string;
+  sources: string[];
+  error?: string;
+  /**
+   * `run-as` refused the package: only a debuggable build lets another process read its
+   * files. Nothing was read, which is not the same as nothing being there.
+   */
+  notDebuggable?: boolean;
+}
+
+/**
+ * What the SDK recorded on the device.
+ *
+ * Easier than iOS in every respect: plain XML in two files, both readable with `run-as` on
+ * a debuggable build. The token especially has to come from here and never from logcat,
+ * which truncates long lines — a clipped FCM token comes back from a send as
+ * `FCM_UNREGISTERED`, which reads exactly like a broken integration.
+ */
+export async function readAndroidSdkState(
+  serial: string,
+  packageName: string
+): Promise<AndroidSdkState> {
+  const state: AndroidSdkState = { sources: [] };
+
+  const global = await readAppFile(
+    serial,
+    packageName,
+    `shared_prefs/io.customer.sdk.${packageName}.xml`
+  );
+  if (global.text) {
+    state.sources.push(`io.customer.sdk.${packageName}.xml`);
+    state.deviceToken = prefString(global.text, 'device_token');
+    const settings = prefString(global.text, 'config_settings');
+    if (settings) {
+      state.writeKey = safeJson(settings)?.writeKey as string | undefined;
+    }
+  } else {
+    state.error = global.error;
+    if (/not debuggable/.test(global.error ?? '')) {
+      state.notDebuggable = true;
+      return state;
+    }
+  }
+
+  // The CDP layer keeps identity in its own file, named after the write key.
+  const listing = await adb(serial, [
+    'shell',
+    'run-as',
+    packageName,
+    'ls',
+    `/data/data/${packageName}/shared_prefs`,
+  ]);
+  const analytics = analyticsStore(listing.stdout, state.writeKey);
+  if (!analytics) return state;
+
+  const cdp = await readAppFile(
+    serial,
+    packageName,
+    `shared_prefs/${analytics}`
+  );
+  if (!cdp.text) return state;
+
+  state.sources.push(analytics);
+  // Named after the key the SDK was initialized with, like the iOS store.
+  state.writeKey ||= analytics.slice(
+    'analytics-android-'.length,
+    -'.xml'.length
+  );
+  state.userId = prefString(cdp.text, 'segment.userId');
+  state.anonymousId = prefString(cdp.text, 'segment.anonymousId');
+
+  const settings = prefString(cdp.text, 'segment.settings');
+  if (settings) {
+    const parsed = safeJson(settings);
+    const integrations = parsed?.integrations as
+      | Record<string, Record<string, string>>
+      | undefined;
+    for (const value of Object.values(integrations ?? {})) {
+      if (value?.siteId) state.siteId = value.siteId;
+      if (value?.apiKey && !state.writeKey) state.writeKey = value.apiKey;
+    }
+  }
+
+  return state;
+}
+
+/**
+ * The CDP layer's store for the key the SDK is configured with. An app that changed its key
+ * keeps a store for the old one, and its identity is not the app's any more.
+ */
+export function analyticsStore(
+  listing: string,
+  writeKey?: string
+): string | undefined {
+  const stores = listing
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('analytics-android-'));
+  return (
+    stores.find((store) => store === `analytics-android-${writeKey}.xml`) ??
+    stores[0]
+  );
+}
+
+function safeJson(text: string): Record<string, unknown> | undefined {
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+}
