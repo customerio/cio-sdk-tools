@@ -383,10 +383,25 @@ export async function readSdkState(
   }
 
   const entries = await fs.readdir(preferencesDirectory).catch(() => []);
-  const cdpStore = entries.find(
-    (entry) =>
-      entry.startsWith('com.segment.storage.') && entry.endsWith('.plist')
+  // One store per key the app has ever run with, so an app that changed its key keeps the
+  // old one too. The newest is the one the SDK is writing to now.
+  const stores = await Promise.all(
+    entries
+      .filter(
+        (entry) =>
+          entry.startsWith('com.segment.storage.') && entry.endsWith('.plist')
+      )
+      .map(async (entry) => ({
+        entry,
+        modified:
+          (
+            await fs
+              .stat(path.join(preferencesDirectory, entry))
+              .catch(() => undefined)
+          )?.mtimeMs ?? 0,
+      }))
   );
+  const cdpStore = stores.sort((a, b) => b.modified - a.modified)[0]?.entry;
   if (!cdpStore) return state;
 
   const cdpPath = path.join(preferencesDirectory, cdpStore);
