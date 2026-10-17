@@ -499,3 +499,17 @@ test('a closing sentence starts with a capital, unless its first word is cased i
   assert.strictEqual(sentence('iOS says notifications are not allowed.'), 'iOS says notifications are not allowed.');
   assert.strictEqual(sentence('iPhone 15 was not found.'), 'iPhone 15 was not found.');
 });
+
+test("an extension whose SDK logged nothing proves arrival, not that the push was handled", () => {
+  const report = (section) => ({
+    sections: [{ kind: 'cells', metric: 'delivered', cells: [], ...section }],
+    causes: [],
+  });
+  const quiet = PUSH_VOICE.conclusion(report({ extensionSdkQuiet: true }));
+  assert.strictEqual(quiet[0], 'each push arrived on the device.');
+  assert.match(quiet.join(' '), /extension ran, but its SDK logged nothing/);
+  assert.match(quiet.join(' '), /check it runs with the app's key/);
+
+  const handled = PUSH_VOICE.conclusion(report({}));
+  assert.match(handled[0], /the app handled it/);
+});

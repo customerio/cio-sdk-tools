@@ -311,3 +311,110 @@ test('--device by name takes the running simulator, and refuses two running unde
   assert.deepStrictEqual(causes(rung), ['device.not_available']);
   assert.ok(rung.checks[0].evidence.includes('named, but shutdown: iPhone 16 (1688FDB0)'));
 });
+
+test('an iOS app on Firebase needs a workspace that sends iOS through Firebase', () => {
+  const facts = (platform, config) => ({
+    cio: authed,
+    platform,
+    provider: 'fcm',
+    resolution: { how: 'explicit', candidates: [], workspace: { id: '122348' } },
+    credential: { config },
+  });
+  const ios = workspaceReady(facts('ios', ''));
+  assert.deepStrictEqual(causes(ios), ['workspace.fcm_ios_not_enabled']);
+  assert.match(check(ios, 'push_credential').evidence.join(' '), /config is empty, not "allow_ios"/);
+
+  assert.strictEqual(Ladder.verdictOf(workspaceReady(facts('ios', 'allow_ios'))), 'pass');
+  // Android has no such setting: its FCM credential sends to Android either way.
+  assert.strictEqual(Ladder.verdictOf(workspaceReady(facts('android', ''))), 'pass');
+});
+
+test("the keys the app and its extension run with are checked against the workspace's", () => {
+  const facts = (keys) => ({
+    cio: authed,
+    platform: 'ios',
+    provider: 'apns',
+    resolution: { how: 'explicit', candidates: [], workspace: { id: '94996', name: 'Mobile: Expo' } },
+    credential: { config: 'sandbox' },
+    keys: {
+      workspaceKeys: [{ key: '79ea5300000000000000', source: 'Expo Testbed' }],
+      owners: {},
+      ...keys,
+    },
+  });
+
+  const held = workspaceReady(facts({ sdkKey: '79ea5300000000000000' }), 'development');
+  assert.strictEqual(check(held, 'sdk_key').verdict, 'pass');
+  assert.match(check(held, 'sdk_key').label, /App reports to Mobile: Expo/);
+  // A real key is never printed whole.
+  assert.match(check(held, 'sdk_key').evidence[0], /79ea53…, from source "Expo Testbed"/);
+
+  const elsewhere = workspaceReady(
+    facts({ sdkKey: '5f660a00000000000000', owners: { '5f660a00000000000000': { id: '122348', name: 'Mobile: React Native' } } }),
+    'development'
+  );
+  assert.deepStrictEqual(causes(elsewhere), ['workspace.sdk_key_other_workspace']);
+  assert.match(check(elsewhere, 'sdk_key').detail, /Mobile: React Native \(122348\)/);
+
+  const dead = workspaceReady(facts({ sdkKey: 'localsmoke_cdp_key' }), 'development');
+  assert.deepStrictEqual(causes(dead), ['workspace.sdk_key_unknown']);
+
+  const extension = workspaceReady(
+    facts({ extensionKey: { value: 'test-cdp-api-key', site: 'NotificationService/Env.swift:5' } }),
+    'development'
+  );
+  assert.deepStrictEqual(causes(extension), ['workspace.extension_key_foreign']);
+  assert.match(check(extension, 'extension_key').evidence.join(' '), /Env\.swift:5 runs with key test-cdp-api-key/);
+
+  // Keys that could not be listed prove nothing either way.
+  const unread = workspaceReady(facts({ sdkKey: 'abc', error: 'API error 403' }), 'development');
+  assert.strictEqual(check(unread, 'sdk_key').verdict, 'skip');
+});
+
+const { androidDeviceReady } = require('../../dist/verify/areas/push/registration/android_device');
+
+test('an answer from Firebase is enough, whatever 8.8.8.8 does', () => {
+  const facts = (network) => ({
+    target: { serial: 'emulator-5554', kind: 'emulator', model: 'sdk' },
+    usable: [],
+    installed: true,
+    permissionGranted: true,
+    network,
+    sdk: { deviceToken: 'a'.repeat(140), userId: 'ami@customer.io', sources: [] },
+  });
+  const network = (rung) => check(rung, 'network_reachable');
+  assert.strictEqual(network(androidDeviceReady(facts({ ip: false, dns: true }), 'io.app')).verdict, 'pass');
+  assert.strictEqual(network(androidDeviceReady(facts({ ip: false, dns: false }), 'io.app')).cause, 'device.no_network');
+  assert.strictEqual(network(androidDeviceReady(facts({ ip: true, dns: false }), 'io.app')).cause, 'device.dns_unresolved');
+});
+
+test('a build that is not debuggable is said to be unreadable, not to have no token', () => {
+  const rung = androidDeviceReady(
+    {
+      target: { serial: 'emulator-5554', kind: 'emulator', model: 'sdk' },
+      usable: [],
+      installed: true,
+      permissionGranted: true,
+      network: { ip: true, dns: true },
+      sdk: {
+        sources: [],
+        notDebuggable: true,
+        error: 'run-as: package not debuggable: io.customer.testbed.expo',
+      },
+    },
+    'io.customer.testbed.expo'
+  );
+  assert.deepStrictEqual(causes(rung), ['device.build_not_debuggable']);
+  assert.strictEqual(check(rung, 'token_registered'), undefined);
+  assert.strictEqual(check(rung, 'identity_read'), undefined);
+});
+
+test('the shared wiring causes no longer send an Android app to the iOS docs', () => {
+  const { resolveCause } = require('../../dist/verify/core/report/causes');
+  require('../../dist/verify/areas/push/causes');
+  for (const code of ['wiring.sdk_absent', 'wiring.init_absent', 'wiring.init_not_at_launch']) {
+    const cause = resolveCause(code);
+    assert.doesNotMatch(cause.docs ?? '', /\/ios\//, code);
+  }
+  assert.match(resolveCause('wiring.init_absent').remedy, /Application\.onCreate on Android/);
+});

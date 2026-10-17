@@ -16,8 +16,8 @@ const IOS_PUSH_DOCS = 'https://www.customer.io/docs/sdk/ios/push/';
 const IOS_RICH_PUSH_DOCS =
   'https://www.customer.io/docs/sdk/ios/push/#rich-push';
 const ANDROID_PUSH_DOCS = 'https://www.customer.io/docs/sdk/android/push/';
-const IOS_GETTING_STARTED_DOCS =
-  'https://www.customer.io/docs/sdk/ios/getting-started/';
+/** Every platform's setup, the wrappers' included: these causes are shared. */
+const SDK_DOCS = 'https://www.customer.io/docs/sdk/';
 
 export const CAUSES: Record<string, PushCause> = {
   'wiring.sdk_absent': {
@@ -26,24 +26,24 @@ export const CAUSES: Record<string, PushCause> = {
     summary: 'The Customer.io SDK is not a dependency of this project.',
     remedy:
       'Add the SDK before anything else. Every later finding would be a consequence of its absence rather than a cause.',
-    docs: IOS_GETTING_STARTED_DOCS,
+    docs: SDK_DOCS,
   },
   'wiring.init_absent': {
     stage: 'project_wiring',
     severity: 'blocker',
     summary: 'No call to CustomerIO.initialize was found in the app sources.',
     remedy:
-      'Initialize the SDK from the app delegate launch method. Without it the SDK never registers for push and never reports a metric.',
-    docs: IOS_GETTING_STARTED_DOCS,
+      "Initialize the SDK when the app starts: from the app delegate launch method on iOS, from Application.onCreate on Android, or from the app's startup code in React Native, Expo and Flutter. Without it the SDK never registers for push and never reports a metric.",
+    docs: SDK_DOCS,
   },
   'wiring.init_not_at_launch': {
     stage: 'project_wiring',
     severity: 'blocker',
     summary:
-      'CustomerIO.initialize runs from a SwiftUI view body, which is re-evaluated on every redraw and carries no guarantee of running before the system delivers a launch push.',
+      'CustomerIO.initialize runs where nothing guarantees it runs before a push arrives: a SwiftUI view body on iOS, which is re-evaluated on every redraw, or an Activity on Android, which a push never starts.',
     remedy:
-      'Move initialization into the app delegate launch method, or into the App type initializer.',
-    docs: IOS_GETTING_STARTED_DOCS,
+      'Move initialization to app launch: the app delegate launch method or the App type initializer on iOS, Application.onCreate on Android.',
+    docs: SDK_DOCS,
   },
   'wiring.init_launch_unproven': {
     stage: 'project_wiring',
@@ -236,12 +236,55 @@ export const CAUSES: Record<string, PushCause> = {
       'Re-save the APNs credential so the workspace records its environment. Until it does, the sandbox-versus-production pairing cannot be checked, and that mismatch is silent on both ends.',
     docs: IOS_PUSH_DOCS,
   },
+  'workspace.fcm_ios_not_enabled': {
+    stage: 'workspace_ready',
+    severity: 'blocker',
+    summary:
+      "The app gets a Firebase token on iOS, and this workspace's FCM credential isn't set up to send to iOS.",
+    remedy:
+      "Customer.io refuses every send to this app with NoProviderConfigured until the workspace sends iOS pushes through Firebase: set that in the workspace's push settings, or build the app with MessagingPushAPN to send through APNs.",
+    docs: IOS_PUSH_DOCS,
+  },
+  'workspace.sdk_key_unknown': {
+    stage: 'workspace_ready',
+    severity: 'blocker',
+    summary:
+      "The app's SDK runs with a key that belongs to no workspace this login can read.",
+    remedy:
+      'Nothing the app reports reaches Customer.io, though a push sent to its token still arrives. Check the key passed to CustomerIO.initialize. An app can keep a key from an earlier build in its own storage, so delete the app and install it again rather than installing over it.',
+    docs: SDK_DOCS,
+  },
+  'workspace.sdk_key_other_workspace': {
+    stage: 'workspace_ready',
+    severity: 'blocker',
+    summary: "The app's SDK runs with a key from another workspace.",
+    remedy:
+      'Everything the app reports, its profile and device included, goes to the workspace named with this finding. Choose that one with --workspace, or initialize the SDK with a key from this one.',
+    docs: SDK_DOCS,
+  },
+  'workspace.extension_key_foreign': {
+    stage: 'workspace_ready',
+    severity: 'blocker',
+    summary:
+      "The Notification Service Extension's SDK runs with a key that isn't one of this workspace's.",
+    remedy:
+      "Pushes still arrive and show, but their delivered metrics go to another workspace, or nowhere. Initialize the extension's SDK with the app's key, where this finding points.",
+    docs: IOS_RICH_PUSH_DOCS,
+  },
   'workspace.lookup_failed': {
     stage: 'workspace_ready',
     severity: 'warning',
     summary: 'The workspace credential could not be read.',
     remedy:
       'Check that the authenticated account can read this workspace. Nothing about the credential is proven either way.',
+  },
+  'device.build_not_debuggable': {
+    stage: 'device_ready',
+    severity: 'blocker',
+    summary:
+      "The installed build isn't debuggable, so the SDK's token and profile can't be read from it.",
+    remedy:
+      "Install a debug build, or set debuggable true on this build type, and run again. Android lets another process read an app's files only when the build is debuggable, and without the token there is nothing to send to.",
   },
   'device.not_available': {
     stage: 'device_ready',
@@ -355,6 +398,15 @@ export const CAUSES: Record<string, PushCause> = {
     summary: 'Customer.io refused the send.',
     remedy:
       'Read the error: it is usually the token, the credential, or a sandbox/production mismatch. Nothing about the SDK is proven either way until a send is accepted.',
+  },
+  'send.provider_not_configured': {
+    stage: 'delivered_matrix',
+    severity: 'blocker',
+    summary:
+      'Customer.io has no push provider set up for this platform in the workspace (NoProviderConfigured).',
+    remedy:
+      "For an iOS app that gets its token from Firebase, the workspace has to send iOS pushes through Firebase; otherwise add the platform's push credential. Every send is refused until then.",
+    docs: IOS_PUSH_DOCS,
   },
   'send.api_failed': {
     stage: 'delivered_matrix',
