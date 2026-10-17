@@ -352,7 +352,7 @@ export const CAUSES: Record<string, PushCause> = {
     severity: 'blocker',
     summary: "No profile in this workspace matches the device's identity.",
     remedy:
-      'Check the workspace is the one the app talks to, and that identify has reached it — profile sync runs on a cycle, so a login seconds old may not be there yet.',
+      'Check the workspace is the one the app talks to, and that identify has reached it — profile sync runs on a cycle, so a login seconds old may not be there yet. An app sent to the background straight after logging in keeps its login on the device until it is opened again (Android cuts its network, iOS suspends it): keep the app open for about 30 seconds after logging in, then run again.',
   },
   'profile.no_device_linked': {
     stage: 'profile_linked',
@@ -367,7 +367,7 @@ export const CAUSES: Record<string, PushCause> = {
     summary:
       'The profile has devices, but not the token this target is holding.',
     remedy:
-      'This is the failure that hides behind a green dashboard: the profile looks addressable and the phone in your hand is not the device that gets the push. Re-identify after the token was issued, or clear the stale devices.',
+      'This is the failure that hides behind a green dashboard: the profile looks addressable and the phone in your hand is not the device that gets the push. Re-identify after the token was issued, or clear the stale devices. If the app was just installed or logged in, keep it open for about 30 seconds so its device registration reaches Customer.io, then run again: an app sent to the background holds it on the device.',
   },
   'profile.app_identifier_mismatch': {
     stage: 'profile_linked',
