@@ -6,6 +6,11 @@ import { AppState } from '../../../platform/app_state';
 
 export const RATE_LIMITED_CAUSE = 'send.provider_rate_limited';
 export const API_FAILED_CAUSE = 'send.api_failed';
+/**
+ * The workspace has no provider for the token's platform: an iOS token from Firebase sent to
+ * a workspace that sends iOS through APNs. Customer.io names it, so the run does too.
+ */
+export const NOT_CONFIGURED_CAUSE = 'send.provider_not_configured';
 
 export interface SendRequest {
   /** Print the request and send nothing, so the orchestration can be exercised safely. */
@@ -197,6 +202,8 @@ export function rejectedCell(
       ? RATE_LIMITED_CAUSE
       : sent.serverError
       ? API_FAILED_CAUSE
+      : /NoProviderConfigured/.test(sent.error ?? '')
+      ? NOT_CONFIGURED_CAUSE
       : 'send.provider_rejected',
     evidence: [
       ...evidence,

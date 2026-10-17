@@ -209,6 +209,29 @@ export function extensionRanIn(
   );
 }
 
+/**
+ * The extension ran and its SDK wrote not one line. The OS still writes lines from the
+ * extension's process, which is how the run knows it ran; none of them is the SDK's, so
+ * nothing shows it tracked a delivery. An extension set up with a placeholder key and no log
+ * level looks exactly like this.
+ */
+export function extensionSdkQuiet(
+  lines: LogLine[],
+  extensionName?: string
+): boolean {
+  const fromExtension = lines.filter((line) =>
+    ranInExtension([line], extensionName)
+  );
+  return (
+    fromExtension.length > 0 &&
+    !fromExtension.some(
+      (line) =>
+        line.subsystem === 'io.customer.sdk' ||
+        SDK_MODULE_TAG.test(line.message)
+    )
+  );
+}
+
 /** Delivery ids are base64url with a `dgS_` prefix — a charset without `_` and `-` misses. */
 export function deliveryIdsIn(lines: LogLine[]): string[] {
   const ids = new Set<string>();

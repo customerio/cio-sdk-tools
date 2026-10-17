@@ -86,6 +86,11 @@ export interface MatrixSection extends Section {
    * and nothing proved the app handled it.
    */
   sdkQuiet?: boolean;
+  /**
+   * iOS only: the extension ran for the pushes and its SDK wrote not one line, so nothing
+   * showed it tracked a delivery. The app's own lines say nothing about that.
+   */
+  extensionSdkQuiet?: boolean;
   /** The last time in the run the SDK logged what iOS says about notifications. */
   notificationAuthorization?: NotificationAuthorization;
 }

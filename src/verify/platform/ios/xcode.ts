@@ -111,8 +111,19 @@ export async function loadProject(
   return model;
 }
 
-/** Only the settings this tool reads are worth a 15s round trip. */
-function needsResolution(target: Target): boolean {
+/**
+ * Only the settings this tool reads are worth a 15s round trip. A bundle id set only in an
+ * `.xcconfig` file is not in the pbxproj at all, and without one the app cannot be found on
+ * the device.
+ */
+export function needsResolution(target: Target): boolean {
+  if (
+    (target.productType === APP_PRODUCT_TYPE ||
+      target.productType === EXTENSION_PRODUCT_TYPE) &&
+    target.settings.PRODUCT_BUNDLE_IDENTIFIER === undefined
+  ) {
+    return true;
+  }
   const watched = [
     'PRODUCT_BUNDLE_IDENTIFIER',
     'CODE_SIGN_ENTITLEMENTS',
