@@ -307,17 +307,27 @@ export const PUSH_MODULE_NAMES = [
 
 export function sdkModulesFrom(gradle: string): string[] {
   const modules = new Set<string>();
-  // Compiled against, never shipped: the wrappers declare their optional modules this way.
-  const shipped = gradle
-    .split('\n')
-    .filter((line) => !/^\s*compileOnly\b/.test(line))
-    .join('\n');
+  // Compiled against, never shipped. The wrappers declare their optional modules this way,
+  // with an `api` line for the same module behind a Gradle property, so a module declared
+  // compileOnly anywhere is optional and is left out.
+  const lines = gradle.split('\n');
+  const compileOnly = (line: string) => /^\s*compileOnly\b/.test(line);
+  const optional = new Set(
+    lines
+      .filter(compileOnly)
+      .flatMap((line) =>
+        [...line.matchAll(/io\.customer\.android:([a-z0-9-]+):/g)].map(
+          (match) => match[1]
+        )
+      )
+  );
+  const shipped = lines.filter((line) => !compileOnly(line)).join('\n');
   // The trailing colon matters: without it the plugin id `io.customer.android.publish-root`
   // is read as a module named `publish-root`.
   for (const match of shipped.matchAll(
     /io\.customer\.android:([a-z0-9-]+):/g
   )) {
-    modules.add(match[1]);
+    if (!optional.has(match[1])) modules.add(match[1]);
   }
   for (const match of shipped.matchAll(
     /project\s*\(?\s*["']:([a-z0-9-]+)["']/g
