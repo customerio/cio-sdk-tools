@@ -338,7 +338,6 @@ test("the keys the app and its extension run with are checked against the worksp
     credential: { config: 'sandbox' },
     keys: {
       workspaceKeys: [{ key: '79ea5300000000000000', source: 'Expo Testbed' }],
-      owners: {},
       ...keys,
     },
   });
@@ -349,15 +348,10 @@ test("the keys the app and its extension run with are checked against the worksp
   // A real key is never printed whole.
   assert.match(check(held, 'sdk_key').evidence[0], /79ea53…, from source "Expo Testbed"/);
 
-  const elsewhere = workspaceReady(
-    facts({ sdkKey: '5f660a00000000000000', owners: { '5f660a00000000000000': { id: '122348', name: 'Mobile: React Native' } } }),
-    'development'
-  );
-  assert.deepStrictEqual(causes(elsewhere), ['workspace.sdk_key_other_workspace']);
-  assert.match(check(elsewhere, 'sdk_key').detail, /Mobile: React Native \(122348\)/);
-
-  const dead = workspaceReady(facts({ sdkKey: 'localsmoke_cdp_key' }), 'development');
-  assert.deepStrictEqual(causes(dead), ['workspace.sdk_key_unknown']);
+  // A key from another workspace and a dead one read the same here: nothing this workspace issued.
+  const foreign = workspaceReady(facts({ sdkKey: 'localsmoke_cdp_key' }), 'development');
+  assert.deepStrictEqual(causes(foreign), ['workspace.sdk_key_foreign']);
+  assert.match(check(foreign, 'sdk_key').detail, /localsmoke_cdp_key, which no source in this workspace issued/);
 
   const extension = workspaceReady(
     facts({ extensionKey: { value: 'test-cdp-api-key', site: 'NotificationService/Env.swift:5' } }),

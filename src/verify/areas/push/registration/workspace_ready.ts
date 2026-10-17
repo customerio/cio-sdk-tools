@@ -4,12 +4,7 @@ import {
   Workspace,
   WorkspaceResolution,
 } from '../../../platform/cio/workspace';
-import {
-  SourceKey,
-  keyOwner,
-  shortKey,
-  workspaceKeys,
-} from '../../../platform/cio/keys';
+import { SourceKey, shortKey, workspaceKeys } from '../../../platform/cio/keys';
 import { KeyLiteral } from '../../../platform/ios/source';
 import { fail, pass, skipped, warn } from '../../../core/report/ladder';
 import { Check, Rung } from '../../../core/report/types';
@@ -33,8 +28,6 @@ export interface KeyFacts {
   extensionKey?: KeyLiteral;
   workspaceKeys: SourceKey[];
   error?: string;
-  /** For a key the workspace does not hold, the workspace that does, if any. */
-  owners: Record<string, Workspace | undefined>;
 }
 
 /**
@@ -63,7 +56,7 @@ export async function gatherWorkspace(options: {
 
   const [credential, keys] = await Promise.all([
     pushCredential(workspace.id, options.provider),
-    gatherKeys(workspace, resolution.candidates, options),
+    gatherKeys(workspace, options),
   ]);
   return {
     ...base,
@@ -76,33 +69,16 @@ export async function gatherWorkspace(options: {
 
 async function gatherKeys(
   workspace: Workspace,
-  candidates: Workspace[],
   options: { sdkKey?: string; extensionKey?: KeyLiteral }
 ): Promise<KeyFacts | undefined> {
-  const asked = [options.sdkKey, options.extensionKey?.value].filter(
-    (key): key is string => Boolean(key)
-  );
-  if (asked.length === 0) return undefined;
-
+  if (!options.sdkKey && !options.extensionKey) return undefined;
   const listed = await workspaceKeys(workspace.id);
-  const facts: KeyFacts = {
+  return {
     sdkKey: options.sdkKey,
     extensionKey: options.extensionKey,
     workspaceKeys: listed.keys,
     error: listed.error,
-    owners: {},
   };
-  if (listed.error) return facts;
-
-  // Only a key the chosen workspace does not hold sends the run looking anywhere else.
-  const others = candidates.filter(
-    (candidate) => candidate.id !== workspace.id
-  );
-  for (const key of new Set(asked)) {
-    if (listed.keys.some((entry) => entry.key === key)) continue;
-    facts.owners[key] = await keyOwner(key, others);
-  }
-  return facts;
 }
 
 export function workspaceReady(
@@ -172,6 +148,7 @@ function keyChecks(facts: WorkspaceFacts): Check[] {
             id: 'sdk_key',
             label,
             where: 'the SDK on the device',
+            cause: 'workspace.sdk_key_foreign',
           })
     );
   }
@@ -198,7 +175,7 @@ function keyChecks(facts: WorkspaceFacts): Check[] {
 function keyCheck(
   keys: KeyFacts,
   key: string,
-  check: { id: string; label: string; where: string; cause?: string }
+  check: { id: string; label: string; where: string; cause: string }
 ): Check {
   const held = keys.workspaceKeys.find((entry) => entry.key === key);
   if (held) {
@@ -206,28 +183,10 @@ function keyCheck(
       `key ${shortKey(key)}, from source "${held.source}"`,
     ]);
   }
-  const owner = keys.owners[key];
-  const evidence = [`${check.where} runs with key ${shortKey(key)}`];
-  if (owner) {
-    const elsewhere = `the key belongs to ${owner.name ?? owner.id} (${
-      owner.id
-    })`;
-    return fail(
-      check.id,
-      check.label,
-      check.cause ?? 'workspace.sdk_key_other_workspace',
-      [...evidence, elsewhere],
-      elsewhere
-    );
-  }
-  const nowhere = 'no workspace this login can read holds the key';
-  return fail(
-    check.id,
-    check.label,
-    check.cause ?? 'workspace.sdk_key_unknown',
-    [...evidence, nowhere],
-    `${shortKey(key)}: ${nowhere}`
-  );
+  const foreign = `${check.where} runs with key ${shortKey(
+    key
+  )}, which no source in this workspace issued`;
+  return fail(check.id, check.label, check.cause, [foreign], foreign);
 }
 
 function workspaceEvidence(resolution: WorkspaceResolution): string[] {

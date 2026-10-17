@@ -1,5 +1,4 @@
 import { cioApi, shortError } from './cli';
-import { Workspace } from './workspace';
 
 /** A key the SDK can be initialized with, and the source in the workspace that issued it. */
 export interface SourceKey {
@@ -14,6 +13,9 @@ export interface SourceKey {
  * reports nowhere, and a key from another workspace reports there, and both still get a
  * push sent to the device's token. Without this the run reads either as a device that was
  * never linked to the profile.
+ *
+ * Only the chosen workspace is read. Finding which workspace a stray key belongs to means
+ * reading every source of every workspace, and one workspace can hold a hundred sources.
  */
 export async function workspaceKeys(
   environmentId: string,
@@ -57,23 +59,6 @@ export async function workspaceKeys(
         }))
     ),
   };
-}
-
-/**
- * The workspace a key belongs to, among those this login can read. Nothing means the key is
- * dead, or belongs to an account this login cannot see. Workspaces are read one at a time,
- * and only after the chosen one turned out not to hold the key.
- */
-export async function keyOwner(
-  key: string,
-  candidates: Workspace[],
-  api: typeof cioApi = cioApi
-): Promise<Workspace | undefined> {
-  for (const candidate of candidates) {
-    const { keys } = await workspaceKeys(candidate.id, api);
-    if (keys.some((entry) => entry.key === key)) return candidate;
-  }
-  return undefined;
 }
 
 /**
