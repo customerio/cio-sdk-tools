@@ -412,3 +412,11 @@ test('the shared wiring causes no longer send an Android app to the iOS docs', (
   }
   assert.match(resolveCause('wiring.init_absent').remedy, /Application\.onCreate on Android/);
 });
+
+test('a push that never arrived gets advice for both platforms', () => {
+  const { resolveCause } = require('../../dist/verify/core/report/causes');
+  require('../../dist/verify/areas/push/causes');
+  const remedy = resolveCause('runtime.push_never_arrived').remedy;
+  assert.match(remedy, /iOS simulator/);
+  assert.match(remedy, /Android device .* Wi-Fi off and on, or cold-boot the emulator/);
+});

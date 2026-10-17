@@ -568,7 +568,7 @@ export const CAUSES: Record<string, PushCause> = {
     severity: 'blocker',
     summary: 'The send was accepted and nothing reached the device at all.',
     remedy:
-      'Look at the credential pairing and the token first. A freshly booted simulator also lags minutes behind an accepted send, so try once more before believing this.',
+      "Look at the credential pairing and the token first, then the target's own link to its push service. A freshly booted iOS simulator lags minutes behind an accepted send, so try once more. An Android device can hold a dead connection to Firebase that still reports itself connected: turn its Wi-Fi off and on, or cold-boot the emulator, then run again.",
   },
   'runtime.nse_did_not_run': {
     stage: 'delivered_matrix',
