@@ -34,6 +34,12 @@ export interface ProfileInput {
   onSweep?: (workspace: Workspace) => void;
   /** Said while waiting for a login or a device to reach Customer.io. */
   onWait?: (text: string) => void;
+  /**
+   * Brings the app to the foreground, and says how. An app sent to the background straight
+   * after a login has no network on recent Android and is suspended on iOS, so the login and
+   * its device registration wait on the device until the app is opened again.
+   */
+  foreground?: () => Promise<string | undefined>;
   find?: typeof findProfile;
   settle?: Partial<typeof SETTLE>;
 }
@@ -89,6 +95,13 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
   // missing, unless another workspace already holds the device, which explains it.
   const waited: string[] = [];
   if ((!profile || !linked) && !hits.some((hit) => hit.hasToken)) {
+    // Once, before waiting: an app opened again sends what it queued in the background.
+    const opened = await input.foreground?.();
+    if (opened) {
+      waited.push(
+        `opened the app (${opened}), so a login it queued in the background could go out`
+      );
+    }
     const settle = { ...SETTLE, ...input.settle };
     const startedAt = Date.now();
     while (Date.now() - startedAt + settle.pollMs <= settle.maxMs) {
