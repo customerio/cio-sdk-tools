@@ -11,8 +11,8 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * `am force-stop` leaves the app in Android's stopped state, and a stopped app is not
  * delivered to at all — by design, not by defect. A developer who stops the app from
  * Settings, sends a push, sees nothing, and concludes push is broken is the exact
- * misdiagnosis this tool exists to prevent. `am kill` is the faithful "swiped away" case:
- * the process dies and the push revives it.
+ * misdiagnosis this tool exists to prevent. `am kill` from the home screen is the faithful
+ * "swiped away" case: the process dies and the push revives it.
  */
 export async function setAndroidState(
   serial: string,
@@ -56,15 +56,36 @@ export async function setAndroidState(
     return { ok: true, how: 'KEYCODE_HOME (background)' };
   }
 
+  // `am kill` ends only a process in the background. Killed straight from the foreground, the
+  // app kept running, and the killed push reached a live app.
+  await adb(serial, ['shell', 'input', 'keyevent', 'KEYCODE_HOME'], 60_000);
+  await sleep(2_500);
   await adb(serial, ['shell', 'am', 'kill', packageName], 60_000);
   await sleep(2_500);
+  const how =
+    'Home, then am kill (killed, not force-stop — a force-stopped app is never delivered to)';
+  if (await processRunning(serial, packageName)) {
+    return {
+      ok: false,
+      how,
+      error: "the app's process was still running after am kill",
+    };
+  }
   const stopped = await packageStopped(serial, packageName);
   return {
     ok: true,
-    how: 'am kill (killed, not force-stop — a force-stopped app is never delivered to)',
+    how,
     error:
       stopped === true
         ? 'the package is in the stopped state, which blocks delivery by design'
         : undefined,
   };
+}
+
+async function processRunning(
+  serial: string,
+  packageName: string
+): Promise<boolean> {
+  const { stdout } = await adb(serial, ['shell', 'pidof', packageName]);
+  return stdout.trim().length > 0;
 }
