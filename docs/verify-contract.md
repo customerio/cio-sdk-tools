@@ -199,7 +199,7 @@ A tool failure is one JSON line on stderr, in the `cio` CLI's own shape, so one 
 
 ## Causes
 
-81 today, each found by one step (`stage`), listed in [the appendix](#appendix-every-cause). Every check or push that doesn't pass names one.
+80 today, each found by one step (`stage`), listed in [the appendix](#appendix-every-cause). Every check or push that doesn't pass names one.
 
 - `blocker`: the integration is broken, or the run can't go on. The run fails (exit 20).
 - `warning`: worth the person's attention, or the reason a push is unproven. The run warns (exit 0) or ends unproven (exit 21).
@@ -237,7 +237,7 @@ Changing any of these can break the tool silently. Tell its owners first.
 | `GET /v1/accounts/{account_id}/environments` | Workspace names and ids. |
 | `GET /v1/environments/{id}/credentials/{push_apns\|push_fcm}` | Whether the workspace has a push credential, and its APNs environment. |
 | `GET /v1/environments/{id}/customers` | The profile by email or id, and its devices. |
-| `GET /cdp/api/workspaces/{id}/sources`, `GET /cdp/api/workspaces/{id}/sources/{source_id}/api_keys` | The keys the workspace issued, to check the keys the app and its extension run with. Other workspaces are read only when a key isn't the chosen one's, to name where it belongs. |
+| `GET /cdp/api/workspaces/{id}/sources`, `GET /cdp/api/workspaces/{id}/sources/{source_id}/api_keys` | The keys the chosen workspace issued, to check the keys the app and its extension run with. |
 
 ### SDK debug lines
 
@@ -336,10 +336,8 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
   Re-save the APNs credential so the workspace records its environment. Until it does, the sandbox-versus-production pairing cannot be checked, and that mismatch is silent on both ends. https://www.customer.io/docs/sdk/ios/push/
 - **`workspace.fcm_ios_not_enabled`** · blocker — The app gets a Firebase token on iOS, and this workspace's FCM credential isn't set up to send to iOS.
   Customer.io refuses every send to this app with NoProviderConfigured until the workspace sends iOS pushes through Firebase: set that in the workspace's push settings, or build the app with MessagingPushAPN to send through APNs. https://www.customer.io/docs/sdk/ios/push/
-- **`workspace.sdk_key_unknown`** · blocker — The app's SDK runs with a key that belongs to no workspace this login can read.
-  Nothing the app reports reaches Customer.io, though a push sent to its token still arrives. Check the key passed to CustomerIO.initialize. An app can keep a key from an earlier build in its own storage, so delete the app and install it again rather than installing over it. https://www.customer.io/docs/sdk/
-- **`workspace.sdk_key_other_workspace`** · blocker — The app's SDK runs with a key from another workspace.
-  Everything the app reports, its profile and device included, goes to the workspace named with this finding. Choose that one with --workspace, or initialize the SDK with a key from this one. https://www.customer.io/docs/sdk/
+- **`workspace.sdk_key_foreign`** · blocker — The app's SDK runs with a key that isn't one of this workspace's.
+  Everything the app reports, its profile and device included, goes to the workspace that issued the key, or nowhere if the key is dead, though a push sent to its token still arrives. Initialize the SDK with a key from this workspace, or choose the app's own workspace with --workspace. An app can keep a key from an earlier build in its own storage, so delete the app and install it again rather than installing over it. https://www.customer.io/docs/sdk/
 - **`workspace.extension_key_foreign`** · blocker — The Notification Service Extension's SDK runs with a key that isn't one of this workspace's.
   Pushes still arrive and show, but their delivered metrics go to another workspace, or nowhere. Initialize the extension's SDK with the app's key, where this finding points. https://www.customer.io/docs/sdk/ios/push/#rich-push
 - **`workspace.lookup_failed`** · warning — The workspace credential could not be read.
