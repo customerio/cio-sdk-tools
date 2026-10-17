@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 
 const { detectFramework, loadWrapper } = require('../../dist/verify/platform/framework');
-const { keyOwner, shortKey, workspaceKeys } = require('../../dist/verify/platform/cio/keys');
+const { shortKey, workspaceKeys } = require('../../dist/verify/platform/cio/keys');
 
 /** Lays out a project in a temporary folder: `{ 'relative/path': 'contents' }`. */
 function project(files) {
@@ -98,18 +98,6 @@ test("a workspace's keys are read from each of its sources", async () => {
   const failing = fakeApi({});
   assert.strictEqual((await workspaceKeys('1', failing.api)).keys.length, 0);
   assert.match((await workspaceKeys('1', failing.api)).error, /404/);
-});
-
-test('the owner of a key is found among the workspaces, or there is none', async () => {
-  const { api } = fakeApi({
-    '/cdp/api/workspaces/1/sources': { sources: [{ id: 10, name: 'one' }] },
-    '/cdp/api/workspaces/1/sources/10/api_keys': { api_keys: [{ api_key: 'aaa' }] },
-    '/cdp/api/workspaces/2/sources': { sources: [{ id: 20, name: 'two' }] },
-    '/cdp/api/workspaces/2/sources/20/api_keys': { api_keys: [{ api_key: 'bbb' }] },
-  });
-  const candidates = [{ id: '1', name: 'One' }, { id: '2', name: 'Two' }];
-  assert.deepStrictEqual(await keyOwner('bbb', candidates, api), { id: '2', name: 'Two' });
-  assert.strictEqual(await keyOwner('dead', candidates, api), undefined);
 });
 
 test('a real key is shortened, and a placeholder is printed as it is', () => {
