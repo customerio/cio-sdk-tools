@@ -436,7 +436,7 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
 - **`runtime.deep_link_absent`** · warning — The SDK reported the open, but the push carried no deep link to follow.
   Nothing is wrong with the open. If the link was expected, remember that `is_rich: true` gates the entire CIO payload block: without it the link never reaches the device.
 - **`runtime.push_never_arrived`** · blocker — The send was accepted and nothing reached the device at all.
-  Look at the credential pairing and the token first. A freshly booted simulator also lags minutes behind an accepted send, so try once more before believing this.
+  Look at the credential pairing and the token first, then the target's own link to its push service. A freshly booted iOS simulator lags minutes behind an accepted send, so try once more. An Android device can hold a dead connection to Firebase that still reports itself connected: turn its Wi-Fi off and on, or cold-boot the emulator, then run again.
 - **`runtime.nse_did_not_run`** · blocker — The push arrived and the Notification Service Extension never ran on it.
   This is the invisible failure. The notification displays, the dashboard shows the provider accepted it, and no delivery is ever counted. Check the extension is embedded, entitled to the App Group, and forwarding to the SDK.
 - **`runtime.push_not_seen`** · warning — Nothing on the phone showed this push arriving: the extension's process never logged, and the phone's log stream can drop lines.
