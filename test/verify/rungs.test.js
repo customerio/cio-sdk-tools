@@ -420,3 +420,46 @@ test('a push that never arrived gets advice for both platforms', () => {
   assert.match(remedy, /iOS simulator/);
   assert.match(remedy, /Android device .* Wi-Fi off and on, or cold-boot the emulator/);
 });
+
+test('a profile or device not there yet opens the app once, then waits for it', async () => {
+  const opened = [];
+  let reads = 0;
+  const device = { id: 'token-1', platform: 'android', sdkVersion: '6.13.1' };
+  const input = (find) => ({
+    cio: authed,
+    environmentId: '122348',
+    userId: 'david@cio.com',
+    token: 'token-1',
+    candidates: [],
+    settle: { maxMs: 200, pollMs: 10 },
+    find,
+    foreground: async () => {
+      opened.push('opened');
+      return 'monkey launch';
+    },
+  });
+
+  // The device reaches Customer.io only after the app has been opened again.
+  const rung = await profileLinked(
+    input(async () => {
+      reads += 1;
+      return { cioId: 'c1', identifiers: {}, devices: opened.length > 0 && reads > 2 ? [device] : [] };
+    })
+  );
+  assert.strictEqual(Ladder.verdictOf(rung), 'pass');
+  assert.deepStrictEqual(opened, ['opened']);
+  assert.match(check(rung, 'profile_found').evidence.join(' '), /opened the app \(monkey launch\)/);
+
+  // Already linked: the app is left alone.
+  opened.length = 0;
+  await profileLinked(input(async () => ({ cioId: 'c1', identifiers: {}, devices: [device] })));
+  assert.deepStrictEqual(opened, []);
+});
+
+test('the profile causes say to keep the app open after logging in', () => {
+  const { resolveCause } = require('../../dist/verify/core/report/causes');
+  require('../../dist/verify/areas/push/causes');
+  for (const code of ['profile.not_found', 'profile.token_not_linked']) {
+    assert.match(resolveCause(code).remedy, /keep (the app|it) open for about 30 seconds/, code);
+  }
+});
