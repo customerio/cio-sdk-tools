@@ -199,7 +199,7 @@ A tool failure is one JSON line on stderr, in the `cio` CLI's own shape, so one 
 
 ## Causes
 
-75 today, each found by one step (`stage`), listed in [the appendix](#appendix-every-cause). Every check or push that doesn't pass names one.
+81 today, each found by one step (`stage`), listed in [the appendix](#appendix-every-cause). Every check or push that doesn't pass names one.
 
 - `blocker`: the integration is broken, or the run can't go on. The run fails (exit 20).
 - `warning`: worth the person's attention, or the reason a push is unproven. The run warns (exit 0) or ends unproven (exit 21).
@@ -207,7 +207,7 @@ A tool failure is one JSON line on stderr, in the `cio` CLI's own shape, so one 
 ## Requirements
 
 - **Node.js 20 or later.** Node 20 went out of support in April 2026; CI tests it as the oldest the package allows.
-- **The Customer.io CLI, logged in:** `npm install -g @customerio/cli`, then `cio auth login`. The login needs to read workspaces, push credentials, customers and test deliveries, and to send test pushes. `--cio-profile` needs a `cio` that has profiles.
+- **The Customer.io CLI, logged in:** `npm install -g @customerio/cli`, then `cio auth login`. The login needs to read workspaces, push credentials, sources and their API keys, customers and test deliveries, and to send test pushes. `--cio-profile` needs a `cio` that has profiles.
 - **iOS:** macOS with Xcode, and a booted simulator or a USB-connected, unlocked iPhone running a development build. An iPhone's logs need `idevicesyslog` (`brew install libimobiledevice`).
 - **Android:** `adb`, and a running emulator or connected device with a debuggable build (the tool reads the SDK's stored token with `run-as`).
 - **The SDK at debug log level** for the checks that read its lines. At the default (error), arrival is still proven, but not that the app handled the push.
@@ -222,7 +222,7 @@ A tool failure is one JSON line on stderr, in the `cio` CLI's own shape, so one 
 | Expo | Run `expo prebuild` first, then as React Native | Not yet |
 | Flutter | App root with `--platform`, or the `ios/`/`android/` folder | Not yet |
 
-The tool verifies the native half of a wrapper app. The framework is named in the report (`project.framework`).
+The tool verifies the native half of a wrapper app, and reads the wrapper package with it: the SDK and its push module come with the package, `CustomerIO.initialize` is found in the app's JavaScript, TypeScript or Dart, and the package's Android manifest counts as the app's. The framework is named in the report (`project.framework`).
 
 ## What the tool depends on
 
@@ -237,10 +237,11 @@ Changing any of these can break the tool silently. Tell its owners first.
 | `GET /v1/accounts/{account_id}/environments` | Workspace names and ids. |
 | `GET /v1/environments/{id}/credentials/{push_apns\|push_fcm}` | Whether the workspace has a push credential, and its APNs environment. |
 | `GET /v1/environments/{id}/customers` | The profile by email or id, and its devices. |
+| `GET /cdp/api/workspaces/{id}/sources`, `GET /cdp/api/workspaces/{id}/sources/{source_id}/api_keys` | The keys the workspace issued, to check the keys the app and its extension run with. Other workspaces are read only when a key isn't the chosen one's, to name where it belongs. |
 
 ### SDK debug lines
 
-The tool matches these sentences. A wording change in the SDK is a breaking change for the tool.
+The tool matches these sentences. A wording change in the SDK is a breaking change for the tool. React Native forwards the Android SDK's lines to logcat under `ReactNativeJS`, with `[CIO] ` in front, and the tool reads them the same.
 
 - **iOS extension:** `Tracking push message delivered`, `Successfully tracked push metric 'delivered'`, `invoking contentHandler` / `normal completion`, `rich push step finished`.
 - **Android receipt:** `Received new message with deliveryId:`, `Tracking push message delivered with deliveryId:`, `Showing notification for message:`, `Received duplicate message with deliveryId:`, and the `[CIO-Push-Handoff]` worker lines.
@@ -287,11 +288,11 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
 ### Project wiring (`project_wiring`)
 
 - **`wiring.sdk_absent`** · blocker — The Customer.io SDK is not a dependency of this project.
-  Add the SDK before anything else. Every later finding would be a consequence of its absence rather than a cause. https://www.customer.io/docs/sdk/ios/getting-started/
+  Add the SDK before anything else. Every later finding would be a consequence of its absence rather than a cause. https://www.customer.io/docs/sdk/
 - **`wiring.init_absent`** · blocker — No call to CustomerIO.initialize was found in the app sources.
-  Initialize the SDK from the app delegate launch method. Without it the SDK never registers for push and never reports a metric. https://www.customer.io/docs/sdk/ios/getting-started/
-- **`wiring.init_not_at_launch`** · blocker — CustomerIO.initialize runs from a SwiftUI view body, which is re-evaluated on every redraw and carries no guarantee of running before the system delivers a launch push.
-  Move initialization into the app delegate launch method, or into the App type initializer. https://www.customer.io/docs/sdk/ios/getting-started/
+  Initialize the SDK when the app starts: from the app delegate launch method on iOS, from Application.onCreate on Android, or from the app's startup code in React Native, Expo and Flutter. Without it the SDK never registers for push and never reports a metric. https://www.customer.io/docs/sdk/
+- **`wiring.init_not_at_launch`** · blocker — CustomerIO.initialize runs where nothing guarantees it runs before a push arrives: a SwiftUI view body on iOS, which is re-evaluated on every redraw, or an Activity on Android, which a push never starts.
+  Move initialization to app launch: the app delegate launch method or the App type initializer on iOS, Application.onCreate on Android. https://www.customer.io/docs/sdk/
 - **`wiring.init_launch_unproven`** · warning — CustomerIO.initialize was found, but no path from a launch method to it could be resolved.
   Nothing to fix if initialization runs at launch through a helper the tool could not follow. Worth a glance: initialization that runs later than launch loses pushes that arrive before it.
 - **`wiring.nse_missing`** · blocker — The project has no Notification Service Extension target.
@@ -333,6 +334,14 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
   A development build needs a sandbox credential and a release build needs a production one. This mismatch is the classic "the send returned 200 and nothing ever arrived". https://www.customer.io/docs/sdk/ios/push/
 - **`workspace.credential_config_unknown`** · warning — The workspace credential does not say whether it is sandbox or production.
   Re-save the APNs credential so the workspace records its environment. Until it does, the sandbox-versus-production pairing cannot be checked, and that mismatch is silent on both ends. https://www.customer.io/docs/sdk/ios/push/
+- **`workspace.fcm_ios_not_enabled`** · blocker — The app gets a Firebase token on iOS, and this workspace's FCM credential isn't set up to send to iOS.
+  Customer.io refuses every send to this app with NoProviderConfigured until the workspace sends iOS pushes through Firebase: set that in the workspace's push settings, or build the app with MessagingPushAPN to send through APNs. https://www.customer.io/docs/sdk/ios/push/
+- **`workspace.sdk_key_unknown`** · blocker — The app's SDK runs with a key that belongs to no workspace this login can read.
+  Nothing the app reports reaches Customer.io, though a push sent to its token still arrives. Check the key passed to CustomerIO.initialize. An app can keep a key from an earlier build in its own storage, so delete the app and install it again rather than installing over it. https://www.customer.io/docs/sdk/
+- **`workspace.sdk_key_other_workspace`** · blocker — The app's SDK runs with a key from another workspace.
+  Everything the app reports, its profile and device included, goes to the workspace named with this finding. Choose that one with --workspace, or initialize the SDK with a key from this one. https://www.customer.io/docs/sdk/
+- **`workspace.extension_key_foreign`** · blocker — The Notification Service Extension's SDK runs with a key that isn't one of this workspace's.
+  Pushes still arrive and show, but their delivered metrics go to another workspace, or nowhere. Initialize the extension's SDK with the app's key, where this finding points. https://www.customer.io/docs/sdk/ios/push/#rich-push
 - **`workspace.lookup_failed`** · warning — The workspace credential could not be read.
   Check that the authenticated account can read this workspace. Nothing about the credential is proven either way.
 
@@ -346,6 +355,8 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
   Restart the emulator with `-dns-server 8.8.8.8` (an emulator loses DNS whenever the host resolver changes under it). Everything else looks healthy in this state, which is what makes it worth naming.
 - **`device.notification_permission_denied`** · blocker — Notification permission is not granted on this target.
   Grant it with the command shown with this finding, or accept the prompt in the app. Deliveries are counted either way; nothing is displayed.
+- **`device.build_not_debuggable`** · blocker — The installed build isn't debuggable, so the SDK's token and profile can't be read from it.
+  Install a debug build, or set debuggable true on this build type, and run again. Android lets another process read an app's files only when the build is debuggable, and without the token there is nothing to send to.
 - **`device.not_available`** · blocker — The requested simulator or device is not usable.
   Boot the simulator or connect and unlock the device, then run again. Pass --device with a name or udid to choose between several.
 - **`device.app_not_installed`** · blocker — The app is not installed on the target.
@@ -382,6 +393,8 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
 
 - **`send.provider_rejected`** · blocker — Customer.io refused the send.
   Read the error: it is usually the token, the credential, or a sandbox/production mismatch. Nothing about the SDK is proven either way until a send is accepted.
+- **`send.provider_not_configured`** · blocker — Customer.io has no push provider set up for this platform in the workspace (NoProviderConfigured).
+  For an iOS app that gets its token from Firebase, the workspace has to send iOS pushes through Firebase; otherwise add the platform's push credential. Every send is refused until then. https://www.customer.io/docs/sdk/ios/push/
 - **`send.api_failed`** · warning — Customer.io's API failed while sending the push, so nothing was proven.
   This is an error on Customer.io's side, not the app's, the token or the credential. Run again; if it repeats, report the error shown with the push.
 - **`runtime.tap_lines_lost`** · warning — The tap reached the app, and the SDK's lines for it never reached the phone's log stream.

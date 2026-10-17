@@ -110,8 +110,11 @@ export async function climb(
     workspaceRung.phase('resolving the workspace');
     const workspace = await gatherWorkspace({
       cio,
+      platform: 'ios',
       provider: wiring.provider,
       resolution: selection.resolution,
+      sdkKey: device.sdk?.cdpApiKey,
+      extensionKey: wiring.extensionKey,
     });
     const ready = workspaceReady(workspace, wiring.apsEnvironment);
     ladder.adopt(ready, workspaceTimer());

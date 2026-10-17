@@ -143,7 +143,7 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
    - Node.js 20 or later.
    - The [Customer.io CLI](https://www.npmjs.com/package/@customerio/cli), logged in: `npm install -g @customerio/cli`, then `cio auth login`.
    - iOS: macOS with Xcode, and a booted simulator or a connected device. Reading a physical iPhone's logs also needs `idevicesyslog` (`brew install libimobiledevice`).
-   - Android: `adb` (on your `PATH` or in the Android SDK) and a running emulator or connected device.
+   - Android: `adb` (on your `PATH` or in the Android SDK) and a running emulator or connected device, with a debuggable build of the app: the tool reads the SDK's stored token with `run-as`.
    - The app built and run on that device, with a logged-in user, so the SDK has registered a token.
 
    ## Usage

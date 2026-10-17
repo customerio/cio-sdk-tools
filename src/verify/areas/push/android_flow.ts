@@ -98,8 +98,10 @@ export async function climbAndroid(
   workspaceRung.phase('resolving the workspace');
   const workspace = await gatherWorkspace({
     cio,
+    platform: 'android',
     provider: 'fcm',
     resolution: selection.resolution,
+    sdkKey: device.sdk?.writeKey,
   });
   const ready = workspaceReady(workspace);
   ladder.adopt(ready, workspaceTimer());
