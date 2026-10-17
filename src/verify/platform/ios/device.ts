@@ -391,13 +391,19 @@ export async function readSdkState(
 
   const cdpPath = path.join(preferencesDirectory, cdpStore);
   state.sources.push(cdpStore);
+  // The store is named after the key the SDK was initialized with. The settings below carry
+  // it too, but only once Customer.io has answered for it, which a dead key never gets.
+  state.cdpApiKey = cdpStore.slice(
+    'com.segment.storage.'.length,
+    -'.plist'.length
+  );
   state.userId = await plistString(cdpPath, 'segment\\.userId');
   state.anonymousId = await plistString(cdpPath, 'segment\\.anonymousId');
 
   const settings = await nestedPlist(cdpPath, 'segment\\.settings');
   if (settings) {
     state.siteId = settings.match(/"siteId"\s*=>\s*"([^"]+)"/)?.[1];
-    state.cdpApiKey = settings.match(/"apiKey"\s*=>\s*"([^"]+)"/)?.[1];
+    state.cdpApiKey ||= settings.match(/"apiKey"\s*=>\s*"([^"]+)"/)?.[1];
   }
 
   return state;

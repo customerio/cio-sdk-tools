@@ -4,6 +4,7 @@ const assert = require('node:assert');
 const {
   expandBuildVariables,
   hasUnresolvedVariable,
+  needsResolution,
   productFilename,
   trimQuotes,
 } = require('../../dist/verify/platform/ios/xcode');
@@ -46,4 +47,18 @@ test('the embedded product name falls back to the target name', () => {
 test('pbxproj values arrive quoted', () => {
   assert.strictEqual(trimQuotes('"com.apple.product-type.app-extension"'), 'com.apple.product-type.app-extension');
   assert.strictEqual(trimQuotes('plain'), 'plain');
+});
+
+test('an app or extension with no bundle id in the pbxproj is resolved with xcodebuild', () => {
+  // React Native's template sets PRODUCT_BUNDLE_IDENTIFIER only in .xcconfig files, so the
+  // pbxproj has no value at all rather than one holding a variable.
+  const target = (productType, settings) => ({ name: 'T', productType, settings, embeds: [], dependencies: [] });
+  assert.strictEqual(needsResolution(target('com.apple.product-type.application', {})), true);
+  assert.strictEqual(needsResolution(target('com.apple.product-type.app-extension', {})), true);
+  assert.strictEqual(
+    needsResolution(target('com.apple.product-type.application', { PRODUCT_BUNDLE_IDENTIFIER: 'io.customer.app' })),
+    false
+  );
+  // A test bundle never needs one.
+  assert.strictEqual(needsResolution(target('com.apple.product-type.bundle.unit-test', {})), false);
 });
