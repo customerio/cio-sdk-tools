@@ -245,21 +245,13 @@ export const CAUSES: Record<string, PushCause> = {
       "Customer.io refuses every send to this app with NoProviderConfigured until the workspace sends iOS pushes through Firebase: set that in the workspace's push settings, or build the app with MessagingPushAPN to send through APNs.",
     docs: IOS_PUSH_DOCS,
   },
-  'workspace.sdk_key_unknown': {
+  'workspace.sdk_key_foreign': {
     stage: 'workspace_ready',
     severity: 'blocker',
     summary:
-      "The app's SDK runs with a key that belongs to no workspace this login can read.",
+      "The app's SDK runs with a key that isn't one of this workspace's.",
     remedy:
-      'Nothing the app reports reaches Customer.io, though a push sent to its token still arrives. Check the key passed to CustomerIO.initialize. An app can keep a key from an earlier build in its own storage, so delete the app and install it again rather than installing over it.',
-    docs: SDK_DOCS,
-  },
-  'workspace.sdk_key_other_workspace': {
-    stage: 'workspace_ready',
-    severity: 'blocker',
-    summary: "The app's SDK runs with a key from another workspace.",
-    remedy:
-      'Everything the app reports, its profile and device included, goes to the workspace named with this finding. Choose that one with --workspace, or initialize the SDK with a key from this one.',
+      "Everything the app reports, its profile and device included, goes to the workspace that issued the key, or nowhere if the key is dead, though a push sent to its token still arrives. Initialize the SDK with a key from this workspace, or choose the app's own workspace with --workspace. An app can keep a key from an earlier build in its own storage, so delete the app and install it again rather than installing over it.",
     docs: SDK_DOCS,
   },
   'workspace.extension_key_foreign': {
