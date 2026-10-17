@@ -123,6 +123,18 @@ export function androidDeviceReady(
   rung.checks.push(permissionCheck(facts, packageName));
   const stopped = stoppedCheck(facts, sending);
   if (stopped) rung.checks.push(stopped);
+  if (facts.sdk?.notDebuggable) {
+    // Nothing was read, so a missing token and a missing profile would both be guesses.
+    rung.checks.push(
+      fail(
+        'sdk_state_readable',
+        "SDK's stored state is readable",
+        'device.build_not_debuggable',
+        [facts.sdk.error ?? 'run-as refused the package']
+      )
+    );
+    return rung;
+  }
   rung.checks.push(tokenCheck(facts));
   rung.checks.push(identityCheck(facts));
   rung.summary = [
@@ -144,28 +156,30 @@ function networkCheck(facts: AndroidDeviceFacts): Check | undefined {
   const network = facts.network;
   if (!network) return undefined;
 
+  // An answer from Firebase proves the route and the name both. 8.8.8.8 only tells the two
+  // failures apart: an emulator under load drops a lone ping while Firebase still answers.
+  if (network.dns) {
+    return pass('network_reachable', 'Target can reach Firebase', [
+      'fcm.googleapis.com resolves and answers',
+    ]);
+  }
   if (!network.ip) {
     return fail(
       'network_reachable',
       'Target can reach Firebase',
       'device.no_network',
-      ['no ping response from 8.8.8.8']
+      ['no ping response from 8.8.8.8 or fcm.googleapis.com']
     );
   }
-  if (!network.dns) {
-    return fail(
-      'network_reachable',
-      'Target can reach Firebase',
-      'device.dns_unresolved',
-      [
-        'the network route is up but fcm.googleapis.com does not resolve',
-        'a target in this state answers pings and receives nothing',
-      ]
-    );
-  }
-  return pass('network_reachable', 'Target can reach Firebase', [
-    'fcm.googleapis.com resolves',
-  ]);
+  return fail(
+    'network_reachable',
+    'Target can reach Firebase',
+    'device.dns_unresolved',
+    [
+      'the network route is up but fcm.googleapis.com does not resolve',
+      'a target in this state answers pings and receives nothing',
+    ]
+  );
 }
 
 function permissionCheck(

@@ -1,5 +1,6 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
+import { WrapperSdk, loadWrapper } from '../framework';
 
 const SKIP_DIRECTORIES = new Set([
   'build',
@@ -39,6 +40,18 @@ export interface AndroidProjectModel {
   initSites: InitSite[];
   /** A `FirebaseMessagingService` the app declares itself, if any. */
   customMessagingService?: { className: string; forwardsToSdk?: boolean };
+  /** The wrapper package that brings the SDK, in a React Native, Expo or Flutter app. */
+  wrapper?: AndroidWrapper;
+}
+
+/**
+ * A wrapper package's own Android build. Gradle adds its dependencies to the app's, and the
+ * build merges its manifest into the app's, so the app module's files alone tell half of it.
+ */
+export interface AndroidWrapper extends WrapperSdk {
+  /** `io.customer.android` modules the package ships with the app. */
+  sdkModules: string[];
+  manifest?: string;
 }
 
 export async function loadAndroidProject(
@@ -79,10 +92,39 @@ export async function loadAndroidProject(
     googleServices: await readGoogleServices(chosen),
     sources,
     initSites: initSitesFrom(sources),
+    wrapper: await loadAndroidWrapper(chosen),
   };
 
   model.customMessagingService = messagingServiceFrom(model);
   return model;
+}
+
+async function loadAndroidWrapper(
+  appModulePath: string
+): Promise<AndroidWrapper | undefined> {
+  const wrapper = await loadWrapper(appModulePath);
+  if (!wrapper) return undefined;
+  if (!wrapper.directory) return { ...wrapper, sdkModules: [] };
+
+  const androidDirectory = path.join(wrapper.directory, 'android');
+  const entries = await fs.readdir(androidDirectory).catch(() => []);
+  const gradle = await Promise.all(
+    entries
+      .filter((entry) => /\.gradle(?:\.kts)?$/.test(entry))
+      .map((entry) =>
+        fs.readFile(path.join(androidDirectory, entry), 'utf8').catch(() => '')
+      )
+  );
+  return {
+    ...wrapper,
+    sdkModules: sdkModulesFrom(gradle.join('\n')),
+    manifest: await fs
+      .readFile(
+        path.join(androidDirectory, 'src', 'main', 'AndroidManifest.xml'),
+        'utf8'
+      )
+      .catch(() => undefined),
+  };
 }
 
 async function isAppModule(dir: string): Promise<boolean> {
@@ -265,12 +307,19 @@ export const PUSH_MODULE_NAMES = [
 
 export function sdkModulesFrom(gradle: string): string[] {
   const modules = new Set<string>();
+  // Compiled against, never shipped: the wrappers declare their optional modules this way.
+  const shipped = gradle
+    .split('\n')
+    .filter((line) => !/^\s*compileOnly\b/.test(line))
+    .join('\n');
   // The trailing colon matters: without it the plugin id `io.customer.android.publish-root`
   // is read as a module named `publish-root`.
-  for (const match of gradle.matchAll(/io\.customer\.android:([a-z0-9-]+):/g)) {
+  for (const match of shipped.matchAll(
+    /io\.customer\.android:([a-z0-9-]+):/g
+  )) {
     modules.add(match[1]);
   }
-  for (const match of gradle.matchAll(
+  for (const match of shipped.matchAll(
     /project\s*\(?\s*["']:([a-z0-9-]+)["']/g
   )) {
     if (SDK_MODULE_NAMES.has(match[1])) modules.add(match[1]);
@@ -560,8 +609,24 @@ export interface BuildVariant {
 export async function buildVariants(
   moduleDirectory: string
 ): Promise<BuildVariant[]> {
-  const root = path.join(moduleDirectory, 'build', 'outputs', 'apk');
-  const files = await findOutputMetadata(root, 0);
+  const roots = [path.join(moduleDirectory, 'build', 'outputs', 'apk')];
+  // Flutter moves every module's build folder to the project's own `build/`, beside
+  // pubspec.yaml: `android/app` builds into `build/app`.
+  const flutterProject = path.dirname(path.dirname(moduleDirectory));
+  if (await fileExists(path.join(flutterProject, 'pubspec.yaml'))) {
+    roots.push(
+      path.join(
+        flutterProject,
+        'build',
+        path.basename(moduleDirectory),
+        'outputs',
+        'apk'
+      )
+    );
+  }
+  const files = (
+    await Promise.all(roots.map((root) => findOutputMetadata(root, 0)))
+  ).flat();
   const variants: BuildVariant[] = [];
 
   for (const file of files) {
@@ -621,4 +686,11 @@ async function findOutputMetadata(
     }
   }
   return found;
+}
+
+async function fileExists(file: string): Promise<boolean> {
+  return fs
+    .stat(file)
+    .then(() => true)
+    .catch(() => false);
 }

@@ -19,12 +19,15 @@ import {
   urlSchemes,
 } from '../../../platform/ios/xcode';
 import {
+  KeyLiteral,
   SourceSignals,
   SwiftFile,
   analyzeSources,
+  extensionKey,
   forwardsToSdk,
   readSwiftSources,
 } from '../../../platform/ios/source';
+import { WrapperSdk, loadWrapper } from '../../../platform/framework';
 
 export interface WiringInput {
   /** Path to the `.xcodeproj`. */
@@ -64,6 +67,8 @@ export interface WiringResult {
   extensionName?: string;
   /** The URL schemes the app declares, lowercased. */
   urlSchemes?: string[];
+  /** The key the extension's SDK runs with, where its sources spell it out. */
+  extensionKey?: KeyLiteral;
 }
 
 /**
@@ -98,6 +103,7 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
 
   const sources = await readSwiftSources(input.scanRoot);
   const signals = analyzeSources(sources);
+  const wrapper = await loadWrapper(input.projectPath);
 
   const apps = appTargets(model);
   const app = pickAppTarget(apps, input.appTargetName);
@@ -148,8 +154,8 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
     );
   }
 
-  rung.checks.push(await sdkPresenceCheck(input.scanRoot, signals));
-  rung.checks.push(...initializationChecks(signals));
+  rung.checks.push(await sdkPresenceCheck(input.scanRoot, signals, wrapper));
+  rung.checks.push(...initializationChecks(signals, wrapper));
 
   const push = await pushCapabilityChecks(model, app);
   rung.checks.push(...push.checks);
@@ -157,10 +163,12 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
   const { checks: nseChecks, nse } = await nseChecksFor(model, app);
   rung.checks.push(...nseChecks);
 
+  let nseKey: KeyLiteral | undefined;
   if (nse) {
     const nseSources = await nseSourcesFor(model, nse, sources);
     rung.checks.push(forwardingCheck(nseSources));
     rung.checks.push(await appGroupCheck(model, app, nse, nseSources));
+    nseKey = extensionKey(nseSources, sources);
   } else {
     rung.checks.push(
       skipped(
@@ -195,6 +203,7 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
       .map((target) => target.settings.PRODUCT_NAME || target.name),
     extensionName: nse ? nse.settings.PRODUCT_NAME || nse.name : undefined,
     urlSchemes: await urlSchemes(model.projectPath, app),
+    extensionKey: nseKey,
   };
 }
 
@@ -211,11 +220,17 @@ function pickAppTarget(apps: Target[], name?: string): Target | undefined {
  */
 async function sdkPresenceCheck(
   scanRoot: string,
-  signals: SourceSignals
+  signals: SourceSignals,
+  wrapper?: WrapperSdk
 ): Promise<Check> {
   if (signals.sdkImports.length > 0) {
     return pass('sdk_present', 'Customer.io SDK is imported by the sources', [
       signals.sdkImports.sort().join(', '),
+    ]);
+  }
+  if (wrapper?.declared) {
+    return pass('sdk_present', `Customer.io SDK comes with ${wrapper.name}`, [
+      wrapper.version ? `${wrapper.name} ${wrapper.version}` : 'declared',
     ]);
   }
 
@@ -241,7 +256,37 @@ async function sdkPresenceCheck(
   );
 }
 
-function initializationChecks(signals: SourceSignals): Check[] {
+/**
+ * A wrapper app calls `CustomerIO.initialize` from JavaScript or Dart, so a call there is
+ * enough: where it sits does not decide whether a push arrives, because on iOS the extension
+ * handles delivery and never runs that code. A native call, which Expo's plugin writes, is
+ * judged as in a native app.
+ */
+function initializationChecks(
+  signals: SourceSignals,
+  wrapper?: WrapperSdk
+): Check[] {
+  if (signals.initSites.length === 0 && wrapper) {
+    const language =
+      wrapper.framework === 'flutter' ? 'Dart' : 'JavaScript and TypeScript';
+    return [
+      wrapper.initSites.length > 0
+        ? pass(
+            'init_present',
+            'CustomerIO.initialize is called',
+            wrapper.initSites.map((site) => `${site.file}:${site.line}`)
+          )
+        : fail(
+            'init_present',
+            'CustomerIO.initialize is called',
+            'wiring.init_absent',
+            [
+              `searched ${wrapper.searchedFiles} ${language} files under ${wrapper.root}`,
+              `and ${signals.files} Swift and Objective-C files`,
+            ]
+          ),
+    ];
+  }
   if (signals.initSites.length === 0) {
     return [
       fail(

@@ -1,16 +1,40 @@
 import { CioContext } from '../../../platform/cio/cli';
 import { PushCredential, PushProvider, pushCredential } from '../credentials';
-import { WorkspaceResolution } from '../../../platform/cio/workspace';
-import { fail, pass, warn } from '../../../core/report/ladder';
+import {
+  Workspace,
+  WorkspaceResolution,
+} from '../../../platform/cio/workspace';
+import {
+  SourceKey,
+  keyOwner,
+  shortKey,
+  workspaceKeys,
+} from '../../../platform/cio/keys';
+import { KeyLiteral } from '../../../platform/ios/source';
+import { fail, pass, skipped, warn } from '../../../core/report/ladder';
 import { Check, Rung } from '../../../core/report/types';
 import { RUNG_TITLES } from '../types';
 
 export interface WorkspaceFacts {
   cio: CioContext;
+  platform: 'ios' | 'android';
   provider: PushProvider;
   resolution?: WorkspaceResolution;
   credential?: PushCredential;
   credentialError?: string;
+  keys?: KeyFacts;
+}
+
+/** The keys the app and its extension run with, and whose they are. */
+export interface KeyFacts {
+  /** Read from the SDK's store on the device. */
+  sdkKey?: string;
+  /** Read from the extension's sources. */
+  extensionKey?: KeyLiteral;
+  workspaceKeys: SourceKey[];
+  error?: string;
+  /** For a key the workspace does not hold, the workspace that does, if any. */
+  owners: Record<string, Workspace | undefined>;
 }
 
 /**
@@ -19,30 +43,66 @@ export interface WorkspaceFacts {
  */
 export async function gatherWorkspace(options: {
   cio: CioContext;
+  platform: 'ios' | 'android';
   provider: PushProvider;
   /** Settled by the selection phase — this rung checks the choice, it does not make it. */
   resolution: WorkspaceResolution;
+  sdkKey?: string;
+  extensionKey?: KeyLiteral;
 }): Promise<WorkspaceFacts> {
-  if (!options.cio.authenticated) {
-    return { cio: options.cio, provider: options.provider };
-  }
+  const base = {
+    cio: options.cio,
+    platform: options.platform,
+    provider: options.provider,
+  };
+  if (!options.cio.authenticated) return base;
 
   const resolution = options.resolution;
-  if (!resolution.workspace) {
-    return { cio: options.cio, provider: options.provider, resolution };
-  }
+  const workspace = resolution.workspace;
+  if (!workspace) return { ...base, resolution };
 
-  const credential = await pushCredential(
-    resolution.workspace.id,
-    options.provider
-  );
+  const [credential, keys] = await Promise.all([
+    pushCredential(workspace.id, options.provider),
+    gatherKeys(workspace, resolution.candidates, options),
+  ]);
   return {
-    cio: options.cio,
-    provider: options.provider,
+    ...base,
     resolution,
     credential: credential.credential,
     credentialError: credential.ok ? undefined : credential.error,
+    keys,
   };
+}
+
+async function gatherKeys(
+  workspace: Workspace,
+  candidates: Workspace[],
+  options: { sdkKey?: string; extensionKey?: KeyLiteral }
+): Promise<KeyFacts | undefined> {
+  const asked = [options.sdkKey, options.extensionKey?.value].filter(
+    (key): key is string => Boolean(key)
+  );
+  if (asked.length === 0) return undefined;
+
+  const listed = await workspaceKeys(workspace.id);
+  const facts: KeyFacts = {
+    sdkKey: options.sdkKey,
+    extensionKey: options.extensionKey,
+    workspaceKeys: listed.keys,
+    error: listed.error,
+    owners: {},
+  };
+  if (listed.error) return facts;
+
+  // Only a key the chosen workspace does not hold sends the run looking anywhere else.
+  const others = candidates.filter(
+    (candidate) => candidate.id !== workspace.id
+  );
+  for (const key of new Set(asked)) {
+    if (listed.keys.some((entry) => entry.key === key)) continue;
+    facts.owners[key] = await keyOwner(key, others);
+  }
+  return facts;
 }
 
 export function workspaceReady(
@@ -84,8 +144,90 @@ export function workspaceReady(
   } · ${facts.provider === 'fcm' ? 'FCM' : 'APNs'}`;
   const environment = environmentCheck(facts, apsEnvironment);
   if (environment) rung.checks.push(environment);
+  rung.checks.push(...keyChecks(facts));
 
   return rung;
+}
+
+/**
+ * The keys decide where the app and its extension report, which nothing else in the run can
+ * see: a push sent to the device's token arrives whichever workspace the app talks to.
+ */
+function keyChecks(facts: WorkspaceFacts): Check[] {
+  const keys = facts.keys;
+  if (!keys) return [];
+  const checks: Check[] = [];
+  const name = facts.resolution?.workspace?.name ?? 'this workspace';
+
+  if (keys.sdkKey) {
+    const label = `App reports to ${name}`;
+    checks.push(
+      keys.error
+        ? skipped(
+            'sdk_key',
+            label,
+            `the workspace's keys could not be read: ${keys.error}`
+          )
+        : keyCheck(keys, keys.sdkKey, {
+            id: 'sdk_key',
+            label,
+            where: 'the SDK on the device',
+          })
+    );
+  }
+  if (keys.extensionKey) {
+    const label = `Extension reports to ${name}`;
+    checks.push(
+      keys.error
+        ? skipped(
+            'extension_key',
+            label,
+            `the workspace's keys could not be read: ${keys.error}`
+          )
+        : keyCheck(keys, keys.extensionKey.value, {
+            id: 'extension_key',
+            label,
+            where: `the extension, at ${keys.extensionKey.site}`,
+            cause: 'workspace.extension_key_foreign',
+          })
+    );
+  }
+  return checks;
+}
+
+function keyCheck(
+  keys: KeyFacts,
+  key: string,
+  check: { id: string; label: string; where: string; cause?: string }
+): Check {
+  const held = keys.workspaceKeys.find((entry) => entry.key === key);
+  if (held) {
+    return pass(check.id, check.label, [
+      `key ${shortKey(key)}, from source "${held.source}"`,
+    ]);
+  }
+  const owner = keys.owners[key];
+  const evidence = [`${check.where} runs with key ${shortKey(key)}`];
+  if (owner) {
+    const elsewhere = `the key belongs to ${owner.name ?? owner.id} (${
+      owner.id
+    })`;
+    return fail(
+      check.id,
+      check.label,
+      check.cause ?? 'workspace.sdk_key_other_workspace',
+      [...evidence, elsewhere],
+      elsewhere
+    );
+  }
+  const nowhere = 'no workspace this login can read holds the key';
+  return fail(
+    check.id,
+    check.label,
+    check.cause ?? 'workspace.sdk_key_unknown',
+    [...evidence, nowhere],
+    `${shortKey(key)}: ${nowhere}`
+  );
 }
 
 function workspaceEvidence(resolution: WorkspaceResolution): string[] {
@@ -128,6 +270,25 @@ function credentialCheck(facts: WorkspaceFacts): Check {
         ? 'workspace.fcm_credential_missing'
         : 'workspace.apns_credential_missing',
       [`no push_${facts.provider} credential on this environment`]
+    );
+  }
+  // An iOS token from Firebase goes out through Firebase only when the credential says it
+  // may; otherwise Customer.io refuses every send with NoProviderConfigured.
+  if (
+    facts.platform === 'ios' &&
+    facts.provider === 'fcm' &&
+    facts.credential.config !== 'allow_ios'
+  ) {
+    return fail(
+      'push_credential',
+      'Workspace sends iOS pushes through Firebase',
+      'workspace.fcm_ios_not_enabled',
+      [
+        'the app links MessagingPushFCM, so its iOS token comes from Firebase',
+        `the FCM credential's config is ${
+          facts.credential.config ? `"${facts.credential.config}"` : 'empty'
+        }, not "allow_ios"`,
+      ]
     );
   }
   return pass('push_credential', label, [

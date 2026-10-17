@@ -86,16 +86,23 @@ export const PUSH_VOICE: Voice = {
     // Arrival is read from the OS either way. That the app handled a push is read from the
     // SDK's lines, so an SDK that wrote none proved arrival and nothing more.
     const quiet = ran.some((section) => section.sdkQuiet);
+    const extensionQuiet =
+      !quiet && ran.some((section) => section.extensionSdkQuiet);
     return [
       opened
         ? 'push works on the device: each push arrived and each tap reached the SDK.'
-        : quiet
+        : quiet || extensionQuiet
         ? 'each push arrived on the device.'
         : 'push works on the device: each push arrived and the app handled it.',
       ...hidden,
       ...(quiet
         ? [
             "the SDK logged nothing, so only arrival was proven: set the SDK's log level to debug to see it handle them.",
+          ]
+        : []),
+      ...(extensionQuiet
+        ? [
+            "the extension ran, but its SDK logged nothing, so nothing showed it tracked a delivery: set the extension's log level to debug, and check it runs with the app's key.",
           ]
         : []),
       "Customer.io's record of them wasn't checked: --depth end-to-end reads it.",
