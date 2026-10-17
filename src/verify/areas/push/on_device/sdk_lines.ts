@@ -278,6 +278,12 @@ export const ANDROID_MARKERS = {
   handoffDelivered: /\[CIO-Push-Handoff\] worker success, removed key=/,
   handoffAlreadyDelivered:
     /\[CIO-Push-Handoff\] worker skipped, already delivered key=/,
+  /**
+   * WorkManager's own line for the delivered-metric worker, which the SDK queues for each push
+   * it processes. Written at WorkManager's level, so it speaks for an SDK that logs nothing:
+   * a React Native app started for a push runs no JavaScript to set the SDK's level.
+   */
+  metricsWorker: /Worker result SUCCESS for Work .*PushDeliveryMetricsWorker/,
 } as const;
 
 export function androidDeliveryIds(lines: LogLine[]): string[] {
