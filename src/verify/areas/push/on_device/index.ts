@@ -9,6 +9,7 @@ import {
   isSdkDebugLine,
   deliveryIdsIn,
   explainSdkSilence,
+  extensionSdkQuiet,
   sdkWasQuiet,
   lastAuthorization,
   notificationsAllowed,
@@ -181,6 +182,11 @@ export async function runDeliveredMatrix(
     };
     section.cells = explainSdkSilence(section.cells, silence, options.reporter);
     if (sdkWasQuiet(silence)) section.sdkQuiet = true;
+    // The extension handles the push on iOS, so its SDK's silence is the one that matters
+    // here: the app's own lines say nothing about a delivery the app never saw.
+    else if (extensionSdkQuiet(capture.lines, options.extensionName)) {
+      section.extensionSdkQuiet = true;
+    }
     section.notificationAuthorization =
       lastAuthorization(capture.lines) ??
       (await simulatorAuthorization(options.target, options.bundleId));
