@@ -89,3 +89,12 @@ test("Flutter's build is found in the project's own build folder", async () => {
     [['io.customer.flutter.sample', 'debug']]
   );
 });
+
+test("the CDP store read is the one for the SDK's configured key, not a stale one", () => {
+  const { analyticsStore } = require('../../dist/verify/platform/android/device');
+  const listing = 'analytics-android-localsmoke_key.xml\nanalytics-android-5f660a.xml\nio.customer.sdk.app.xml\n';
+  assert.strictEqual(analyticsStore(listing, '5f660a'), 'analytics-android-5f660a.xml');
+  // With no configured key to go by, the only store there is.
+  assert.strictEqual(analyticsStore('analytics-android-abc.xml\n'), 'analytics-android-abc.xml');
+  assert.strictEqual(analyticsStore('io.customer.sdk.app.xml\n', 'abc'), undefined);
+});
