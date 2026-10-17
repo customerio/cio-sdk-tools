@@ -1,10 +1,11 @@
 import {
   AndroidProjectModel,
+  AndroidWrapper,
   PUSH_MODULE_NAMES,
   loadAndroidProject,
   resolveInitAtLaunch,
 } from '../../../platform/android/project';
-import { fail, pass, warn } from '../../../core/report/ladder';
+import { fail, pass, skipped, warn } from '../../../core/report/ladder';
 import { Check, Rung } from '../../../core/report/types';
 import { RUNG_TITLES } from '../types';
 
@@ -61,12 +62,34 @@ export async function androidWiring(input: {
   if (forwarding) rung.checks.push(forwarding);
 
   rung.summary = `${model.appModuleName} · ${
-    model.sdkModules.find((name) => name.includes('push')) ?? 'no push module'
+    shippedModules(model).find((name) => name.includes('push')) ??
+    'no push module'
   }`;
   return { rung, model, applicationId: model.applicationId };
 }
 
+/** The app's own SDK modules, and those its wrapper package brings. */
+function shippedModules(model: AndroidProjectModel): string[] {
+  return [
+    ...new Set([...model.sdkModules, ...(model.wrapper?.sdkModules ?? [])]),
+  ];
+}
+
+function describeWrapper(wrapper: AndroidWrapper): string {
+  return wrapper.version ? `${wrapper.name} ${wrapper.version}` : wrapper.name;
+}
+
 function sdkCheck(model: AndroidProjectModel): Check {
+  const wrapper = model.wrapper;
+  if (model.sdkModules.length === 0 && wrapper?.declared) {
+    return pass('sdk_present', 'Customer.io SDK is a dependency', [
+      wrapper.sdkModules.length > 0
+        ? `through ${describeWrapper(wrapper)}: ${wrapper.sdkModules
+            .sort()
+            .join(', ')}`
+        : `${wrapper.name} is declared`,
+    ]);
+  }
   return model.sdkModules.length > 0
     ? pass('sdk_present', 'Customer.io SDK is a dependency', [
         model.sdkModules.sort().join(', '),
@@ -80,11 +103,26 @@ function sdkCheck(model: AndroidProjectModel): Check {
 }
 
 function pushModuleCheck(model: AndroidProjectModel): Check {
-  const found = PUSH_MODULE_NAMES.filter((name) =>
-    model.sdkModules.includes(name)
-  );
+  const modules = shippedModules(model);
+  const found = PUSH_MODULE_NAMES.filter((name) => modules.includes(name));
+  const wrapper = model.wrapper;
+  if (found.length === 0 && wrapper?.declared && !wrapper.directory) {
+    return skipped(
+      'push_module',
+      'Push module is a dependency',
+      `${wrapper.name} is not installed, so the modules it brings could not be read`
+    );
+  }
   return found.length > 0
-    ? pass('push_module', 'Push module is a dependency', found)
+    ? pass(
+        'push_module',
+        'Push module is a dependency',
+        found.map((name) =>
+          wrapper && !model.sdkModules.includes(name)
+            ? `${name}, through ${describeWrapper(wrapper)}`
+            : name
+        )
+      )
     : fail(
         'push_module',
         'Push module is a dependency',
@@ -95,6 +133,7 @@ function pushModuleCheck(model: AndroidProjectModel): Check {
 }
 
 function initCheck(model: AndroidProjectModel): Check {
+  if (model.wrapper) return wrapperInitCheck(model, model.wrapper);
   const resolution = resolveInitAtLaunch(model);
   if (resolution.verdict === true) {
     return pass(
@@ -119,6 +158,37 @@ function initCheck(model: AndroidProjectModel): Check {
     'wiring.init_launch_unproven',
     resolution.evidence
   );
+}
+
+/**
+ * A wrapper app calls `CustomerIO.initialize` from JavaScript or Dart, and only the call has
+ * to be there. The native SDK starts with the app's process and handles a push before any of
+ * that code runs, so the rule that initialization belongs in Application is not the
+ * wrapper's to follow. Expo's plugin writes a native call instead, which counts the same.
+ */
+function wrapperInitCheck(
+  model: AndroidProjectModel,
+  wrapper: AndroidWrapper
+): Check {
+  const sites = [
+    ...wrapper.initSites.map((site) => `${site.file}:${site.line}`),
+    ...model.initSites.map(
+      (site) => `${site.file}:${site.line} in ${site.scope}`
+    ),
+  ];
+  const language =
+    wrapper.framework === 'flutter' ? 'Dart' : 'JavaScript and TypeScript';
+  return sites.length > 0
+    ? pass('init_present', 'CustomerIO.initialize is called', sites)
+    : fail(
+        'init_present',
+        'CustomerIO.initialize is called',
+        'wiring.init_absent',
+        [
+          `searched ${wrapper.searchedFiles} ${language} files under ${wrapper.root}`,
+          `and ${model.sources.length} Kotlin and Java files`,
+        ]
+      );
 }
 
 function googleServicesCheck(model: AndroidProjectModel): Check {
@@ -174,12 +244,21 @@ function googleServicesCheck(model: AndroidProjectModel): Check {
  */
 function notificationPermissionCheck(model: AndroidProjectModel): Check {
   const declared = /POST_NOTIFICATIONS/.test(model.manifest ?? '');
+  // The build merges a library's manifest into the app's, so a wrapper's declaration is the
+  // app's too.
+  const declaredByWrapper =
+    model.wrapper && /POST_NOTIFICATIONS/.test(model.wrapper.manifest ?? '');
   const targetSdk = Number(
     model.gradle.match(/targetSdk(?:Version)?\s*(?:=|\s)\s*(\d+)/)?.[1] ?? '0'
   );
 
-  if (declared) {
+  if (declared || declaredByWrapper) {
     return pass('post_notifications', 'POST_NOTIFICATIONS is declared', [
+      ...(declared || !model.wrapper
+        ? []
+        : [
+            `by ${model.wrapper.name}'s manifest, which the build merges into the app's`,
+          ]),
       targetSdk ? `targetSdk ${targetSdk}` : 'targetSdk unknown',
     ]);
   }

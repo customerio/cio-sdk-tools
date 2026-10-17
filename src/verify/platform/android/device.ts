@@ -203,6 +203,11 @@ export interface AndroidSdkState {
   writeKey?: string;
   sources: string[];
   error?: string;
+  /**
+   * `run-as` refused the package: only a debuggable build lets another process read its
+   * files. Nothing was read, which is not the same as nothing being there.
+   */
+  notDebuggable?: boolean;
 }
 
 /**
@@ -233,6 +238,10 @@ export async function readAndroidSdkState(
     }
   } else {
     state.error = global.error;
+    if (/not debuggable/.test(global.error ?? '')) {
+      state.notDebuggable = true;
+      return state;
+    }
   }
 
   // The CDP layer keeps identity in its own file, named after the write key.
@@ -243,10 +252,7 @@ export async function readAndroidSdkState(
     'ls',
     `/data/data/${packageName}/shared_prefs`,
   ]);
-  const analytics = listing.stdout
-    .split('\n')
-    .map((line) => line.trim())
-    .find((line) => line.startsWith('analytics-android-'));
+  const analytics = analyticsStore(listing.stdout, state.writeKey);
   if (!analytics) return state;
 
   const cdp = await readAppFile(
@@ -257,6 +263,11 @@ export async function readAndroidSdkState(
   if (!cdp.text) return state;
 
   state.sources.push(analytics);
+  // Named after the key the SDK was initialized with, like the iOS store.
+  state.writeKey ||= analytics.slice(
+    'analytics-android-'.length,
+    -'.xml'.length
+  );
   state.userId = prefString(cdp.text, 'segment.userId');
   state.anonymousId = prefString(cdp.text, 'segment.anonymousId');
 
@@ -273,6 +284,24 @@ export async function readAndroidSdkState(
   }
 
   return state;
+}
+
+/**
+ * The CDP layer's store for the key the SDK is configured with. An app that changed its key
+ * keeps a store for the old one, and its identity is not the app's any more.
+ */
+export function analyticsStore(
+  listing: string,
+  writeKey?: string
+): string | undefined {
+  const stores = listing
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('analytics-android-'));
+  return (
+    stores.find((store) => store === `analytics-android-${writeKey}.xml`) ??
+    stores[0]
+  );
 }
 
 function safeJson(text: string): Record<string, unknown> | undefined {

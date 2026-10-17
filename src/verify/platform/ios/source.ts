@@ -246,3 +246,69 @@ export function forwardsToSdk(files: SwiftFile[]): ForwardingResult {
 
   return { forwards: site !== undefined, site, declaresEntryPoint };
 }
+
+export interface KeyLiteral {
+  value: string;
+  /** `file:line` of the literal, which is where it would be changed. */
+  site: string;
+}
+
+/**
+ * The key the extension initializes its SDK with, when the sources spell it out.
+ *
+ * The extension is set up apart from the app, usually from its own `Env` file, so the two can
+ * report to different workspaces, or the extension to none: its pushes still arrive, and
+ * their delivered metrics go somewhere else. Read as a literal at the call, or as the one
+ * string constant it names; anything computed, or a name with more than one value (an
+ * `#if` per build), is left unread rather than guessed.
+ */
+export function extensionKey(
+  nseSources: SwiftFile[],
+  allSources: SwiftFile[]
+): KeyLiteral | undefined {
+  for (const file of nseSources) {
+    const text = withoutComments(file.text);
+    const call =
+      /MessagingPushConfigBuilder\s*\(\s*cdpApiKey\s*:\s*(?:"([^"]*)"|([A-Za-z_][\w.]*))/.exec(
+        text
+      );
+    if (!call) continue;
+    if (call[1] !== undefined) {
+      return {
+        value: call[1],
+        site: `${file.path}:${lineAt(text, call.index)}`,
+      };
+    }
+
+    const name = call[2].split('.').pop() as string;
+    const definition = new RegExp(
+      `\\b(?:let|var)\\s+${name}\\s*(?::\\s*String\\s*)?=\\s*"([^"]*)"`,
+      'g'
+    );
+    const found: KeyLiteral[] = [];
+    for (const source of allSources) {
+      const sourceText = withoutComments(source.text);
+      for (const match of sourceText.matchAll(definition)) {
+        found.push({
+          value: match[1],
+          site: `${source.path}:${lineAt(sourceText, match.index ?? 0)}`,
+        });
+      }
+    }
+    return new Set(found.map((entry) => entry.value)).size === 1
+      ? found[0]
+      : undefined;
+  }
+  return undefined;
+}
+
+/** Comments blanked out, newlines kept, so line numbers still match the file. */
+function withoutComments(text: string): string {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
+    .replace(/^(\s*)\/\/.*$/gm, '$1');
+}
+
+function lineAt(text: string, index: number): number {
+  return text.slice(0, index).split('\n').length;
+}

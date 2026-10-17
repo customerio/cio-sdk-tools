@@ -72,16 +72,14 @@ export async function startAndroidCapture(
       // — the rest is vendor chatter that pushed the retained window over and, before
       // `mark()` existed, invalidated the cells' own indices. Every marker this tool
       // judges on is tagged `[CIO]`, verified against a real capture.
-      if (!line.process.includes('CIO')) {
-        sink?.write(`${line.at} ${line.process}: ${line.message}\n`);
-        continue;
-      }
-      lines.push(line);
+      sink?.write(`${line.at} ${line.process}: ${line.message}\n`);
+      const own = sdkLine(line);
+      if (!own) continue;
+      lines.push(own);
       if (lines.length > 40_000) {
         lines.splice(0, 10_000);
         dropped += 10_000;
       }
-      sink?.write(`${line.at} ${line.process}: ${line.message}\n`);
     }
   });
 
@@ -123,4 +121,18 @@ export function parseLogcat(raw: string): LogLine | undefined {
   );
   if (!match) return { at: '', process: '', message: line };
   return { at: match[1], process: match[2].trim(), message: match[3] };
+}
+
+const FORWARDED = '[CIO] ';
+
+/**
+ * The SDK's own line, or nothing. React Native forwards the native SDK's lines to its
+ * JavaScript console, so they reach logcat under `ReactNativeJS` with `[CIO] ` in front of
+ * the message. The prefix is dropped, so they read exactly as the native SDK writes them.
+ */
+export function sdkLine(line: LogLine): LogLine | undefined {
+  if (line.process.includes('CIO')) return line;
+  return line.message.startsWith(FORWARDED)
+    ? { ...line, message: line.message.slice(FORWARDED.length) }
+    : undefined;
 }

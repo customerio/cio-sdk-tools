@@ -567,3 +567,28 @@ test('an SDK line is one the SDK tagged, not any bracketed framework line', () =
   assert.ok(!SDK_PUSH_LINE.test('[TLSCBQ] something from CFNetwork'));
   assert.ok(!SDK_PUSH_LINE.test('Pushing a view controller'));
 });
+
+test("an extension that ran with its SDK silent is told apart from one whose SDK spoke", () => {
+  const { extensionSdkQuiet } = require('../../dist/verify/areas/push/on_device/sdk_lines');
+  // The OS's lines from the extension's process: it ran.
+  const ran = [
+    line('NotificationService', 'Initializing app group container'),
+    { ...line('ExpoTestbed', '[Push] Notification permission: authorized'), subsystem: 'io.customer.sdk' },
+  ];
+  assert.strictEqual(extensionSdkQuiet(ran, 'NotificationService'), true);
+
+  const spoke = [
+    ...ran,
+    { ...line('NotificationService', '[Push] Tracking push message delivered'), subsystem: 'io.customer.sdk' },
+  ];
+  assert.strictEqual(extensionSdkQuiet(spoke, 'NotificationService'), false);
+  // An extension that never ran is not quiet; it is another finding.
+  assert.strictEqual(extensionSdkQuiet([ran[1]], 'NotificationService'), false);
+});
+
+test('NoProviderConfigured is named for what it is, not a generic refusal', () => {
+  const { rejectedCell } = require('../../dist/verify/areas/push/on_device/send');
+  const cell = rejectedCell('killed', { accepted: false, error: 'API error 400: NoProviderConfigured' }, []);
+  assert.strictEqual(cell.cause, 'send.provider_not_configured');
+  assert.strictEqual(rejectedCell('killed', { accepted: false, error: 'API error 400: BadDeviceToken' }, []).cause, 'send.provider_rejected');
+});
