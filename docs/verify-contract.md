@@ -72,14 +72,14 @@ Arrival is read from the OS wherever it can be: the simulator's notification sto
 
 ### Before the run: a fresh install
 
-After integrating, have the person delete the app, install the new build, launch it, log in, and answer the notification prompt. Then run the tool.
+After integrating, have the person delete the app, install the new build, launch it, log in, and answer the notification prompt. Keep the app open for about 30 seconds after logging in, then run the tool.
 
 Why:
 - A reinstall over an old build keeps its notification permission and its registration, which can pass checks a new install would fail.
 - Customer.io sends push only to identified profiles. An app that isn't logged in stops the run at Device ready.
 - On an iPhone, the tool learns whether notifications are allowed only from the app's own log while it runs. A run where the app never starts (killed state only) can't tell "notifications off" from "nothing arrived". A fresh launch, or including the foreground state, gives it the answer.
 
-A new login takes a while to reach Customer.io. The tool reads the profile again every 5s for up to 90s before calling it missing, so start the run right after logging in.
+A new login, and the device it registers, take a while to reach Customer.io, and an app sent to the background holds them on the device: Android cuts a background app's network and iOS suspends it. When the profile or the device isn't there at first, the tool opens the app once, then reads the profile again every 5s for up to 90s before calling it missing.
 
 ### Consent
 
@@ -379,11 +379,11 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
 - **`profile.identity_in_other_workspace`** · blocker — The identity this app logged in as exists in a different workspace.
   Either the app is using another workspace's CDP API key, or this login happened against a different environment. Compare the key in CustomerIO.initialize with the workspace you picked.
 - **`profile.not_found`** · blocker — No profile in this workspace matches the device's identity.
-  Check the workspace is the one the app talks to, and that identify has reached it — profile sync runs on a cycle, so a login seconds old may not be there yet.
+  Check the workspace is the one the app talks to, and that identify has reached it — profile sync runs on a cycle, so a login seconds old may not be there yet. An app sent to the background straight after logging in keeps its login on the device until it is opened again (Android cuts its network, iOS suspends it): keep the app open for about 30 seconds after logging in, then run again.
 - **`profile.no_device_linked`** · blocker — The profile has no devices at all.
   The SDK registers the token against the identified profile. No devices means the token never reached the workspace, so every campaign send has nowhere to go.
 - **`profile.token_not_linked`** · blocker — The profile has devices, but not the token this target is holding.
-  This is the failure that hides behind a green dashboard: the profile looks addressable and the phone in your hand is not the device that gets the push. Re-identify after the token was issued, or clear the stale devices.
+  This is the failure that hides behind a green dashboard: the profile looks addressable and the phone in your hand is not the device that gets the push. Re-identify after the token was issued, or clear the stale devices. If the app was just installed or logged in, keep it open for about 30 seconds so its device registration reaches Customer.io, then run again: an app sent to the background holds it on the device.
 - **`profile.app_identifier_mismatch`** · warning — The linked device's app identifier is not the bundle id being verified.
   Usually means two builds share a profile. Harmless for this run, but a send addressed to the profile may reach the other app.
 

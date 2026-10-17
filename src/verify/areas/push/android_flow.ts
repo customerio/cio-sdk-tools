@@ -21,6 +21,7 @@ import {
 } from './registration/android_device';
 import { androidWiring } from './registration/android_wiring';
 import { profileLinked } from './registration/profile_linked';
+import { launchAndroidApp } from '../../platform/android/app_state';
 import {
   gatherWorkspace,
   workspaceReady,
@@ -136,6 +137,17 @@ export async function climbAndroid(
     onSweep: (workspace) =>
       profileRung.phase(`looking in ${workspace.name ?? workspace.id}`),
     onWait: (text) => profileRung.phase(text),
+    foreground: async () => {
+      if (!device.target || !packageName) return undefined;
+      profileRung.phase(
+        'opening the app, so what it queued in the background can go out'
+      );
+      const launched = await launchAndroidApp(
+        device.target.serial,
+        packageName
+      );
+      return launched.ok ? launched.how : undefined;
+    },
     bundleId: packageName,
   });
   ladder.adopt(profile, profileTimer());

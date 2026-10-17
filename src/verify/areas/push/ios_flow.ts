@@ -25,6 +25,7 @@ import {
   judgeNotificationPermission,
 } from './registration/profile_linked';
 import { projectWiring } from './registration/project_wiring';
+import { setAppState } from '../../platform/ios/app_state';
 import {
   gatherWorkspace,
   workspaceReady,
@@ -145,6 +146,19 @@ export async function climb(
       onSweep: (workspace) =>
         profileRung.phase(`looking in ${workspace.name ?? workspace.id}`),
       onWait: (text) => profileRung.phase(text),
+      foreground: async () => {
+        if (!device.target || !wiring.bundleId) return undefined;
+        profileRung.phase(
+          'opening the app, so what it queued in the background can go out'
+        );
+        const launched = await setAppState(
+          device.target,
+          wiring.bundleId,
+          'foreground',
+          wiring.processNames?.[0]
+        );
+        return launched.ok ? launched.how : undefined;
+      },
       bundleId: wiring.bundleId,
     });
     ladder.adopt(profile, profileTimer());
