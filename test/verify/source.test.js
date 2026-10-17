@@ -252,3 +252,22 @@ test("a literal key at the call is read, and a name with two values is left unre
   const computed = file('NSE/NotificationService.swift', 'MessagingPushConfigBuilder(cdpApiKey: settings.key)');
   assert.strictEqual(extensionKey([computed], [computed]), undefined);
 });
+
+test('the newest SDK store is read, and its name is the key the SDK runs with', async () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { readSdkState } = require('../../dist/verify/platform/ios/device');
+
+  // An app that changed its key keeps a store for the old one.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cio-verify-'));
+  const old = path.join(dir, 'com.segment.storage.localsmoke_key.plist');
+  const current = path.join(dir, 'com.segment.storage.5f660a00000000000000.plist');
+  fs.writeFileSync(old, '');
+  fs.writeFileSync(current, '');
+  fs.utimesSync(old, new Date('2026-07-01'), new Date('2026-07-01'));
+
+  const state = await readSdkState(dir, 'io.customer.app');
+  assert.strictEqual(state.cdpApiKey, '5f660a00000000000000');
+  assert.deepStrictEqual(state.sources, ['com.segment.storage.5f660a00000000000000.plist']);
+});
