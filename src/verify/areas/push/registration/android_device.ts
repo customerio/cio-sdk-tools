@@ -118,7 +118,9 @@ function storesAnswer(facts: AndroidDeviceFacts): {
 } {
   const sdk = facts.sdk;
   const checked = versionChecked('android', facts.sdkVersion?.version);
-  const nothing = storedNothing(facts) && checked;
+  // No SDK file in an app Android still holds stopped is an app that has never been opened:
+  // the OS's word, whatever the SDK's version.
+  const nothing = storedNothing(facts) && (checked || facts.stopped === true);
   return {
     token: Boolean(
       sdk?.deviceToken || (sdk?.stores?.sdk && checked) || nothing
