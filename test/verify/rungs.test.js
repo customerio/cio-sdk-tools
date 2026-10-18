@@ -148,7 +148,11 @@ test('no stored token fails, and so does an anonymous device: push goes only to 
       ambiguous: [],
       installed: true,
       preferences: '/tmp/prefs',
-      sdk: { sources: ['io.customer.sdk.io.example.app.shared.plist'] },
+      sdkVersion: { version: '4.9.0', source: 'Podfile.lock' },
+      sdk: {
+        sources: ['io.customer.sdk.io.example.app.shared.plist'],
+        stores: { sdk: true, context: false, cdp: true },
+      },
     },
     'io.example.app'
   );
@@ -349,7 +353,7 @@ test("the keys the app and its extension run with are checked against the worksp
   assert.match(check(held, 'sdk_key').evidence[0], /79ea53…, from source "Expo Testbed"/);
 
   // A key from another workspace and a dead one read the same here: nothing this workspace issued.
-  const foreign = workspaceReady(facts({ sdkKey: 'localsmoke_cdp_key' }), 'development');
+  const foreign = workspaceReady(facts({ sdkKey: 'localsmoke_cdp_key', sdkKeyChecked: true }), 'development');
   assert.deepStrictEqual(causes(foreign), ['workspace.sdk_key_foreign']);
   assert.match(check(foreign, 'sdk_key').detail, /localsmoke_cdp_key, which no source in this workspace issued/);
 
@@ -359,6 +363,17 @@ test("the keys the app and its extension run with are checked against the worksp
   );
   assert.deepStrictEqual(causes(extension), ['workspace.extension_key_foreign']);
   assert.match(check(extension, 'extension_key').evidence.join(' '), /Env\.swift:5 runs with key test-cdp-api-key/);
+
+  // A key read from a store this tool hasn't checked for the SDK's version may be no key at all.
+  const unchecked = workspaceReady(facts({ sdkKey: 'localsmoke_cdp_key' }), 'development');
+  assert.strictEqual(check(unchecked, 'sdk_key').verdict, 'skip');
+  assert.deepStrictEqual(causes(unchecked), ['device.sdk_state_unreadable']);
+
+  // The SDK's own state line gives the key's first characters, which is enough to place it.
+  assert.strictEqual(check(workspaceReady(facts({ sdkKeyPrefix: '79ea5300' }), 'development'), 'sdk_key').verdict, 'pass');
+  assert.deepStrictEqual(causes(workspaceReady(facts({ sdkKeyPrefix: '1a2b3c4d' }), 'development')), [
+    'workspace.sdk_key_foreign',
+  ]);
 
   // Keys that could not be listed prove nothing either way.
   const unread = workspaceReady(facts({ sdkKey: 'abc', error: 'API error 403' }), 'development');
@@ -462,4 +477,57 @@ test('the profile causes say to keep the app open after logging in', () => {
   for (const code of ['profile.not_found', 'profile.token_not_linked']) {
     assert.match(resolveCause(code).remedy, /keep (the app|it) open for about 30 seconds/, code);
   }
+});
+
+test("a store the tool hasn't checked for this SDK version proves nothing missing, and the SDK's own word does", () => {
+  const target = { kind: 'simulator', name: 'A', udid: '1', state: 'booted' };
+  const base = {
+    target,
+    usable: [],
+    ambiguous: [],
+    installed: true,
+    preferences: '/tmp/prefs',
+    sdk: { sources: [], stores: { sdk: true, context: false, cdp: true } },
+  };
+
+  for (const sdkVersion of [undefined, { version: '5.0.0', source: 'Podfile.lock' }]) {
+    const unread = deviceReady({ ...base, sdkVersion }, 'io.example.app');
+    assert.strictEqual(Ladder.verdictOf(unread), 'skip');
+    assert.deepStrictEqual(causes(unread), ['device.sdk_state_unreadable', 'device.sdk_state_unreadable']);
+  }
+  const unread = deviceReady({ ...base, sdkVersion: { version: '5.0.0', source: 'Podfile.lock' } }, 'io.example.app');
+  assert.match(unread.checks.find((each) => each.id === 'token_registered').detail, /5\.0\.0\) is not a version this tool has checked/);
+
+  // The SDK's state line says outright that it has no token and no user.
+  const said = deviceReady(
+    { ...base, stateLine: { anonymous: true, noToken: true, at: '' } },
+    'io.example.app'
+  );
+  assert.deepStrictEqual(causes(said).sort(), ['device.identity_anonymous', 'device.token_unregistered']);
+  assert.deepStrictEqual(said.checks.find((each) => each.id === 'token_registered').evidence, [
+    'the SDK says it holds no token',
+  ]);
+
+  // A token and user from elsewhere (--token, --user, or the state line) pass, naming the source.
+  const given = deviceReady(
+    { ...base, sdk: { ...base.sdk, pushDeviceToken: 'a'.repeat(64), userId: 'u-42', sources: ['--token', '--user'] } },
+    'io.example.app'
+  );
+  assert.strictEqual(Ladder.verdictOf(given), 'pass');
+});
+
+test("Android's stores say nothing missing for an SDK version the tool hasn't checked", () => {
+  const facts = (extra) => ({
+    target: { serial: 'emulator-5554', kind: 'emulator', model: 'sdk' },
+    usable: [],
+    installed: true,
+    permissionGranted: true,
+    network: { ip: true, dns: true },
+    sdk: { sources: ['io.customer.sdk.io.app.xml'], stores: { sdk: true, cdp: true } },
+    ...extra,
+  });
+  const unread = androidDeviceReady(facts({}), 'io.app');
+  assert.deepStrictEqual(causes(unread), ['device.sdk_state_unreadable', 'device.sdk_state_unreadable']);
+  const checked = androidDeviceReady(facts({ sdkVersion: { version: '4.23.2', source: 'Gradle' } }), 'io.app');
+  assert.deepStrictEqual(causes(checked).sort(), ['device.identity_anonymous', 'device.token_unregistered']);
 });

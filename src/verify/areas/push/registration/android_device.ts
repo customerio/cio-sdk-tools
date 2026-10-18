@@ -13,6 +13,9 @@ import {
   selectAndroidTarget,
 } from '../../../platform/android/device';
 import { fail, pass, warn } from '../../../core/report/ladder';
+import { SdkStateLine } from '../../../platform/sdk_events';
+import { SdkVersion, versionChecked } from '../../../platform/sdk_version';
+import { GivenState, unreadState } from './device_ready';
 import { Check, Rung } from '../../../core/report/types';
 import { RUNG_TITLES } from '../types';
 
@@ -27,11 +30,23 @@ export interface AndroidDeviceFacts {
   installedAt?: Date;
   network?: Connectivity;
   sdk?: AndroidSdkState;
+  /** The native SDK's version: from the SDK's own state line, else from the project. */
+  sdkVersion?: SdkVersion;
+  /** What the SDK said about itself in its log, read when its stores could not answer. */
+  stateLine?: SdkStateLine;
 }
 
 export async function gatherAndroidDevice(options: {
   packageName?: string;
   selector?: string;
+  sdkVersion?: SdkVersion;
+  given?: GivenState;
+  /**
+   * Opens the app and reads the SDK's `sdk.state` line from logcat. Only asked when the stores
+   * leave the token or the user unknown: it costs a launch. The SDK keeps its own copy of the
+   * user encrypted, so once the CDP layer's store is encrypted too, this is the only way.
+   */
+  readStateLine?: (target: AndroidTarget) => Promise<SdkStateLine | undefined>;
 }): Promise<AndroidDeviceFacts> {
   const targets = await listAndroidTargets();
   const { target, usable } = selectAndroidTarget(targets, options.selector);
@@ -41,6 +56,7 @@ export async function gatherAndroidDevice(options: {
     usable,
     selector: options.selector,
     installed: false,
+    sdkVersion: options.sdkVersion,
   };
   if (!target || !options.packageName) return facts;
 
@@ -58,7 +74,62 @@ export async function gatherAndroidDevice(options: {
     options.packageName
   );
   facts.sdk = await readAndroidSdkState(target.serial, options.packageName);
+
+  const answered = storesAnswer(facts);
+  if (
+    options.readStateLine &&
+    !facts.sdk.notDebuggable &&
+    ((!answered.token && !options.given?.token) ||
+      (!answered.user && !options.given?.userId))
+  ) {
+    facts.stateLine = await options.readStateLine(target);
+    if (facts.stateLine?.version) {
+      facts.sdkVersion = {
+        version: facts.stateLine.version,
+        source: "the SDK's state line",
+      };
+    }
+  }
+  const sdk = facts.sdk;
+  if (options.given?.token) {
+    sdk.deviceToken = options.given.token;
+    sdk.sources.push('--token');
+  } else if (!sdk.deviceToken && facts.stateLine?.token) {
+    sdk.deviceToken = facts.stateLine.token;
+    sdk.sources.push("the SDK's state line");
+  }
+  if (options.given?.userId) {
+    sdk.userId = options.given.userId;
+    sdk.sources.push('--user');
+  } else if (!sdk.userId && facts.stateLine?.userId) {
+    sdk.userId = facts.stateLine.userId;
+    sdk.sources.push("the SDK's state line");
+  }
   return facts;
+}
+
+/**
+ * Whether the stores settle the token and the user: they hold them, or they prove there are
+ * none, which only a store this tool knows the layout of can (see the iOS rung).
+ */
+function storesAnswer(facts: AndroidDeviceFacts): {
+  token: boolean;
+  user: boolean;
+} {
+  const sdk = facts.sdk;
+  const checked = versionChecked('android', facts.sdkVersion?.version);
+  const nothing = storedNothing(facts) && checked;
+  return {
+    token: Boolean(
+      sdk?.deviceToken || (sdk?.stores?.sdk && checked) || nothing
+    ),
+    user: Boolean(
+      sdk?.userId ||
+        sdk?.anonymousId ||
+        (sdk?.stores?.cdp && checked) ||
+        nothing
+    ),
+  };
 }
 
 export function androidDeviceReady(
@@ -233,13 +304,25 @@ function stoppedCheck(
 
 function tokenCheck(facts: AndroidDeviceFacts): Check {
   const token = facts.sdk?.deviceToken;
+  if (!token && !facts.stateLine?.noToken && !storesAnswer(facts).token) {
+    return unreadState(
+      'token_registered',
+      'SDK holds an FCM token',
+      facts.sdkVersion,
+      `no device_token in ${
+        facts.sdk?.stores?.sdk ? 'the SDK store' : 'any SDK store on the target'
+      }`
+    );
+  }
   if (!token) {
     return fail(
       'token_registered',
       'SDK holds an FCM token',
       'device.token_unregistered',
       [
-        storedNothing(facts)
+        facts.stateLine?.noToken
+          ? 'the SDK says it holds no token'
+          : storedNothing(facts)
           ? facts.stopped
             ? 'the SDK has stored nothing: the app has never been opened, and Android keeps a new install stopped until it is'
             : 'the SDK has stored nothing: it has not run in this app yet'
@@ -265,7 +348,16 @@ function identityCheck(facts: AndroidDeviceFacts): Check {
       facts.sdk?.siteId
         ? `siteId ${facts.sdk.siteId}`
         : 'no siteId in settings',
+      ...(facts.sdk?.sources ?? []),
     ]);
+  }
+  if (!facts.stateLine?.anonymous && !storesAnswer(facts).user) {
+    return unreadState(
+      'identity_read',
+      'SDK has an identified profile',
+      facts.sdkVersion,
+      'no identified user in any SDK store on the target'
+    );
   }
   // Customer.io sends push only to identified profiles, so an anonymous device stops here.
   return fail(
@@ -275,6 +367,8 @@ function identityCheck(facts: AndroidDeviceFacts): Check {
     [
       facts.sdk?.anonymousId
         ? `anonymous id only: ${facts.sdk.anonymousId}`
+        : facts.stateLine?.anonymous
+        ? 'the SDK says no user is identified'
         : 'no identity recorded at all',
     ]
   );
