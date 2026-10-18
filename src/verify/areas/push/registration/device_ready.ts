@@ -17,6 +17,8 @@ import {
   simulatorPushService,
 } from '../../../platform/ios/push_service';
 import { fail, pass, skipped, warn } from '../../../core/report/ladder';
+import { SdkStateLine } from '../../../platform/sdk_events';
+import { SdkVersion, versionChecked } from '../../../platform/sdk_version';
 import { Check, Rung } from '../../../core/report/types';
 import { RUNG_TITLES } from '../types';
 
@@ -37,7 +39,17 @@ export interface DeviceFacts {
   freshness?: Freshness;
   /** A simulator's connection to Apple's push servers, when its log says. */
   pushService?: PushServiceState;
+  /** The native SDK's version: from the SDK's own state line, else from the project. */
+  sdkVersion?: SdkVersion;
+  /** What the SDK said about itself in its log, read when its stores could not answer. */
+  stateLine?: SdkStateLine;
   cleanup?: () => Promise<void>;
+}
+
+/** What the person running the tool said, for what the device's stores cannot. */
+export interface GivenState {
+  userId?: string;
+  token?: string;
 }
 
 /**
@@ -48,6 +60,13 @@ export interface DeviceFacts {
 export async function gatherDevice(options: {
   bundleId?: string;
   selector?: string;
+  sdkVersion?: SdkVersion;
+  given?: GivenState;
+  /**
+   * Opens the app and reads the SDK's `sdk.state` line from its log. Only asked when the
+   * stores leave the token or the user unknown: it costs a launch.
+   */
+  readStateLine?: (target: Target) => Promise<SdkStateLine | undefined>;
 }): Promise<DeviceFacts> {
   const targets = await listTargets();
   const { target, usable, ambiguous, matched } = selectTarget(
@@ -62,6 +81,7 @@ export async function gatherDevice(options: {
     matched,
     selector: options.selector,
     installed: false,
+    sdkVersion: options.sdkVersion,
   };
   if (!target || !options.bundleId) return facts;
 
@@ -79,14 +99,67 @@ export async function gatherDevice(options: {
     facts.pushService = await simulatorPushService(target.udid);
   }
   if (located.preferences) {
-    facts.sdk = await readSdkState(located.preferences, options.bundleId);
+    facts.sdk = await readSdkState(
+      located.preferences,
+      options.bundleId,
+      located.sdkSupport
+    );
     facts.freshness = await tokenFreshness(
       located.appPath,
       located.preferences,
       options.bundleId
     );
   }
+  if (!facts.installed) return facts;
+
+  // Only when the stores can't answer: for an SDK too old to write the line, the launch
+  // finds nothing and costs a wait.
+  const answered = storesAnswer(facts);
+  if (
+    options.readStateLine &&
+    ((!answered.token && !options.given?.token) ||
+      (!answered.user && !options.given?.userId))
+  ) {
+    facts.stateLine = await options.readStateLine(target);
+    if (facts.stateLine?.version) {
+      facts.sdkVersion = {
+        version: facts.stateLine.version,
+        source: "the SDK's state line",
+      };
+    }
+  }
+  facts.sdk = fillIn(facts.sdk, facts.stateLine, options.given);
   return facts;
+}
+
+/**
+ * What the stores left unknown, filled in from what the person said, else from what the SDK
+ * said in its log. Each value names where it came from in `sources`.
+ */
+function fillIn(
+  sdk: DeviceSdkState | undefined,
+  line: SdkStateLine | undefined,
+  given: GivenState | undefined
+): DeviceSdkState {
+  const filled: DeviceSdkState = sdk ?? {
+    sources: [],
+    stores: { sdk: false, context: false, cdp: false },
+  };
+  if (given?.token) {
+    filled.pushDeviceToken = given.token;
+    filled.sources.push('--token');
+  } else if (!filled.pushDeviceToken && line?.token) {
+    filled.pushDeviceToken = line.token;
+    filled.sources.push("the SDK's state line");
+  }
+  if (given?.userId) {
+    filled.userId = given.userId;
+    filled.sources.push('--user');
+  } else if (!filled.userId && line?.userId) {
+    filled.userId = line.userId;
+    filled.sources.push("the SDK's state line");
+  }
+  return filled;
 }
 
 export function deviceReady(facts: DeviceFacts, bundleId?: string): Rung {
@@ -158,7 +231,8 @@ export function deviceReady(facts: DeviceFacts, bundleId?: string): Rung {
   }
   rung.checks.push(pass('app_installed', `App is installed: ${bundleId}`));
 
-  if (!facts.preferences) {
+  // Without the container, a token the person gave still lets the run go on.
+  if (!facts.preferences && !facts.sdk?.pushDeviceToken) {
     rung.checks.push(
       warn(
         'container_readable',
@@ -258,19 +332,51 @@ function freshnessCheck(facts: DeviceFacts): Check | undefined {
   );
 }
 
+/**
+ * Whether the stores settle the token and the user: they hold them, or they prove there are
+ * none. A missing value proves nothing for an SDK version whose stores this tool hasn't
+ * checked, where the tool may simply be looking in the wrong place. An anonymous id read from
+ * the CDP layer's store shows the store was read where its user would be.
+ */
+function storesAnswer(facts: DeviceFacts): { token: boolean; user: boolean } {
+  const sdk = facts.sdk;
+  const checked = versionChecked('ios', facts.sdkVersion?.version);
+  return {
+    token: Boolean(sdk?.pushDeviceToken || (sdk?.stores?.sdk && checked)),
+    user: Boolean(
+      sdk?.userId ||
+        sdk?.anonymousId ||
+        ((sdk?.stores?.context || sdk?.stores?.cdp) && checked)
+    ),
+  };
+}
+
+/** A value that may be there, in a place this tool does not know. */
+export function unreadState(
+  id: string,
+  label: string,
+  sdkVersion: SdkVersion | undefined,
+  looked: string
+): Check {
+  const why = sdkVersion
+    ? `${looked}, and the SDK (${sdkVersion.version}) is not a version this tool has checked where it keeps it`
+    : `${looked}, and the SDK's version could not be read, so the tool cannot tell it is looking in the right place`;
+  return { ...skipped(id, label, why), cause: 'device.sdk_state_unreadable' };
+}
+
 function tokenCheck(facts: DeviceFacts) {
   const token = facts.sdk?.pushDeviceToken;
+  const label = 'SDK holds a push token';
   if (!token) {
-    return fail(
-      'token_registered',
-      'SDK holds a push token',
-      'device.token_unregistered',
-      [
-        `no pushDeviceToken in ${
-          facts.sdk?.sources.join(', ') || 'the SDK store'
-        }`,
-      ]
-    );
+    const looked = `no pushDeviceToken in ${
+      facts.sdk?.stores?.sdk ? 'the SDK store' : 'any SDK store on the target'
+    }`;
+    if (!facts.stateLine?.noToken && !storesAnswer(facts).token) {
+      return unreadState('token_registered', label, facts.sdkVersion, looked);
+    }
+    return fail('token_registered', label, 'device.token_unregistered', [
+      facts.stateLine?.noToken ? 'the SDK says it holds no token' : looked,
+    ]);
   }
   // Only the shape is printed. The token is the address of someone's phone.
   return pass('token_registered', 'SDK holds a push token', [
@@ -288,7 +394,16 @@ function identityCheck(facts: DeviceFacts) {
       facts.sdk?.siteId
         ? `siteId ${facts.sdk.siteId}`
         : 'no siteId in settings',
+      ...(facts.sdk?.sources ?? []),
     ]);
+  }
+  if (!facts.stateLine?.anonymous && !storesAnswer(facts).user) {
+    return unreadState(
+      'identity_read',
+      'SDK has an identified profile',
+      facts.sdkVersion,
+      'no identified user in any SDK store on the target'
+    );
   }
   // Customer.io sends push only to identified profiles, so an anonymous device stops here:
   // there is no profile to look for, and nothing to send to.
@@ -299,6 +414,8 @@ function identityCheck(facts: DeviceFacts) {
     [
       anonymousId
         ? `anonymous id only: ${anonymousId}`
+        : facts.stateLine?.anonymous
+        ? 'the SDK says no user is identified'
         : 'no identity recorded at all',
     ]
   );

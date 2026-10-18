@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
+const { matches } = require('../../dist/verify/areas/push/on_device/markers');
 
 const { judgeAndroid } = require('../../dist/verify/areas/push/on_device/android');
 const { parseLogcat } = require('../../dist/verify/platform/android/logcat');
@@ -90,15 +91,15 @@ test('logcat lines parse into tag and message, dividers excluded', () => {
   );
   assert.strictEqual(line.process, '[CIO]');
   assert.match(line.at, /^09-17 03:41:50\.906$/);
-  assert.ok(ANDROID_MARKERS.tracked.test(line.message));
+  assert.ok(matches(ANDROID_MARKERS.tracked, line.message));
   assert.deepStrictEqual(androidDeliveryIds([line]), ['dgS_abc123']);
   assert.strictEqual(parseLogcat('--------- beginning of main'), undefined);
 });
 
 test('the markers are the SDK’s own sentences, not loose words', () => {
-  assert.ok(!ANDROID_MARKERS.received.test('Received something unrelated'));
-  assert.ok(ANDROID_MARKERS.received.test('Received new message with deliveryId: x'));
-  assert.ok(ANDROID_MARKERS.duplicate.test('Received duplicate message with deliveryId: x'));
+  assert.ok(!matches(ANDROID_MARKERS.received, 'Received something unrelated'));
+  assert.ok(matches(ANDROID_MARKERS.received, 'Received new message with deliveryId: x'));
+  assert.ok(matches(ANDROID_MARKERS.duplicate, 'Received duplicate message with deliveryId: x'));
 });
 
 test('shared preferences are XML with escaped values', () => {
@@ -215,7 +216,8 @@ test('a missing token and a denied permission are separate failures', () => {
       installed: true,
       network: { ip: true, dns: true },
       permissionGranted: true,
-      sdk: { sources: ['io.customer.sdk.io.example.app.xml'] },
+      sdkVersion: { version: '4.23.2', source: 'Gradle' },
+      sdk: { sources: ['io.customer.sdk.io.example.app.xml'], stores: { sdk: true, cdp: false } },
     },
     'io.example.app'
   );
@@ -274,12 +276,12 @@ test('the handoff markers match the SDK’s two success phrasings', () => {
   const success = '[CIO-Push-Handoff] worker success, removed key=dgS_abc==';
   const already = '[CIO-Push-Handoff] worker skipped, already delivered key=dgS_abc==';
   const queued = '[CIO-Push-Handoff] enqueued WM key=dgS_abc==';
-  assert.ok(ANDROID_MARKERS.handoffDelivered.test(success));
-  assert.ok(ANDROID_MARKERS.handoffAlreadyDelivered.test(already));
-  assert.ok(ANDROID_MARKERS.handoffQueued.test(queued));
+  assert.ok(matches(ANDROID_MARKERS.handoffDelivered, success));
+  assert.ok(matches(ANDROID_MARKERS.handoffAlreadyDelivered, already));
+  assert.ok(matches(ANDROID_MARKERS.handoffQueued, queued));
   // "already delivered" must not read as the plain success line, and vice versa.
-  assert.ok(!ANDROID_MARKERS.handoffDelivered.test(already));
-  assert.ok(!ANDROID_MARKERS.handoffAlreadyDelivered.test(success));
+  assert.ok(!matches(ANDROID_MARKERS.handoffDelivered, already));
+  assert.ok(!matches(ANDROID_MARKERS.handoffAlreadyDelivered, success));
 });
 
 test('a mark survives the retention window dropping lines', () => {
@@ -342,4 +344,16 @@ test("a silent SDK's delivered-metric worker says it received the push", () => {
     byWorker: false,
   });
   assert.deepStrictEqual(sdkReceived([], title), { received: false, byWorker: false });
+});
+
+test("a shown line logcat split over several lines still names its push, by the tail on its last line", () => {
+  const { parseLogcat, sdkLine } = require('../../dist/verify/platform/android/logcat');
+  const { androidIdForTitle } = require('../../dist/verify/areas/push/on_device/identity');
+  const raw = [
+    '10-18 20:01:02.345 D/[CIO]( 4242): [Push] Showing notification for message: Notification:',
+    '10-18 20:01:02.345 D/[CIO]( 4242):   title = Verify push ab12',
+    '10-18 20:01:02.345 D/[CIO]( 4242): Data: {CIO-Delivery-ID=dgS_7} || ev=push.shown id=dgS_7 title=Verify%20push%20ab12',
+  ];
+  const messages = raw.map(parseLogcat).map(sdkLine).filter(Boolean).map((line) => line.message);
+  assert.strictEqual(androidIdForTitle(messages, 'Verify push ab12'), 'dgS_7');
 });

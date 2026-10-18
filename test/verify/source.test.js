@@ -271,3 +271,46 @@ test('the newest SDK store is read, and its name is the key the SDK runs with', 
   assert.strictEqual(state.cdpApiKey, '5f660a00000000000000');
   assert.deepStrictEqual(state.sources, ['com.segment.storage.5f660a00000000000000.plist']);
 });
+
+test("the SDK's own delivery context names the user and the key, ahead of the CDP layer's store", async () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { readSdkState } = require('../../dist/verify/platform/ios/device');
+
+  const preferences = fs.mkdtempSync(path.join(os.tmpdir(), 'cio-verify-'));
+  fs.writeFileSync(path.join(preferences, 'com.segment.storage.5f660a00000000000000.plist'), '');
+  const support = fs.mkdtempSync(path.join(os.tmpdir(), 'cio-verify-'));
+  fs.writeFileSync(
+    path.join(support, 'delivery_context.json'),
+    JSON.stringify({ userId: 'u-42', apiHost: 'cdp.customer.io/v1', cdpApiKey: '1a2b3c4d00000000' })
+  );
+
+  const state = await readSdkState(preferences, 'io.customer.app', support);
+  assert.strictEqual(state.userId, 'u-42');
+  assert.strictEqual(state.cdpApiKey, '1a2b3c4d00000000');
+  assert.deepStrictEqual(state.stores, { sdk: false, context: true, cdp: true });
+
+  // Without the app opting into background delivery, the key stays off disk.
+  fs.writeFileSync(path.join(support, 'delivery_context.json'), JSON.stringify({ userId: 'u-42' }));
+  const keyless = await readSdkState(preferences, 'io.customer.app', support);
+  assert.strictEqual(keyless.cdpApiKey, '5f660a00000000000000');
+});
+
+test('which stores were there is said apart from what they held', async () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { readSdkState } = require('../../dist/verify/platform/ios/device');
+
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'cio-verify-'));
+  const nothing = await readSdkState(empty, 'io.customer.app', path.join(empty, 'missing'));
+  assert.deepStrictEqual(nothing.stores, { sdk: false, context: false, cdp: false });
+
+  // The SDK's store is there and holds no token: that, and only that, says the SDK has none.
+  fs.writeFileSync(path.join(empty, 'io.customer.app.shared.plist'), '');
+  fs.writeFileSync(path.join(empty, 'io.customer.sdk.io.customer.app.shared.plist'), '');
+  const held = await readSdkState(empty, 'io.customer.app');
+  assert.strictEqual(held.stores.sdk, true);
+  assert.strictEqual(held.pushDeviceToken, undefined);
+});

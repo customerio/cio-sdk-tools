@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
+const { matches } = require('../../dist/verify/areas/push/on_device/markers');
 
 const { deliveredRequest, judge } = require('../../dist/verify/areas/push/on_device');
 const {
@@ -164,14 +165,14 @@ test('base64url delivery ids are recognised, underscores and dashes included', (
 test('the markers are anchored to the SDK’s own sentences', () => {
   // A bare /Successfully/ once reported three errored sends as passing.
   assert.ok(
-    NSE_MARKERS.accepted.test("Successfully tracked push metric 'delivered'")
+    matches(NSE_MARKERS.accepted, "Successfully tracked push metric 'delivered'")
   );
   assert.ok(
-    !NSE_MARKERS.accepted.test('Successfully did something else entirely')
+    !matches(NSE_MARKERS.accepted, 'Successfully did something else entirely')
   );
-  assert.ok(NSE_MARKERS.tracking.test('Tracking push message delivered'));
+  assert.ok(matches(NSE_MARKERS.tracking, 'Tracking push message delivered'));
   assert.ok(
-    NSE_MARKERS.completion.test('invoking contentHandler — normal completion')
+    matches(NSE_MARKERS.completion, 'invoking contentHandler — normal completion')
   );
 });
 
@@ -204,6 +205,20 @@ test('the line only the extension writes stands in when the process name is lost
     true
   );
   assert.strictEqual(extensionRanIn([line('APN UIKit', 'unrelated')]), false);
+  // The app's own process writing the sentence is no evidence: Android's app writes it too.
+  assert.strictEqual(
+    extensionRanIn([line('APN UIKit', '[Push] Tracking push message delivered with deliveryId: dgS_x')]),
+    false
+  );
+  // An SDK with key tails says where the line came from.
+  assert.strictEqual(
+    extensionRanIn([line('APN UIKit', '[Push] Tracking push message delivered with deliveryId: dgS_x || ev=push.delivered id=dgS_x in=extension')]),
+    true
+  );
+  assert.strictEqual(
+    extensionRanIn([line('', '[Push] Tracking push message delivered with deliveryId: dgS_x || ev=push.delivered id=dgS_x in=app')]),
+    false
+  );
 });
 
 test('one failing cell fails the run, and the others still report', () => {

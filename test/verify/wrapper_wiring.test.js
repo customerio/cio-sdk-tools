@@ -115,3 +115,93 @@ test('a React Native app on iOS initializes from TypeScript', async () => {
   assert.strictEqual(check(rung, 'init_present').verdict, 'pass');
   assert.deepStrictEqual(check(rung, 'init_present').evidence, [path.join('src', 'App.tsx') + ':1']);
 });
+
+/** A native iOS app and its extension, sharing the App Groups given, on the SDK version given. */
+async function nativeIosWiring({ sdkVersion, groups, inCode }) {
+  const plist = (body) =>
+    `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>${body}</dict></plist>`;
+  const groupList = plist(
+    `<key>com.apple.security.application-groups</key><array>${groups.map((g) => `<string>${g}</string>`).join('')}</array>`
+  );
+  const root = project({
+    'ios/Podfile.lock': sdkVersion ? `PODS:\n  - CustomerIO/MessagingPushAPN (${sdkVersion}):\n` : 'PODS:\n',
+    'ios/Sample/AppDelegate.swift': 'import CioMessagingPushAPN\nCustomerIO.initialize(withConfig: config)\n',
+    'ios/Sample/Sample.entitlements': groupList,
+    'ios/NSE/NSE.entitlements': groupList,
+    'ios/NSE/Info.plist': plist(
+      '<key>NSExtension</key><dict><key>NSExtensionPointIdentifier</key><string>com.apple.usernotifications.service</string></dict>'
+    ),
+    'ios/NSE/NotificationService.swift': `import CioMessagingPushAPN\n${
+      inCode ? `MessagingPushConfigBuilder(cdpApiKey: "k").appGroupId("${inCode}")\n` : ''
+    }MessagingPushAPN.shared.didReceive(request, withContentHandler: contentHandler)\n`,
+  });
+  const xcodeproj = path.join(root, 'ios', 'Sample.xcodeproj');
+  const { rung, sdkVersion: read } = await projectWiring({
+    projectPath: xcodeproj,
+    scanRoot: path.join(root, 'ios'),
+    model: {
+      projectPath: xcodeproj,
+      projectName: 'Sample',
+      configuration: 'Debug',
+      resolvedByXcodebuild: false,
+      format: 'pbxproj',
+      targets: [
+        {
+          name: 'Sample',
+          productType: 'com.apple.product-type.application',
+          settings: { PRODUCT_BUNDLE_IDENTIFIER: 'io.customer.ami', CODE_SIGN_ENTITLEMENTS: 'Sample/Sample.entitlements' },
+          embeds: ['NSE.appex'],
+          dependencies: ['NSE'],
+        },
+        {
+          name: 'NSE',
+          productType: 'com.apple.product-type.app-extension',
+          settings: {
+            PRODUCT_BUNDLE_IDENTIFIER: 'io.customer.ami.NSE',
+            CODE_SIGN_ENTITLEMENTS: 'NSE/NSE.entitlements',
+            INFOPLIST_FILE: 'NSE/Info.plist',
+          },
+          embeds: [],
+          dependencies: [],
+        },
+      ],
+    },
+  });
+  return { check: check(rung, 'app_group_agreement'), sdkVersion: read };
+}
+
+test("from 4.4 the SDK reads its own App Group, so a different shared group doesn't count", async () => {
+  const other = await nativeIosWiring({ sdkVersion: '4.9.0', groups: ['group.shared.other'] });
+  assert.strictEqual(other.sdkVersion.version, '4.9.0');
+  assert.strictEqual(other.check.cause, 'wiring.app_group_mismatch');
+  assert.match(other.check.evidence.join(' '), /SDK default: group\.io\.customer\.ami\.cio/);
+
+  const own = await nativeIosWiring({ sdkVersion: '4.9.0', groups: ['group.io.customer.ami.cio'] });
+  assert.strictEqual(own.check.verdict, 'pass');
+
+  // appGroupId() in code names the group itself.
+  const named = await nativeIosWiring({ sdkVersion: '4.9.0', groups: ['group.shared.other'], inCode: 'group.shared.other' });
+  assert.strictEqual(named.check.verdict, 'pass');
+
+  // Before 4.4 nothing is shared through a group, so there is nothing to agree on.
+  const older = await nativeIosWiring({ sdkVersion: '4.3.0', groups: [] });
+  assert.strictEqual(older.check.verdict, 'skip');
+
+  // An unknown version keeps the old reading: any group both targets share.
+  const unknown = await nativeIosWiring({ groups: ['group.shared.other'] });
+  assert.strictEqual(unknown.check.verdict, 'pass');
+});
+
+test("a wrapper whose Gradle files the tool can't read is a warning, not a missing module", async () => {
+  const root = project({
+    'package.json': JSON.stringify({ dependencies: { 'react-native': '0.83.6', 'customerio-reactnative': '7.0.0' } }),
+    'node_modules/customerio-reactnative/package.json': JSON.stringify({ version: '7.0.0' }),
+    'node_modules/customerio-reactnative/android/build.gradle': 'dependencies { api(libs.cio.push) }',
+    'src/App.tsx': 'CustomerIO.initialize(config);\n',
+    'android/settings.gradle': "include ':app'",
+    'android/app/build.gradle': "apply plugin: 'com.android.application'",
+  });
+  const { rung } = await androidWiring({ projectPath: path.join(root, 'android', 'app') });
+  assert.strictEqual(check(rung, 'push_module').verdict, 'warn');
+  assert.strictEqual(check(rung, 'push_module').cause, 'wiring.wrapper_build_unread');
+});

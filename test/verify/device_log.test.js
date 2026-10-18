@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
+const { matches } = require('../../dist/verify/areas/push/on_device/markers');
 const fs = require('fs');
 const path = require('path');
 
@@ -21,7 +22,7 @@ const lines = fixture.flatMap((line) => parseSyslog(line));
 test('the process name survives fractional seconds and the logging image', () => {
   // `[\d:]+` never matches `02:52:47.994859`, so every line fell through unattributed —
   // and an extension that had run looked absent.
-  const tracked = lines.filter((line) => NSE_MARKERS.accepted.test(line.message));
+  const tracked = lines.filter((line) => matches(NSE_MARKERS.accepted, line.message));
   assert.ok(tracked.length > 0, 'no accepted marker parsed out of the real capture');
   for (const line of tracked) {
     assert.strictEqual(line.process, 'NotificationServiceExtension');
@@ -31,7 +32,7 @@ test('the process name survives fractional seconds and the logging image', () =>
 
 test('the real capture shows one full sequence per app state', () => {
   const count = (marker) =>
-    lines.filter((line) => marker.test(line.message)).length;
+    lines.filter((line) => matches(marker, line.message)).length;
   assert.strictEqual(count(NSE_MARKERS.tracking), 3);
   assert.strictEqual(count(NSE_MARKERS.accepted), 3);
   assert.strictEqual(count(NSE_MARKERS.completion), 3);

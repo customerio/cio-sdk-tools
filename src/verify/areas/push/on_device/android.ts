@@ -3,9 +3,16 @@ import { Verdict } from '../../../core/report/types';
 import { MatrixCell, MatrixSection } from '../types';
 import { startAndroidCapture } from '../../../platform/android/logcat';
 import { ANDROID_MARKERS, androidDeliveryIds } from './sdk_lines';
+import { Marker, matches } from './markers';
+import { latestSdkState } from '../../../platform/sdk_events';
 import { setAndroidState } from '../../../platform/android/app_state';
 import { LogCapture } from '../../../platform/logs';
-import { SDK_PUSH_LINE, explainSdkSilence, sdkWasQuiet } from './sdk_lines';
+import {
+  SDK_PUSH_LINE,
+  explainSdkSilence,
+  explainUncheckedSdk,
+  sdkWasQuiet,
+} from './sdk_lines';
 import {
   eachState,
   markLateArrivals,
@@ -29,6 +36,8 @@ import { tapAndroidPush } from './android_opened';
 
 export interface AndroidMatrixOptions {
   dryRun?: boolean;
+  /** The native SDK's version, as the project resolved it. */
+  sdkVersion?: string;
   reporter?: Reporter;
   serial: string;
   /** What a person calls the device, for the tap prompt. */
@@ -102,10 +111,20 @@ export async function runAndroidDeliveredMatrix(
     };
     section.cells = explainSdkSilence(section.cells, silence, options.reporter);
     if (sdkWasQuiet(silence)) section.sdkQuiet = true;
+    // The SDK's own word on its version, when it gives one, over what the project resolved.
+    const sdk = {
+      platform: 'android' as const,
+      version: latestSdkState(capture.lines)?.version ?? options.sdkVersion,
+    };
+    section.cells = explainUncheckedSdk(section.cells, sdk, options.reporter);
     tapped.splice(
       0,
       tapped.length,
-      ...explainSdkSilence(tapped, silence, options.reporter)
+      ...explainUncheckedSdk(
+        explainSdkSilence(tapped, silence, options.reporter),
+        sdk,
+        options.reporter
+      )
     );
   } finally {
     await capture.stop();
@@ -290,7 +309,8 @@ async function runCellBody(
   const titledId = androidIdForTitle(now, title);
   const { received, byWorker } = sdkReceived(now, title);
   const shown = shownBySdk(now, title);
-  const has = (marker: RegExp) => now.some((message) => marker.test(message));
+  const has = (marker: Marker) =>
+    now.some((message) => matches(marker, message));
   const duplicate = has(ANDROID_MARKERS.duplicate);
   // Kept as evidence of what the SDK did, never judged.
   const tracked = has(ANDROID_MARKERS.tracked);
@@ -368,7 +388,7 @@ async function runCellBody(
 function receivedBySdk(messages: string[], title: string): boolean {
   return (
     androidIdForTitle(messages, title) !== undefined ||
-    messages.some((message) => ANDROID_MARKERS.received.test(message))
+    messages.some((message) => matches(ANDROID_MARKERS.received, message))
   );
 }
 
@@ -385,7 +405,7 @@ export function sdkReceived(
   if (receivedBySdk(messages, title))
     return { received: true, byWorker: false };
   const byWorker = messages.some((message) =>
-    ANDROID_MARKERS.metricsWorker.test(message)
+    matches(ANDROID_MARKERS.metricsWorker, message)
   );
   return { received: byWorker, byWorker };
 }
@@ -393,7 +413,7 @@ export function sdkReceived(
 function shownBySdk(messages: string[], title: string): boolean {
   return (
     androidIdForTitle(
-      messages.filter((message) => ANDROID_MARKERS.shown.test(message)),
+      messages.filter((message) => matches(ANDROID_MARKERS.shown, message)),
       title
     ) !== undefined
   );
