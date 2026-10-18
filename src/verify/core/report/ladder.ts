@@ -75,6 +75,9 @@ export class Ladder<S extends Section = Section> {
   static verdictOf(rung: Rung): Verdict {
     if (rung.skipped) return 'skip';
     if (rung.checks.some((c) => c.verdict === 'fail')) return 'fail';
+    // A check skipped for a reason it names is unproven, not merely not run: a token the
+    // tool could not read leaves the rung unproven, however much else in it passed.
+    if (rung.checks.some((c) => c.verdict === 'skip' && c.cause)) return 'skip';
     if (rung.checks.length === 0) return 'skip';
     if (rung.checks.every((c) => c.verdict === 'skip')) return 'skip';
     if (rung.checks.some((c) => c.verdict === 'warn')) return 'warn';
