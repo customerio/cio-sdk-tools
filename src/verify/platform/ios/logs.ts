@@ -10,6 +10,7 @@ import {
   LogLine,
   StreamAgreement,
   trackCapture,
+  unwrapForwarded,
 } from '../logs';
 import { Target } from './device';
 
@@ -24,7 +25,12 @@ export interface CaptureFilter {
   predicate?: string;
 }
 
-const SDK_SUBSYSTEM_PREDICATE = 'subsystem == "io.customer.sdk"';
+/**
+ * The SDK's own lines, and the ones a React Native app forwards to its JavaScript console
+ * (see `unwrapForwarded`), which is where all of them go once JavaScript has started.
+ */
+export const SDK_SUBSYSTEM_PREDICATE =
+  'subsystem == "io.customer.sdk" OR (subsystem == "com.facebook.react.log" AND eventMessage BEGINSWITH "[CIO] ")';
 
 const NOT_CAPTURING: LogCapture = {
   available: false,
@@ -477,7 +483,7 @@ export function parseNdjson(raw: string): LogLine[] {
   try {
     const parsed = JSON.parse(line) as Record<string, string>;
     return [
-      {
+      unwrapForwarded({
         at: (parsed.timestamp ?? '').slice(11, 23),
         process: (parsed.processImagePath ?? '').split('/').pop() ?? '',
         message: parsed.eventMessage ?? '',
@@ -485,7 +491,7 @@ export function parseNdjson(raw: string): LogLine[] {
           ? { level: parsed.messageType.toLowerCase() }
           : {}),
         ...(parsed.subsystem ? { subsystem: parsed.subsystem } : {}),
-      },
+      }),
     ];
   } catch {
     // A partial line at a chunk boundary; the next chunk completes it.
@@ -515,12 +521,12 @@ export function parseSyslog(raw: string): LogLine[] {
   if (!match) return [{ at: '', process: '', message: line }];
   const level = match[4]?.toLowerCase();
   return [
-    {
+    unwrapForwarded({
       at: match[1],
       process: match[2].trim(),
       message: match[5],
       // `<private>` is a redacted field, not a type.
       ...(level && level !== 'private' ? { level } : {}),
-    },
+    }),
   ];
 }
