@@ -9,6 +9,7 @@ import {
   isSdkDebugLine,
   deliveryIdsIn,
   explainSdkSilence,
+  explainUncheckedSdk,
   extensionSdkQuiet,
   sdkWasQuiet,
   lastAuthorization,
@@ -44,6 +45,8 @@ import {
 import { PushProvider } from '../credentials';
 import { deliveredTitle, pushTag, tapBody } from './identity';
 import { SentPush, TapPlan, notTappedCell, tapIosPush } from './opened';
+import { matches } from './markers';
+import { latestSdkState } from '../../../platform/sdk_events';
 
 export interface MatrixOptions {
   /** Exercise every step except the send itself. */
@@ -74,6 +77,8 @@ export interface MatrixOptions {
   tap?: TapPlan;
   /** The URL schemes the app declares, lowercased. */
   appSchemes?: string[];
+  /** The native SDK's version, as the project resolved it. */
+  sdkVersion?: string;
 }
 
 /**
@@ -181,6 +186,12 @@ export async function runDeliveredMatrix(
       how: "the app's processes logged",
     };
     section.cells = explainSdkSilence(section.cells, silence, options.reporter);
+    // The SDK's own word on its version, when it gives one, over what the project resolved.
+    const sdk = {
+      platform: 'ios' as const,
+      version: latestSdkState(capture.lines)?.version ?? options.sdkVersion,
+    };
+    section.cells = explainUncheckedSdk(section.cells, sdk, options.reporter);
     if (sdkWasQuiet(silence)) section.sdkQuiet = true;
     // The extension handles the push on iOS, so its SDK's silence is the one that matters
     // here: the app's own lines say nothing about a delivery the app never saw.
@@ -193,7 +204,11 @@ export async function runDeliveredMatrix(
     tapped.splice(
       0,
       tapped.length,
-      ...explainSdkSilence(tapped, silence, options.reporter)
+      ...explainUncheckedSdk(
+        explainSdkSilence(tapped, silence, options.reporter),
+        sdk,
+        options.reporter
+      )
     );
   } finally {
     await capture.stop();
@@ -437,7 +452,8 @@ async function runCellBody(
     if (tapping) return;
     handle?.phase('collecting the extension’s account');
     await waitFor(
-      () => since().some((line) => NSE_MARKERS.completion.test(line.message)),
+      () =>
+        since().some((line) => matches(NSE_MARKERS.completion, line.message)),
       EVIDENCE_SETTLE_MS
     );
   };
@@ -560,13 +576,13 @@ async function runCellBody(
   // Kept as evidence of what the SDK did, never judged: whether a report landed is
   // Customer.io's to say, and the device's log of it is the part most often missing.
   const tracking = lines.some((line) =>
-    NSE_MARKERS.tracking.test(line.message)
+    matches(NSE_MARKERS.tracking, line.message)
   );
   const accepted = lines.some((line) =>
-    NSE_MARKERS.accepted.test(line.message)
+    matches(NSE_MARKERS.accepted, line.message)
   );
   const rich = lines.some((line) =>
-    NSE_MARKERS.richFinished.test(line.message)
+    matches(NSE_MARKERS.richFinished, line.message)
   );
   const ids = deliveryIdsIn(lines);
   // Without an id from the send or the OS's stored copy, freshness stands in for

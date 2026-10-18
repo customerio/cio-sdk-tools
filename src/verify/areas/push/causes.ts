@@ -138,6 +138,14 @@ export const CAUSES: Record<string, PushCause> = {
       'Add io.customer.android:messaging-push-fcm. Without it the SDK never sees a message: the module is what registers the Firebase service that receives one.',
     docs: ANDROID_PUSH_DOCS,
   },
+  'wiring.wrapper_build_unread': {
+    stage: 'project_wiring',
+    severity: 'warning',
+    summary:
+      "The wrapper package's Gradle files declare the SDK in a way this tool doesn't read, so whether it brings the push module isn't checked.",
+    remedy:
+      'Update cio-sdk-tools. The rest of the run still proves push end to end: a push that arrives and is tracked shows the module is there.',
+  },
   'wiring.google_services_missing': {
     stage: 'project_wiring',
     severity: 'blocker',
@@ -323,6 +331,14 @@ export const CAUSES: Record<string, PushCause> = {
     remedy:
       'Open the app, and run again: the SDK stores a token the first time the app starts with push set up. If the app has been opened, check it registers for push at launch, and background and foreground it once. Without a token there is no address to send to.',
   },
+  'device.sdk_state_unreadable': {
+    stage: 'device_ready',
+    severity: 'warning',
+    summary:
+      "The tool couldn't read what the SDK stored on this target, so it can't say whether the SDK holds a token or an identified user.",
+    remedy:
+      "Update cio-sdk-tools: this SDK version may keep its state where this version of the tool doesn't look. To go on meanwhile, pass --token and --user. An SDK that writes its state line in the log at debug level is read from there when its files can't be.",
+  },
   'device.identity_anonymous': {
     stage: 'device_ready',
     severity: 'blocker',
@@ -439,6 +455,14 @@ export const CAUSES: Record<string, PushCause> = {
       'The open the SDK reported belongs to a different push than the one this run sent.',
     remedy:
       'Usually an older notification was tapped. Tap the one whose title ends in this run’s tag, as the prompt names it, or clear old notifications and run again.',
+  },
+  'runtime.tap_unmatched': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      "The SDK tracked an open, but its line names no delivery id this tool can read, so the open can't be tied to the push this run sent.",
+    remedy:
+      'Update cio-sdk-tools: the SDK may now write the id differently. Until then, clear older notifications before the run so the only banner to tap is this one.',
   },
   'runtime.capture_stopped': {
     stage: 'delivered_matrix',
@@ -610,6 +634,14 @@ export const CAUSES: Record<string, PushCause> = {
       'The log was attached and the app said nothing at all, so this cell proves nothing.',
     remedy:
       'Suspect the capture, not the push: check the log tool is streaming (a filter that matches no process name returns silence), and that the app is the build you think it is. On a phone, make sure nothing else is reading its log (`pgrep -fl idevicesyslog` on the Mac): streams left running load the phone until its log stops delivering to anyone, and unplugging and replugging it resets the log relay. On Android, a React Native app started by a push runs no JavaScript, and its SDK gets its log level from CustomerIO.initialize there, so the SDK can handle a killed push without writing a line.',
+  },
+  'runtime.sdk_lines_unchecked': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      "The SDK didn't write the line this tool looks for, and its version isn't one the tool has been checked against, so the missing line proves nothing.",
+    remedy:
+      'Update cio-sdk-tools. If it is already the latest, the SDK may have reworded the line: report it with the SDK version at https://github.com/customerio/cio-sdk-tools/issues.',
   },
   'runtime.app_state_not_set': {
     stage: 'delivered_matrix',

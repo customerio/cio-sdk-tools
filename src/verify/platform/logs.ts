@@ -20,6 +20,24 @@ export interface LogLine {
   subsystem?: string;
 }
 
+/**
+ * A React Native app forwards the SDK's lines to its JavaScript console once JavaScript has
+ * started, prefixed `[CIO] `, and the native log then has none of them: on a simulator they
+ * come out under React Native's own subsystem. Unwrapped, they read as the SDK's lines again.
+ * No native iOS line starts with that prefix, so nothing else is touched.
+ */
+export function unwrapForwarded(line: LogLine): LogLine {
+  if (!line.message.startsWith(FORWARDED_PREFIX)) return line;
+  return {
+    ...line,
+    message: line.message.slice(FORWARDED_PREFIX.length),
+    ...(line.subsystem ? { subsystem: SDK_SUBSYSTEM } : {}),
+  };
+}
+
+const FORWARDED_PREFIX = '[CIO] ';
+export const SDK_SUBSYSTEM = 'io.customer.sdk';
+
 export interface LogCapture {
   available: boolean;
   /** Why no log is being captured, ready to print as a skip reason. */

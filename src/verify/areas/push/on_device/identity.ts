@@ -1,3 +1,4 @@
+import { sdkEvent } from '../../../platform/sdk_events';
 import { AppState } from '../../../platform/app_state';
 
 /**
@@ -56,6 +57,13 @@ export function androidIdForTitle(
   title: string
 ): string | undefined {
   for (const message of messages) {
+    // An SDK with key tails names both on its received and shown lines.
+    const event = sdkEvent(message);
+    if (event && ['push.received', 'push.shown'].includes(event.ev)) {
+      if (event.fields.title === title && event.fields.id)
+        return event.fields.id;
+      continue;
+    }
     if (!/(?:Received|Showing) notification for message: \{/.test(message)) {
       continue;
     }
@@ -78,6 +86,10 @@ export function androidOpenedIdentity(message: string): {
   deliveryId?: string;
   title?: string;
 } {
+  const event = sdkEvent(message);
+  if (event?.ev === 'push.opened') {
+    return { deliveryId: event.fields.id, title: event.fields.title };
+  }
   const id = message.match(
     new RegExp(`cioDeliveryId=(${DELIVERY_ID.source})[,)]`)
   );

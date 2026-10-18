@@ -1,5 +1,17 @@
 import { LogLine } from '../../../platform/logs';
+import { SDK_SUBSYSTEM_PREDICATE } from '../../../platform/ios/logs';
+import { sdkEvent } from '../../../platform/sdk_events';
+import { SdkPlatform } from '../../../platform/sdk_version';
 import { MatrixCell, NotificationAuthorization } from '../types';
+import {
+  ANDROID_MARKERS,
+  NOTIFICATION_PERMISSION,
+  NSE_MARKERS,
+  lineMatch,
+  linesChecked,
+} from './markers';
+
+export { ANDROID_MARKERS, NOTIFICATION_PERMISSION, NSE_MARKERS };
 
 /**
  * What push reads in a log: the SDK's own sentences, the extension's process, and the
@@ -51,24 +63,16 @@ export function simulatorPredicate(
         appProcess
       )} AND eventMessage BEGINSWITH "Failed to open URL")`
     : '';
-  return `subsystem == "io.customer.sdk" OR processImagePath CONTAINS "NotificationService"${named}${openFailed}`;
+  return `${SDK_SUBSYSTEM_PREDICATE} OR processImagePath CONTAINS "NotificationService"${named}${openFailed}`;
 }
-
-/**
- * The SDK's line with the OS's answer on notifications for the app, the same sentence on both
- * platforms: `[Push] Notification permission: <status>`, logged at debug when the SDK reads it
- * (its device update, the app coming to the front, a push shown in the foreground, the iOS
- * extension). Support asks customers for debug logs, so it is in theirs too.
- */
-export const NOTIFICATION_PERMISSION =
-  /^\[Push\] Notification permission: (\S+)/;
 
 /** The latest answer the SDK logged, or nothing when it never read one in the run. */
 export function lastAuthorization(
   lines: LogLine[]
 ): NotificationAuthorization | undefined {
   for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const status = NOTIFICATION_PERMISSION.exec(lines[index].message)?.[1];
+    const status = lineMatch(NOTIFICATION_PERMISSION, lines[index].message)
+      ?.status;
     if (!status) continue;
     return {
       status,
@@ -164,20 +168,50 @@ export function explainSdkSilence(
   });
 }
 
+/** Causes that rest on a line the SDK didn't write, which a reworded line looks exactly like. */
+const NEEDS_KNOWN_LINES = [
+  'runtime.push_not_handled',
+  'runtime.cold_tap_not_handled',
+  'runtime.opened_not_tracked',
+];
+
 /**
- * The SDK's own phrasings, anchored deliberately.
- *
- * A loose filter has twice produced a false result here: a bare /handled/ matched kernel
- * `unhandled kAMPDUStat_` spam, and a bare /Successfully/ reported three errored sends as
- * passing. Each pattern below is the SDK's exact sentence.
+ * A missing line fails a cell only for an SDK version whose sentences this tool was checked
+ * against. For any other, a newer major or a version the project doesn't say, the SDK may
+ * have written the line in other words, so those cells are re-judged as unproven.
  */
-export const NSE_MARKERS = {
-  tracking: /Tracking push message delivered/,
-  accepted: /Successfully tracked push metric 'delivered'/,
-  /** Fires at the end of the sequence; `delivered` fires mid-way and truncates a capture. */
-  completion: /invoking contentHandler|normal completion/,
-  richFinished: /rich push step finished/,
-} as const;
+export function explainUncheckedSdk(
+  cells: MatrixCell[],
+  sdk: { platform: SdkPlatform; version?: string },
+  reporter?: { cell(state: string): { done(cell: MatrixCell): void } }
+): MatrixCell[] {
+  if (linesChecked(sdk.platform, sdk.version)) return cells;
+  return cells.map((cell) => {
+    if (
+      cell.verdict !== 'fail' ||
+      !cell.cause ||
+      !NEEDS_KNOWN_LINES.includes(cell.cause)
+    ) {
+      return cell;
+    }
+    const unchecked: MatrixCell = {
+      ...cell,
+      verdict: 'skip',
+      cause: 'runtime.sdk_lines_unchecked',
+      summary: "unproven: an SDK version this tool hasn't checked",
+      evidence: [
+        ...cell.evidence,
+        `the SDK is ${
+          sdk.version ?? 'a version the project does not say'
+        }, and this tool's lines were checked against other versions (was: ${
+          cell.cause
+        })`,
+      ],
+    };
+    reporter?.cell(cell.state).done(unchecked);
+    return unchecked;
+  });
+}
 
 /**
  * Did the extension run? Read from which process wrote a line — the OS's attribution — never
@@ -195,9 +229,11 @@ export function ranInExtension(
 }
 
 /**
- * Did the extension run on a push? A line from its own process is the OS's word for it. The
- * SDK's "Tracking push message delivered" counts too, because only the extension writes it:
- * a parser that lost the process name once turned a working extension into an accusation.
+ * Did the extension run on a push? A line from its own process is the OS's word for it. So is
+ * an SDK delivered line that says it came from the extension. The bare sentence counts only
+ * when the line's process was lost, which a parser regression once did to every line, turning
+ * a working extension into an accusation: a line the app's own process wrote is no evidence,
+ * since nothing stops the app logging the same sentence, as Android's does.
  */
 export function extensionRanIn(
   lines: LogLine[],
@@ -205,7 +241,11 @@ export function extensionRanIn(
 ): boolean {
   return (
     ranInExtension(lines, extensionName) ||
-    lines.some((line) => NSE_MARKERS.tracking.test(line.message))
+    lines.some((line) => {
+      const fields = lineMatch(NSE_MARKERS.tracking, line.message);
+      if (!fields) return false;
+      return fields.in ? fields.in === 'extension' : line.process === '';
+    })
   );
 }
 
@@ -268,27 +308,12 @@ export function deliveryIdsIn(lines: LogLine[]): string[] {
  * Stopping at `tracked` therefore misses the notification and the acceptance entirely — the
  * same mistake as waiting for `delivered` instead of `normal completion` on iOS.
  */
-export const ANDROID_MARKERS = {
-  received: /Received new message with deliveryId: /,
-  tracked: /Tracking push message delivered with deliveryId: /,
-  shown: /Showing notification for message: /,
-  /** FCM re-delivering the same message. Evidence, never a fault. */
-  duplicate: /Received duplicate message with deliveryId: /,
-  handoffQueued: /\[CIO-Push-Handoff\] enqueued WM key=/,
-  handoffDelivered: /\[CIO-Push-Handoff\] worker success, removed key=/,
-  handoffAlreadyDelivered:
-    /\[CIO-Push-Handoff\] worker skipped, already delivered key=/,
-  /**
-   * WorkManager's own line for the delivered-metric worker, which the SDK queues for each push
-   * it processes. Written at WorkManager's level, so it speaks for an SDK that logs nothing:
-   * a React Native app started for a push runs no JavaScript to set the SDK's level.
-   */
-  metricsWorker: /Worker result SUCCESS for Work .*PushDeliveryMetricsWorker/,
-} as const;
 
 export function androidDeliveryIds(lines: LogLine[]): string[] {
   const ids = new Set<string>();
   for (const line of lines) {
+    const tailed = sdkEvent(line.message)?.fields.id;
+    if (tailed && tailed !== 'none') ids.add(tailed);
     for (const match of line.message.matchAll(
       /deliveryId[:=]\s*([A-Za-z0-9_-]{8,}={0,2})/g
     )) {

@@ -24,6 +24,13 @@ export interface WorkspaceFacts {
 export interface KeyFacts {
   /** Read from the SDK's store on the device. */
   sdkKey?: string;
+  /** The first characters of the key, as the SDK's own state line gives them. */
+  sdkKeyPrefix?: string;
+  /**
+   * The SDK key came from where this SDK version keeps it. A key read from a store whose
+   * layout the tool hasn't checked may be no key at all, so it can't convict the app.
+   */
+  sdkKeyChecked?: boolean;
   /** Read from the extension's sources. */
   extensionKey?: KeyLiteral;
   workspaceKeys: SourceKey[];
@@ -41,6 +48,8 @@ export async function gatherWorkspace(options: {
   /** Settled by the selection phase — this rung checks the choice, it does not make it. */
   resolution: WorkspaceResolution;
   sdkKey?: string;
+  sdkKeyPrefix?: string;
+  sdkKeyChecked?: boolean;
   extensionKey?: KeyLiteral;
 }): Promise<WorkspaceFacts> {
   const base = {
@@ -69,12 +78,21 @@ export async function gatherWorkspace(options: {
 
 async function gatherKeys(
   workspace: Workspace,
-  options: { sdkKey?: string; extensionKey?: KeyLiteral }
+  options: {
+    sdkKey?: string;
+    sdkKeyPrefix?: string;
+    sdkKeyChecked?: boolean;
+    extensionKey?: KeyLiteral;
+  }
 ): Promise<KeyFacts | undefined> {
-  if (!options.sdkKey && !options.extensionKey) return undefined;
+  if (!options.sdkKey && !options.sdkKeyPrefix && !options.extensionKey) {
+    return undefined;
+  }
   const listed = await workspaceKeys(workspace.id);
   return {
     sdkKey: options.sdkKey,
+    sdkKeyPrefix: options.sdkKey ? undefined : options.sdkKeyPrefix,
+    sdkKeyChecked: options.sdkKeyChecked,
     extensionKey: options.extensionKey,
     workspaceKeys: listed.keys,
     error: listed.error,
@@ -135,21 +153,37 @@ function keyChecks(facts: WorkspaceFacts): Check[] {
   const checks: Check[] = [];
   const name = facts.resolution?.workspace?.name ?? 'this workspace';
 
-  if (keys.sdkKey) {
+  const sdkKey = keys.sdkKey ?? keys.sdkKeyPrefix;
+  if (sdkKey) {
     const label = `App reports to ${name}`;
+    const check = keys.error
+      ? skipped(
+          'sdk_key',
+          label,
+          `the workspace's keys could not be read: ${keys.error}`
+        )
+      : keyCheck(keys, sdkKey, {
+          id: 'sdk_key',
+          label,
+          where: 'the SDK on the device',
+          cause: 'workspace.sdk_key_foreign',
+          prefix: !keys.sdkKey,
+        });
+    // The SDK said its key itself, or the tool read it where this SDK version keeps it.
+    const trusted = !keys.sdkKey || keys.sdkKeyChecked;
     checks.push(
-      keys.error
-        ? skipped(
-            'sdk_key',
-            label,
-            `the workspace's keys could not be read: ${keys.error}`
-          )
-        : keyCheck(keys, keys.sdkKey, {
-            id: 'sdk_key',
-            label,
-            where: 'the SDK on the device',
-            cause: 'workspace.sdk_key_foreign',
-          })
+      check.verdict === 'fail' && !trusted
+        ? {
+            ...skipped(
+              'sdk_key',
+              label,
+              `the key read off the device (${shortKey(
+                sdkKey
+              )}) came from a store this tool hasn't checked for this SDK version`
+            ),
+            cause: 'device.sdk_state_unreadable',
+          }
+        : check
     );
   }
   if (keys.extensionKey) {
@@ -175,9 +209,18 @@ function keyChecks(facts: WorkspaceFacts): Check[] {
 function keyCheck(
   keys: KeyFacts,
   key: string,
-  check: { id: string; label: string; where: string; cause: string }
+  check: {
+    id: string;
+    label: string;
+    where: string;
+    cause: string;
+    /** Only the key's first characters are known. */
+    prefix?: boolean;
+  }
 ): Check {
-  const held = keys.workspaceKeys.find((entry) => entry.key === key);
+  const held = keys.workspaceKeys.find((entry) =>
+    check.prefix ? entry.key.startsWith(key) : entry.key === key
+  );
   if (held) {
     return pass(check.id, check.label, [
       `key ${shortKey(key)}, from source "${held.source}"`,
