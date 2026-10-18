@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { WrapperSdk, loadWrapper } from '../framework';
+import { SdkVersion } from '../sdk_version';
 
 const SKIP_DIRECTORIES = new Set([
   'build',
@@ -51,6 +52,14 @@ export interface AndroidProjectModel {
 export interface AndroidWrapper extends WrapperSdk {
   /** `io.customer.android` modules the package ships with the app. */
   sdkModules: string[];
+  /**
+   * The package's Gradle files name the SDK at all. When they don't, the package declares its
+   * modules some other way (a version catalog, a nested script) that is read nowhere here, and
+   * an empty `sdkModules` says nothing about what it ships.
+   */
+  sdkModulesRead: boolean;
+  /** The native SDK version the package builds against, unless the app overrides it. */
+  nativeVersion?: string;
   manifest?: string;
 }
 
@@ -104,20 +113,28 @@ async function loadAndroidWrapper(
 ): Promise<AndroidWrapper | undefined> {
   const wrapper = await loadWrapper(appModulePath);
   if (!wrapper) return undefined;
-  if (!wrapper.directory) return { ...wrapper, sdkModules: [] };
+  if (!wrapper.directory) {
+    return { ...wrapper, sdkModules: [], sdkModulesRead: false };
+  }
 
   const androidDirectory = path.join(wrapper.directory, 'android');
   const entries = await fs.readdir(androidDirectory).catch(() => []);
-  const gradle = await Promise.all(
-    entries
-      .filter((entry) => /\.gradle(?:\.kts)?$/.test(entry))
-      .map((entry) =>
-        fs.readFile(path.join(androidDirectory, entry), 'utf8').catch(() => '')
-      )
-  );
+  const gradle = (
+    await Promise.all(
+      entries
+        .filter((entry) => /\.(?:gradle(?:\.kts)?|properties)$/.test(entry))
+        .map((entry) =>
+          fs
+            .readFile(path.join(androidDirectory, entry), 'utf8')
+            .catch(() => '')
+        )
+    )
+  ).join('\n');
   return {
     ...wrapper,
-    sdkModules: sdkModulesFrom(gradle.join('\n')),
+    sdkModules: sdkModulesFrom(gradle),
+    sdkModulesRead: /io\.customer\.android:/.test(gradle),
+    nativeVersion: wrapperNativeVersion(gradle),
     manifest: await fs
       .readFile(
         path.join(androidDirectory, 'src', 'main', 'AndroidManifest.xml'),
@@ -284,7 +301,8 @@ export function applicationIdFrom(gradle: string): string | undefined {
  * `project(":…")` would report somebody's own module as the SDK.
  */
 const SDK_MODULE_NAMES = new Set([
-  'core',
+  // Not `core`: plenty of apps have a `:core` module of their own, and the SDK's composite
+  // builds always include one of the others as well.
   'datapipelines',
   'messagingpush',
   'messaging-push',
@@ -335,6 +353,83 @@ export function sdkModulesFrom(gradle: string): string[] {
     if (SDK_MODULE_NAMES.has(match[1])) modules.add(match[1]);
   }
   return [...modules];
+}
+
+/**
+ * The native Android SDK's version this app builds with: what the app's own build files pin,
+ * or, under a wrapper, the version the package pins unless the app overrides it.
+ */
+export async function androidSdkVersion(
+  model: AndroidProjectModel
+): Promise<SdkVersion | undefined> {
+  const properties = await fs
+    .readFile(path.join(model.projectPath, 'gradle.properties'), 'utf8')
+    .catch(() => '');
+  const appText = `${model.gradle}\n${properties}`;
+  if (model.wrapper) {
+    // React Native's `cioSDKVersionAndroid` and Flutter's `cioVersion`, set by the app.
+    const override = appText.match(
+      /(?:cioSDKVersionAndroid|\bcioVersion)\s*[=:]\s*["']?(\d+\.\d+\.\d+)/
+    )?.[1];
+    if (override)
+      return { version: override, source: "the app's Gradle files" };
+    return model.wrapper.nativeVersion
+      ? {
+          version: model.wrapper.nativeVersion,
+          source: `${model.wrapper.name}'s Gradle files`,
+        }
+      : undefined;
+  }
+  const version = gradleSdkVersion(appText);
+  return version ? { version, source: "the app's Gradle files" } : undefined;
+}
+
+/**
+ * `io.customer.android:<module>:<version>`, with the version written out, held in a variable,
+ * or referenced from a version catalog.
+ */
+export function gradleSdkVersion(gradle: string): string | undefined {
+  const coordinate = gradle.match(
+    /io\.customer\.android:[a-z0-9-]+:(?:(\d+\.\d+\.\d+)|\$\{?([A-Za-z_][\w.]*)\}?)/
+  );
+  if (coordinate?.[1]) return coordinate[1];
+  if (coordinate?.[2]) {
+    const name = coordinate[2].split('.').pop() ?? '';
+    const assigned = gradle.match(
+      new RegExp(`\\b${name}\\s*=\\s*["'](\\d+\\.\\d+\\.\\d+)["']`)
+    );
+    if (assigned) return assigned[1];
+  }
+  // A catalog library: `{ module = "io.customer.android:…", version.ref = "cio" }`, or one
+  // with the version inline.
+  for (const line of gradle.split('\n')) {
+    if (!/io\.customer\.android/.test(line)) continue;
+    const inline = line.match(/\bversion\s*=\s*"(\d+\.\d+\.\d+)"/);
+    if (inline) return inline[1];
+    const ref = line.match(/version\.ref\s*=\s*"([^"]+)"/)?.[1];
+    if (!ref) continue;
+    const pinned = gradle.match(
+      new RegExp(
+        `^\\s*${ref.replace(/[.-]/g, '\\$&')}\\s*=\\s*"(\\d+\\.\\d+\\.\\d+)"`,
+        'm'
+      )
+    );
+    if (pinned) return pinned[1];
+  }
+  return undefined;
+}
+
+/**
+ * The native version a wrapper package pins: React Native's
+ * `customerio.reactnative.cioSDKVersionAndroid` property, Flutter's default `cioVersion`, or a
+ * version written into the dependency itself.
+ */
+export function wrapperNativeVersion(gradle: string): string | undefined {
+  return (
+    gradle.match(/cioSDKVersionAndroid\s*=\s*(\d+\.\d+\.\d+)/)?.[1] ??
+    gradle.match(/cioVersion["')\s]*\?:\s*["'](\d+\.\d+\.\d+)["']/)?.[1] ??
+    gradleSdkVersion(gradle)
+  );
 }
 
 export function applicationClassFrom(manifest?: string): string | undefined {
