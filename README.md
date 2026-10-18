@@ -209,6 +209,7 @@ For feedback or feature requests, [open an issue](https://github.com/customerio/
    | `--app-states killed` | Send one push instead of three. |
    | `--evidence-dir DIR` | Keep the captured logs and screenshots here. |
    | `--watch-registration` | Watch the install, token, and login happen, instead of reading what they left behind. |
+   | `--user ID`, `--token TOKEN` | The identified user and the push token, when the tool can't read them off the device. |
    | `--cio-profile NAME` | The `cio` CLI login to use. |
    | `--verbose` / `--quiet` | Print every check, command, and the evidence behind them, and keep the device logs; or print only the verdict. |
 

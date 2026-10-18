@@ -61,6 +61,7 @@ Arrival is read from the OS wherever it can be: the simulator's notification sto
 | `--platform <ios\|android>` | When the folder holds both projects. |
 | `--ios-target`, `--ios-configuration`, `--android-module`, `--android-app-id` | When the project builds several apps. |
 | `--watch-registration` | Watch the install, token and login happen, instead of reading what they left behind. |
+| `--user <id>`, `--token <token>` | The identified user and the push token, when the tool can't read them off the device. |
 | `--evidence-dir <dir>` | Keep the device logs and screenshots there. |
 | `--json` | The report on stdout. Implies `--non-interactive`. |
 | `--report <file>` | The report written to a file as well. |
@@ -199,7 +200,7 @@ A tool failure is one JSON line on stderr, in the `cio` CLI's own shape, so one 
 
 ## Causes
 
-80 today, each found by one step (`stage`), listed in [the appendix](#appendix-every-cause). Every check or push that doesn't pass names one.
+84 today, each found by one step (`stage`), listed in [the appendix](#appendix-every-cause). Every check or push that doesn't pass names one.
 
 - `blocker`: the integration is broken, or the run can't go on. The run fails (exit 20).
 - `warning`: worth the person's attention, or the reason a push is unproven. The run warns (exit 0) or ends unproven (exit 21).
@@ -211,6 +212,7 @@ A tool failure is one JSON line on stderr, in the `cio` CLI's own shape, so one 
 - **iOS:** macOS with Xcode, and a booted simulator or a USB-connected, unlocked iPhone running a development build. An iPhone's logs need `idevicesyslog` (`brew install libimobiledevice`).
 - **Android:** `adb`, and a running emulator or connected device with a debuggable build (the tool reads the SDK's stored token with `run-as`).
 - **The SDK at debug log level** for the checks that read its lines. At the default (error), arrival is still proven, but not that the app handled the push.
+- **SDK versions:** iOS 3.10 or later and Android 4.6 or later write every line the tool judges. Missing lines and missing stored values count against the app only for the SDK majors the tool has been checked against (iOS 3 and 4, Android 4); for any other version, or one the project doesn't say, they leave the step unproven (`device.sdk_state_unreadable`, `runtime.sdk_lines_unchecked`).
 
 ## App types
 
@@ -239,15 +241,52 @@ Changing any of these can break the tool silently. Tell its owners first.
 | `GET /v1/environments/{id}/customers` | The profile by email or id, and its devices. |
 | `GET /cdp/api/workspaces/{id}/sources`, `GET /cdp/api/workspaces/{id}/sources/{source_id}/api_keys` | The keys the chosen workspace issued, to check the keys the app and its extension run with. |
 
-### SDK debug lines
+### The SDKs
 
-The tool matches these sentences. A wording change in the SDK is a breaking change for the tool. React Native forwards the Android SDK's lines to logcat under `ReactNativeJS`, with `[CIO] ` in front, and the tool reads them the same.
+The tool reads the SDKs' log lines and stored state. Each SDK holds the parts below marked **contract** still in its own tests, which point here. The rest is read for SDKs released before that contract, and a weekly CI job (`scripts/sdk-canary.js`) checks each SDK's latest release and `main` still says it. When either changes, update `src/verify/areas/push/on_device/markers.ts` and this section.
 
-- **iOS extension:** `Tracking push message delivered`, `Successfully tracked push metric 'delivered'`, `invoking contentHandler` / `normal completion`, `rich push step finished`.
-- **Android receipt:** `Received new message with deliveryId:`, `Tracking push message delivered with deliveryId:`, `Showing notification for message:`, `Received duplicate message with deliveryId:`, and the `[CIO-Push-Handoff]` worker lines. Where the SDK logs no receipt, WorkManager's `Worker result SUCCESS for Work … PushDeliveryMetricsWorker` counts instead: a React Native app started for a push runs no JavaScript, which sets its SDK's log level.
-- **Taps, both:** `Clicked notification for message` / `Clicked CIO push message`, `Tracking push message opened with deliveryId: <id>`, `Clicked non CIO push message`, `Clicked message with empty deliveryId`.
+**Key tails (contract).** An SDK line the tool reads ends with ` || ev=<event>` and `key=value` pairs. The tool reads the tail first and ignores the sentence, so the sentence can be reworded. Values percent-encode `%`, `|` and whitespace; a pair splits at its first `=`. Events are never renamed; keys are only added.
+
+| Event | Platform | Keys |
+|---|---|---|
+| `sdk.state` | both | `version`, `user` (or `anonymous`), `token` (or `none`), `key` (the first 8 characters) |
+| `push.permission` | both | `status` |
+| `push.received`, `push.shown` | Android | `id`, `title` |
+| `push.duplicate` | Android | `id` |
+| `push.delivered` | both | `id`; iOS also `in` (`extension` or `app`) |
+| `push.clicked` | iOS | `cio`, `id` |
+| `push.opened` | both | `id`; Android also `title` |
+| `push.open_skipped` | Android | `reason` |
+| `push.deep_link` | both | `url`; Android also `behavior` |
+| `push.deep_link_outcome` | both | `outcome`: `app_callback`, `app_navigation`, `system`, `external_app`, `default_app`, `not_handled` |
+
+The SDK writes `sdk.state` when it starts and whenever the user or token changes. The tool reads it only when the stored state below can't answer: it starts the app again and waits up to 20s for the line.
+
+**Log level from launch (contract).** The SDK uses the level the app last set from the moment its process starts, so a push or tap that starts a React Native or Flutter app is logged before JavaScript or Dart initializes the SDK.
+
+**Sentences** (SDKs before the key tails):
+- **iOS extension:** `Tracking push message delivered with deliveryId:`, `Successfully tracked push metric 'delivered'`, `invoking contentHandler` / `normal completion`, `rich push step finished`. The delivered sentence counts as the extension running only from the extension's process, or from a line whose process was lost.
+- **Android receipt:** `Received new message with deliveryId:`, `Tracking push message delivered with deliveryId:`, `Showing notification for message:` (whose data map names the push's `title` and `CIO-Delivery-ID`), `Received duplicate message with deliveryId:`, and the `[CIO-Push-Handoff]` worker lines. Where the SDK logs no receipt, WorkManager's `Worker result SUCCESS for Work …` for work tagged `cio-push-delivery` counts instead.
+- **Taps, iOS:** `Clicked notification for message` / `Clicked CIO push message`, `Tracking push message opened with deliveryId: <id>`, `Clicked non CIO push message`, `Clicked message with empty deliveryId`.
+- **Taps, Android:** `Tracking push message opened with payload: CustomerIOParsedPushPayload(…)`, whose `cioDeliveryId` and `title` name the push; `Skipping opened metric for notification without a delivery id/token`; `Failed to handle push click`.
 - **Deep links:** iOS `Handling push notification deep link with url:`; Android `Handling push notification deep link with payload: … - pushClickBehavior:`. Then `Deep link handled by host app callback implementation` / `internal host app navigation` / `system` / `external app`, or `Deep link was not handled`. On Android, `Deep link handled by opening default host app` with a link sent means nothing could open it.
-- **Permission (new):** `[Push] Notification permission: <status>`, logged in pending SDK releases (customerio-ios #1341, customerio-android #935). iOS `Deep link was not handled` from iOS's own answer comes with customerio-ios #1340.
+- **Permission:** `[Push] Notification permission: <status>`, in the SDKs with the key tails.
+
+**Where the lines are.** iOS writes under the `io.customer.sdk` subsystem, Android under the `[CIO]` logcat tag, both with a `[Push]`-style module tag in front of the message. Once JavaScript starts, React Native forwards every SDK line to its console with `[CIO] ` in front: on Android under `ReactNativeJS`, on iOS under `com.facebook.react.log`. The tool reads those as the SDK's own.
+
+**Stored state.**
+
+| | Contract | For older SDKs |
+|---|---|---|
+| iOS token | `Library/Preferences/io.customer.sdk.<bundle id>.shared.plist`: `pushDeviceToken` | |
+| iOS user | `Library/Application Support/io.customer.sdk.background/delivery_context.json`: `userId` (from 4.7.0) | `Library/Preferences/com.segment.storage.<key>.plist`: `segment.userId`, `segment.anonymousId` |
+| iOS key | `delivery_context.json`: `cdpApiKey`, only when the app allows background delivery | the `com.segment.storage.<key>.plist` file name |
+| Android token, key | `shared_prefs/io.customer.sdk.<package>.xml`: `device_token`, `config_settings` → `writeKey` | |
+| Android user | (the SDK keeps its own copy encrypted) | `shared_prefs/analytics-android-<key>.xml`: `segment.userId`, `segment.anonymousId` |
+
+The CDP layer's stores are a library's internals, and Customer.io plans to encrypt them. Then the user comes from the `sdk.state` line, or `--user`.
+
+**The project.** The native SDK's version from `Podfile.lock` or `Package.resolved` on iOS, and from the Gradle files on Android: `io.customer.android:<module>:<version>`, React Native's `customerio.reactnative.cioSDKVersionAndroid`, or Flutter's `cioVersion`. From iOS SDK 4.4, an extension that names no App Group shares `group.<app bundle id>.cio`.
 
 ### The OS
 
@@ -279,7 +318,7 @@ The native sample apps, in a workspace with several apps; on the iPhone and the 
 - Deploy the backend route for test deliveries, then run end-to-end against a local backend, then production.
 - Run a React Native, an Expo and a Flutter sample.
 - Run Android with the SDK at error log level.
-- Name the SDK versions with the permission line and the deep-link outcome once they ship. The tool works without them.
+- Name the SDK versions with the key tails, the `sdk.state` line, the permission line and the deep-link outcome once they ship (customerio-ios and customerio-android, one PR each). The tool works without them.
 
 ## Appendix: every cause
 
@@ -315,6 +354,8 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
   Add the Push Notifications capability to the app target; Xcode creates the entitlements file with it. https://www.customer.io/docs/sdk/ios/push/
 - **`wiring.push_module_missing`** · blocker — The project does not depend on the SDK's push module.
   Add io.customer.android:messaging-push-fcm. Without it the SDK never sees a message: the module is what registers the Firebase service that receives one. https://www.customer.io/docs/sdk/android/push/
+- **`wiring.wrapper_build_unread`** · warning — The wrapper package's Gradle files declare the SDK in a way this tool doesn't read, so whether it brings the push module isn't checked.
+  Update cio-sdk-tools. The rest of the run still proves push end to end: a push that arrives and is tracked shows the module is there.
 - **`wiring.google_services_missing`** · blocker — No google-services.json in the app module.
   Download it from the Firebase console into the app module. Firebase cannot issue a token without it, so there is nothing to send to. https://www.customer.io/docs/sdk/android/push/
 - **`wiring.google_services_package_mismatch`** · blocker — google-services.json does not list the app's own package name.
@@ -367,6 +408,8 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
   Launch the app once and let the SDK re-register. A reinstall leaves the container alone, and a dead token reads exactly like a live one.
 - **`device.token_unregistered`** · blocker — The SDK has no push token stored on this target.
   Open the app, and run again: the SDK stores a token the first time the app starts with push set up. If the app has been opened, check it registers for push at launch, and background and foreground it once. Without a token there is no address to send to.
+- **`device.sdk_state_unreadable`** · warning — The tool couldn't read what the SDK stored on this target, so it can't say whether the SDK holds a token or an identified user.
+  Update cio-sdk-tools: this SDK version may keep its state where this version of the tool doesn't look. To go on meanwhile, pass --token and --user. An SDK that writes its state line in the log at debug level is read from there when its files can't be.
 - **`device.identity_anonymous`** · blocker — No user is identified on this device, and Customer.io sends push only to identified profiles.
   Log in, or call identify, then run again. Until then the token belongs to no profile, so nothing Customer.io sends can reach this device. Logging out removes the device from the profile, so the app has to be logged in when it's verified.
 - **`device.notifications_not_allowed`** · warning — iOS says the app's notifications aren't allowed.
@@ -403,6 +446,8 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
   iOS handed the tap to the app, and every line the app wrote from its first was read, so this is not a lost line. A tap that starts the app is delivered once, during launch, to the notification delegate in place by then; Apple's rule is that the delegate must be assigned before the app finishes launching. When taps on a running app pass and this one fails, the SDK is set up too late: initialize it, push module included, in the app delegate's launch method, not after a login, a screen appearing or an async load. https://www.customer.io/docs/sdk/ios/push/
 - **`runtime.tap_other_push`** · warning — The open the SDK reported belongs to a different push than the one this run sent.
   Usually an older notification was tapped. Tap the one whose title ends in this run’s tag, as the prompt names it, or clear old notifications and run again.
+- **`runtime.tap_unmatched`** · warning — The SDK tracked an open, but its line names no delivery id this tool can read, so the open can't be tied to the push this run sent.
+  Update cio-sdk-tools: the SDK may now write the id differently. Until then, clear older notifications before the run so the only banner to tap is this one.
 - **`runtime.capture_stopped`** · warning — The device's log capture stopped partway through the run, so nothing after that could be read.
   This says nothing about the integration. Run again; if it repeats, unplug and replug the phone, and make sure nothing else (Console, another idevicesyslog) is reading its log.
 - **`runtime.capture_silent`** · warning — Not one log line arrived after the tap, so this cell could not be judged.
@@ -447,6 +492,8 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
   The checks that need the SDK's account read its debug lines, so set the SDK's log level to debug in the build you are verifying — SDKConfigBuilder.logLevel(.debug) on iOS, CustomerIOBuilder.logLevel(CioLogLevel.DEBUG) on Android, or the logLevel option in the React Native or Flutter config — and run again. Arrival is still read from the OS either way.
 - **`runtime.no_evidence`** · warning — The log was attached and the app said nothing at all, so this cell proves nothing.
   Suspect the capture, not the push: check the log tool is streaming (a filter that matches no process name returns silence), and that the app is the build you think it is. On a phone, make sure nothing else is reading its log (`pgrep -fl idevicesyslog` on the Mac): streams left running load the phone until its log stops delivering to anyone, and unplugging and replugging it resets the log relay. On Android, a React Native app started by a push runs no JavaScript, and its SDK gets its log level from CustomerIO.initialize there, so the SDK can handle a killed push without writing a line.
+- **`runtime.sdk_lines_unchecked`** · warning — The SDK didn't write the line this tool looks for, and its version isn't one the tool has been checked against, so the missing line proves nothing.
+  Update cio-sdk-tools. If it is already the latest, the SDK may have reworded the line: report it with the SDK version at https://github.com/customerio/cio-sdk-tools/issues.
 - **`runtime.app_state_not_set`** · warning — The app could not be put in this state, so no push was sent for it.
   The run launches, backgrounds or stops the app itself to reach each state, and the error is shown with the push. On a phone, keep it unlocked during the run (a locked phone will not launch an app) and verify a development build; on Android the app needs a launcher activity. Then run the state again.
 - **`runtime.app_force_stopped`** · warning — The app was in Android's stopped state, which blocks delivery entirely — by design, not by defect.
