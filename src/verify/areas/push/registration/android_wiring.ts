@@ -2,9 +2,11 @@ import {
   AndroidProjectModel,
   AndroidWrapper,
   PUSH_MODULE_NAMES,
+  androidSdkVersion,
   loadAndroidProject,
   resolveInitAtLaunch,
 } from '../../../platform/android/project';
+import { SdkVersion } from '../../../platform/sdk_version';
 import { fail, pass, skipped, warn } from '../../../core/report/ladder';
 import { Check, Rung } from '../../../core/report/types';
 import { RUNG_TITLES } from '../types';
@@ -13,6 +15,8 @@ export interface AndroidWiringResult {
   rung: Rung;
   model?: AndroidProjectModel;
   applicationId?: string;
+  /** The native SDK's version the app builds with, when the build files say. */
+  sdkVersion?: SdkVersion;
 }
 
 /**
@@ -65,7 +69,12 @@ export async function androidWiring(input: {
     shippedModules(model).find((name) => name.includes('push')) ??
     'no push module'
   }`;
-  return { rung, model, applicationId: model.applicationId };
+  return {
+    rung,
+    model,
+    applicationId: model.applicationId,
+    sdkVersion: await androidSdkVersion(model),
+  };
 }
 
 /** The app's own SDK modules, and those its wrapper package brings. */
@@ -111,6 +120,17 @@ function pushModuleCheck(model: AndroidProjectModel): Check {
       'push_module',
       'Push module is a dependency',
       `${wrapper.name} is not installed, so the modules it brings could not be read`
+    );
+  }
+  // A warning, not a skip: the run still proves push end to end, which needs the module.
+  if (found.length === 0 && wrapper?.directory && !wrapper.sdkModulesRead) {
+    return warn(
+      'push_module',
+      'Push module is a dependency',
+      'wiring.wrapper_build_unread',
+      [
+        `${wrapper.name}'s Gradle files declare the SDK in a way this tool doesn't read`,
+      ]
     );
   }
   return found.length > 0

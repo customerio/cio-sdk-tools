@@ -204,6 +204,11 @@ export interface AppLocation {
   appPath?: string;
   /** Local directory holding the app's `Library/Preferences`, copied if need be. */
   preferences?: string;
+  /**
+   * Local directory holding the SDK's own `Application Support/io.customer.sdk.background`,
+   * when the app has one: an SDK from 4.7.0 keeps the identified user there.
+   */
+  sdkSupport?: string;
   /** Removes anything this call copied off a device. */
   cleanup?: () => Promise<void>;
   error?: string;
@@ -259,8 +264,16 @@ async function locateSimulatorApp(
     installed: true,
     appPath: bundle.code === 0 ? bundle.stdout.trim() : undefined,
     preferences: path.join(stdout.trim(), 'Library', 'Preferences'),
+    sdkSupport: path.join(stdout.trim(), ...SDK_SUPPORT_PATH),
   };
 }
+
+/** Where the SDK keeps what a process it was not set up in needs, under the app's data. */
+const SDK_SUPPORT_PATH = [
+  'Library',
+  'Application Support',
+  'io.customer.sdk.background',
+];
 
 async function locateDeviceApp(
   target: Target,
@@ -344,7 +357,38 @@ async function locateDeviceApp(
     ? nested
     : destination;
 
-  return { installed: true, preferences, cleanup };
+  // Only an SDK from 4.7.0 writes this folder, so a copy that fails reads as no folder.
+  const support = path.join(scratch.path, 'support');
+  await fs.mkdir(support, { recursive: true });
+  const supportCopy = await run(
+    'xcrun',
+    [
+      'devicectl',
+      'device',
+      'copy',
+      'from',
+      '--device',
+      target.udid,
+      '--domain-type',
+      'appDataContainer',
+      '--domain-identifier',
+      bundleId,
+      '--source',
+      SDK_SUPPORT_PATH.join('/'),
+      '--destination',
+      support,
+    ],
+    240_000
+  );
+  const nestedSupport = path.join(support, SDK_SUPPORT_PATH[2]);
+  const sdkSupport =
+    supportCopy.code !== 0
+      ? undefined
+      : (await fs.stat(nestedSupport).catch(() => undefined))?.isDirectory()
+      ? nestedSupport
+      : support;
+
+  return { installed: true, preferences, sdkSupport, cleanup };
 }
 
 export interface DeviceSdkState {
@@ -356,30 +400,56 @@ export interface DeviceSdkState {
   cdpApiKey?: string;
   /** Files the values came from, for the report's evidence. */
   sources: string[];
+  /**
+   * Which stores were there to read at all. A store that is missing and a store that holds
+   * no token are different things: only the second says the SDK has none.
+   */
+  stores: { sdk: boolean; context: boolean; cdp: boolean };
 }
 
 /**
  * Read what the SDK itself recorded on the device.
  *
- * The push token lives in `io.customer.sdk.<bundle id>.shared`, the identity in the CDP
- * layer's own `com.segment.storage.<write key>` store, and the workspace's siteId inside a
- * nested binary plist in that same store. Three different files, none of them documented,
- * all of them the only local truth about what the SDK believes.
+ * The push token lives in `io.customer.sdk.<bundle id>.shared`. The identified user is in
+ * the SDK's own `delivery_context.json` from 4.7.0, and always in the CDP layer's
+ * `com.segment.storage.<write key>` store, which also holds the workspace's siteId inside a
+ * nested binary plist. The SDK's own files are a contract it tests (docs/verify-contract.md);
+ * the CDP layer's are a library's internals, read for SDKs older than that contract.
  */
 export async function readSdkState(
   preferencesDirectory: string,
-  bundleId: string
+  bundleId: string,
+  sdkSupport?: string
 ): Promise<DeviceSdkState> {
-  const state: DeviceSdkState = { sources: [] };
+  const state: DeviceSdkState = {
+    sources: [],
+    stores: { sdk: false, context: false, cdp: false },
+  };
 
   const sharedStore = path.join(
     preferencesDirectory,
     `io.customer.sdk.${bundleId}.shared.plist`
   );
+  state.stores.sdk = await exists(sharedStore);
   const token = await plistString(sharedStore, 'pushDeviceToken');
   if (token) {
     state.pushDeviceToken = token;
     state.sources.push(path.basename(sharedStore));
+  }
+
+  const context = sdkSupport
+    ? await readJson(path.join(sdkSupport, 'delivery_context.json'))
+    : undefined;
+  if (context) {
+    state.stores.context = true;
+    state.sources.push('delivery_context.json');
+    if (typeof context.userId === 'string' && context.userId) {
+      state.userId = context.userId;
+    }
+    // Kept on disk only when the app opts into background delivery.
+    if (typeof context.cdpApiKey === 'string' && context.cdpApiKey) {
+      state.cdpApiKey = context.cdpApiKey;
+    }
   }
 
   const entries = await fs.readdir(preferencesDirectory).catch(() => []);
@@ -405,14 +475,15 @@ export async function readSdkState(
   if (!cdpStore) return state;
 
   const cdpPath = path.join(preferencesDirectory, cdpStore);
+  state.stores.cdp = true;
   state.sources.push(cdpStore);
   // The store is named after the key the SDK was initialized with. The settings below carry
   // it too, but only once Customer.io has answered for it, which a dead key never gets.
-  state.cdpApiKey = cdpStore.slice(
+  state.cdpApiKey ||= cdpStore.slice(
     'com.segment.storage.'.length,
     -'.plist'.length
   );
-  state.userId = await plistString(cdpPath, 'segment\\.userId');
+  state.userId ||= await plistString(cdpPath, 'segment\\.userId');
   state.anonymousId = await plistString(cdpPath, 'segment\\.anonymousId');
 
   const settings = await nestedPlist(cdpPath, 'segment\\.settings');
@@ -422,6 +493,23 @@ export async function readSdkState(
   }
 
   return state;
+}
+
+async function exists(file: string): Promise<boolean> {
+  return Boolean(await fs.stat(file).catch(() => undefined));
+}
+
+async function readJson(
+  file: string
+): Promise<Record<string, unknown> | undefined> {
+  const text = await fs.readFile(file, 'utf8').catch(() => undefined);
+  if (!text) return undefined;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
