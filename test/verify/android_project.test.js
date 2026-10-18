@@ -6,9 +6,12 @@ const path = require('path');
 
 const { parseLogcat, sdkLine } = require('../../dist/verify/platform/android/logcat');
 const {
+  androidSdkVersion,
   buildVariants,
+  gradleSdkVersion,
   loadAndroidProject,
   sdkModulesFrom,
+  wrapperNativeVersion,
 } = require('../../dist/verify/platform/android/project');
 
 /** Lays out a project in a temporary folder: `{ 'relative/path': 'contents' }`. */
@@ -113,4 +116,66 @@ test("the CDP store read is the one for the SDK's configured key, not a stale on
   // With no configured key to go by, the only store there is.
   assert.strictEqual(analyticsStore('analytics-android-abc.xml\n'), 'analytics-android-abc.xml');
   assert.strictEqual(analyticsStore('io.customer.sdk.app.xml\n', 'abc'), undefined);
+});
+
+test('the native SDK version is read written out, from a variable, or from a version catalog', () => {
+  assert.strictEqual(gradleSdkVersion('implementation "io.customer.android:messaging-push-fcm:4.23.2"'), '4.23.2');
+  assert.strictEqual(
+    gradleSdkVersion('def cio = "4.9.0"\nimplementation "io.customer.android:datapipelines:${cio}"'),
+    '4.9.0'
+  );
+  assert.strictEqual(
+    gradleSdkVersion(
+      '[versions]\ncustomerio-sdk = "4.10.1"\n[libraries]\ncio-push = { module = "io.customer.android:messaging-push-fcm", version.ref = "customerio-sdk" }'
+    ),
+    '4.10.1'
+  );
+  assert.strictEqual(gradleSdkVersion('implementation project(":messagingpush")'), undefined);
+});
+
+test("a wrapper's native version is the package's pin, unless the app overrides it", async () => {
+  assert.strictEqual(wrapperNativeVersion('customerio.reactnative.cioSDKVersionAndroid=4.23.2'), '4.23.2');
+  assert.strictEqual(
+    wrapperNativeVersion('def cioVersion = rootProject.findProperty("cioVersion") ?: "4.23.2"'),
+    '4.23.2'
+  );
+
+  const files = {
+    'package.json': JSON.stringify({ dependencies: { 'react-native': '0.83.6', 'customerio-reactnative': '6.13.1' } }),
+    'node_modules/customerio-reactnative/package.json': JSON.stringify({ version: '6.13.1' }),
+    'node_modules/customerio-reactnative/android/cio-core.gradle':
+      'dependencies {\n    api "io.customer.android:messaging-push-fcm:$cioAndroidSDKVersion"\n}',
+    'node_modules/customerio-reactnative/android/gradle.properties': 'customerio.reactnative.cioSDKVersionAndroid=4.23.2',
+    'android/settings.gradle': "include ':app'",
+    'android/app/build.gradle': "apply plugin: 'com.android.application'",
+  };
+  const pinned = await loadAndroidProject(path.join(project(files), 'android', 'app'));
+  assert.strictEqual(pinned.wrapper.sdkModulesRead, true);
+  assert.deepStrictEqual(await androidSdkVersion(pinned), {
+    version: '4.23.2',
+    source: "customerio-reactnative's Gradle files",
+  });
+
+  const overridden = await loadAndroidProject(
+    path.join(project({ ...files, 'android/gradle.properties': 'customerio.reactnative.cioSDKVersionAndroid=4.24.0' }), 'android', 'app')
+  );
+  assert.strictEqual((await androidSdkVersion(overridden)).version, '4.24.0');
+});
+
+test("a wrapper whose Gradle files never name the SDK is unread, not empty", async () => {
+  const root = project({
+    'package.json': JSON.stringify({ dependencies: { 'react-native': '0.83.6', 'customerio-reactnative': '7.0.0' } }),
+    'node_modules/customerio-reactnative/package.json': JSON.stringify({ version: '7.0.0' }),
+    'node_modules/customerio-reactnative/android/build.gradle': 'dependencies { api(libs.cio.push) }',
+    'android/settings.gradle': "include ':app'",
+    'android/app/build.gradle': "apply plugin: 'com.android.application'",
+  });
+  const model = await loadAndroidProject(path.join(root, 'android', 'app'));
+  assert.deepStrictEqual(model.wrapper.sdkModules, []);
+  assert.strictEqual(model.wrapper.sdkModulesRead, false);
+});
+
+test("an app's own :core module is not the SDK", () => {
+  assert.deepStrictEqual(sdkModulesFrom('implementation project(":core")'), []);
+  assert.deepStrictEqual(sdkModulesFrom('implementation(project(":messagingpush"))'), ['messagingpush']);
 });
