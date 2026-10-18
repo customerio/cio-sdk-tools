@@ -20,6 +20,8 @@ export interface PushFlags {
   iosConfiguration?: string;
   androidModule?: string;
   androidAppId?: string;
+  user?: string;
+  token?: string;
 }
 
 /**
@@ -49,6 +51,8 @@ export type VerifyPushOptions = {
   link?: string;
   states?: string;
   evidence?: string;
+  /** What the person said for what the device's stores can't tell. */
+  given: { userId?: string; token?: string };
   /**
    * The command line named the depth, the workspace and the device: the go-ahead to send
    * without asking.
@@ -75,6 +79,7 @@ export function settingsFrom(flags: PushFlags): VerifyPushOptions {
     appModule: flags.androidModule,
     package: flags.androidAppId,
     profile: flags.cioProfile,
+    given: { userId: flags.user, token: flags.token },
     send: false,
     recorded: false,
     dryRun: Boolean(flags.dryRun),

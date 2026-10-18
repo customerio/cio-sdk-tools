@@ -31,6 +31,8 @@ import { VerifyPushOptions, evidenceDirectoryFor } from './options';
 import { ClimbResult, skipRest, skipSending } from './climb';
 import { addSent, askToSend, tapPlanFor } from './sending';
 import { askerPhases } from '../../platform/observe';
+import { versionChecked } from '../../platform/sdk_version';
+import { profileToken, readAndroidStateLine } from './state_line';
 
 /**
  * The Android climb.
@@ -91,6 +93,12 @@ export async function climbAndroid(
   const device = await gatherAndroidDevice({
     packageName,
     selector: selection.targetSelector,
+    sdkVersion: wiring.sdkVersion,
+    given: options.given,
+    readStateLine: (target) => {
+      deviceRung.phase("starting the app to read the SDK's state from logcat");
+      return readAndroidStateLine(target.serial, packageName as string);
+    },
   });
   const deviceMs = deviceTimer();
 
@@ -103,6 +111,8 @@ export async function climbAndroid(
     provider: 'fcm',
     resolution: selection.resolution,
     sdkKey: device.sdk?.writeKey,
+    sdkKeyPrefix: device.stateLine?.keyPrefix,
+    sdkKeyChecked: versionChecked('android', device.sdkVersion?.version),
   });
   const ready = workspaceReady(workspace);
   ladder.adopt(ready, workspaceTimer());
@@ -112,6 +122,30 @@ export async function climbAndroid(
     return { projectName: wiring.model.appModuleName };
   }
 
+  // A user the SDK identified, and a token store the tool couldn't find: Customer.io's own
+  // record of the app's one device on that profile stands in.
+  const environmentId = workspace.resolution?.workspace?.id;
+  if (
+    device.sdk &&
+    !device.sdk.deviceToken &&
+    device.sdk.userId &&
+    !device.sdk.stores.sdk &&
+    !device.sdk.notDebuggable &&
+    environmentId
+  ) {
+    const token = await profileToken(
+      environmentId,
+      device.sdk.userId,
+      'android',
+      packageName
+    );
+    if (token) {
+      device.sdk.deviceToken = token;
+      device.sdk.sources.push(
+        "Customer.io: the profile's one Android device for this app"
+      );
+    }
+  }
   const deviceRungResult = androidDeviceReady(
     device,
     packageName,
@@ -178,6 +212,7 @@ export async function climbAndroid(
       environmentId: workspace.resolution?.workspace?.id,
       workspaceReason: workspace.resolution?.unresolvedReason ?? cio.reason,
       token: device.sdk?.deviceToken,
+      sdkVersion: device.sdkVersion?.version,
     });
   }
   const sent = options.send && !options.dryRun && consent?.granted !== false;
@@ -297,6 +332,7 @@ async function androidMatrix(
     environmentId?: string;
     workspaceReason?: string;
     token?: string;
+    sdkVersion?: string;
   }
 ): Promise<void> {
   // Registration sends nothing, and says so in its closing line rather than as a skipped
@@ -327,6 +363,7 @@ async function androidMatrix(
     packageName: inputs.packageName,
     environmentId: inputs.environmentId,
     token: inputs.token,
+    sdkVersion: inputs.sdkVersion,
     states,
     dryRun: options.dryRun,
     reporter,

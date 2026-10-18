@@ -71,6 +71,14 @@ const pushCommand = new Command('push')
     'Android applicationId of the installed variant'
   )
   .option(
+    '--user <id>',
+    "the identified user, when the tool can't read it off the device"
+  )
+  .option(
+    '--token <token>',
+    "the device's push token, when the tool can't read it off the device"
+  )
+  .option(
     '--watch-registration',
     'watch the install, push token and login happen, instead of reading what they left behind'
   )
@@ -139,7 +147,11 @@ useGroupedHelp(pushCommand, (width) => ({
     },
     {
       title: 'Registration',
-      entries: [{ option: '--watch-registration' }],
+      entries: [
+        { option: '--watch-registration' },
+        { option: '--user' },
+        { option: '--token' },
+      ],
     },
     {
       title: 'Sending',

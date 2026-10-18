@@ -35,6 +35,8 @@ import { VerifyPushOptions, evidenceDirectoryFor } from './options';
 import { ClimbResult, skipRest, skipSending } from './climb';
 import { addSent, askToSend, skipUnreadable, tapPlanFor } from './sending';
 import { askerPhases } from '../../platform/observe';
+import { versionChecked } from '../../platform/sdk_version';
+import { profileToken, readIosStateLine } from './state_line';
 
 /**
  * The climb itself. Each rung is adopted in the order it is reported, and the first failure
@@ -102,6 +104,16 @@ export async function climb(
   const device = await gatherDevice({
     bundleId: wiring.bundleId,
     selector: selection.targetSelector,
+    sdkVersion: wiring.sdkVersion,
+    given: options.given,
+    readStateLine: (target) => {
+      deviceRung.phase("starting the app to read the SDK's state from its log");
+      return readIosStateLine(
+        target,
+        wiring.bundleId as string,
+        wiring.processNames?.[0]
+      );
+    },
   });
   const deviceMs = deviceTimer();
 
@@ -115,6 +127,8 @@ export async function climb(
       provider: wiring.provider,
       resolution: selection.resolution,
       sdkKey: device.sdk?.cdpApiKey,
+      sdkKeyPrefix: device.stateLine?.keyPrefix,
+      sdkKeyChecked: versionChecked('ios', device.sdkVersion?.version),
       extensionKey: wiring.extensionKey,
     });
     const ready = workspaceReady(workspace, wiring.apsEnvironment);
@@ -125,6 +139,29 @@ export async function climb(
       return { projectName: wiring.model.projectName };
     }
 
+    // A user the SDK identified, and a token store the tool couldn't find: Customer.io's own
+    // record of the app's one device on that profile stands in.
+    const environmentId = workspace.resolution?.workspace?.id;
+    if (
+      device.sdk &&
+      !device.sdk.pushDeviceToken &&
+      device.sdk.userId &&
+      !device.sdk.stores.sdk &&
+      environmentId
+    ) {
+      const token = await profileToken(
+        environmentId,
+        device.sdk.userId,
+        'ios',
+        wiring.bundleId
+      );
+      if (token) {
+        device.sdk.pushDeviceToken = token;
+        device.sdk.sources.push(
+          "Customer.io: the profile's one iOS device for this app"
+        );
+      }
+    }
     const deviceRungResult = deviceReady(device, wiring.bundleId);
     ladder.adopt(deviceRungResult, deviceMs);
     deviceRung.done(deviceRungResult);
@@ -209,6 +246,7 @@ export async function climb(
         processNames: wiring.processNames,
         extensionName: wiring.extensionName,
         appSchemes: wiring.urlSchemes,
+        sdkVersion: device.sdkVersion?.version,
       });
     }
     // Pushes that failed because notifications are off already say so; a note at Device
@@ -256,7 +294,11 @@ async function observeIos(input: {
   const read = async () => {
     const located = await locateApp(input.target, input.bundleId);
     if (!located.installed || !located.preferences) return undefined;
-    const state = await readSdkState(located.preferences, input.bundleId);
+    const state = await readSdkState(
+      located.preferences,
+      input.bundleId,
+      located.sdkSupport
+    );
     await located.cleanup?.();
     return state;
   };
@@ -347,6 +389,7 @@ async function matrix(
     processNames?: string[];
     extensionName?: string;
     appSchemes?: string[];
+    sdkVersion?: string;
   }
 ): Promise<void> {
   // Registration sends nothing, and says so in its closing line rather than as a skipped
@@ -382,6 +425,7 @@ async function matrix(
     processNames: inputs.processNames,
     extensionName: inputs.extensionName,
     appSchemes: inputs.appSchemes,
+    sdkVersion: inputs.sdkVersion,
     states,
     dryRun: options.dryRun,
     resend: options.resend,
