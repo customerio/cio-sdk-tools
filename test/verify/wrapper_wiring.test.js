@@ -170,7 +170,10 @@ async function nativeIosWiring({ sdkVersion, groups, inCode }) {
   return { check: check(rung, 'app_group_agreement'), sdkVersion: read };
 }
 
-test("from 4.4 the SDK reads its own App Group, so a different shared group doesn't count", async () => {
+// The extension is found through its Info.plist, read with plutil: it runs only on macOS.
+const MACOS_ONLY = { skip: process.platform !== 'darwin' && 'plutil is macOS-only' };
+
+test("from 4.4 the SDK reads its own App Group, so a different shared group doesn't count", MACOS_ONLY, async () => {
   const other = await nativeIosWiring({ sdkVersion: '4.9.0', groups: ['group.shared.other'] });
   assert.strictEqual(other.sdkVersion.version, '4.9.0');
   assert.strictEqual(other.check.cause, 'wiring.app_group_mismatch');
