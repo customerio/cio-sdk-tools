@@ -28,6 +28,11 @@ import {
   readSwiftSources,
 } from '../../../platform/ios/source';
 import { WrapperSdk, loadWrapper } from '../../../platform/framework';
+import {
+  SdkVersion,
+  compareVersions,
+  iosSdkVersion,
+} from '../../../platform/sdk_version';
 
 export interface WiringInput {
   /** Path to the `.xcodeproj`. */
@@ -69,6 +74,8 @@ export interface WiringResult {
   urlSchemes?: string[];
   /** The key the extension's SDK runs with, where its sources spell it out. */
   extensionKey?: KeyLiteral;
+  /** The native SDK's version the project resolved, when its dependency manager says. */
+  sdkVersion?: SdkVersion;
 }
 
 /**
@@ -104,6 +111,7 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
   const sources = await readSwiftSources(input.scanRoot);
   const signals = analyzeSources(sources);
   const wrapper = await loadWrapper(input.projectPath);
+  const sdkVersion = await iosSdkVersion(input.scanRoot);
 
   const apps = appTargets(model);
   const app = pickAppTarget(apps, input.appTargetName);
@@ -167,7 +175,9 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
   if (nse) {
     const nseSources = await nseSourcesFor(model, nse, sources);
     rung.checks.push(forwardingCheck(nseSources));
-    rung.checks.push(await appGroupCheck(model, app, nse, nseSources));
+    rung.checks.push(
+      await appGroupCheck(model, app, nse, nseSources, sdkVersion?.version)
+    );
     nseKey = extensionKey(nseSources, sources);
   } else {
     rung.checks.push(
@@ -204,6 +214,7 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
     extensionName: nse ? nse.settings.PRODUCT_NAME || nse.name : undefined,
     urlSchemes: await urlSchemes(model.projectPath, app),
     extensionKey: nseKey,
+    sdkVersion,
   };
 }
 
@@ -524,6 +535,9 @@ function forwardingCheck(nseSources: SwiftFile[]): Check {
   );
 }
 
+/** The first iOS SDK that shares state with its extension through an App Group. */
+const APP_GROUP_SINCE = '4.4.0';
+
 /**
  * The App Group has to appear in three places — the app entitlements, the extension
  * entitlements, and `appGroupId()` in code. Two out of three is the shape that survives a
@@ -533,7 +547,8 @@ async function appGroupCheck(
   model: XcodeProjectModel,
   app: Target,
   nse: Target,
-  nseSources: SwiftFile[]
+  nseSources: SwiftFile[],
+  sdkVersion?: string
 ): Promise<Check> {
   const inCode = analyzeSources(nseSources).appGroupIds;
   const inApp = await appGroups(model.projectPath, app);
@@ -545,6 +560,22 @@ async function appGroupCheck(
     `extension entitlements: ${inExtension.join(', ') || 'none'}`,
   ];
 
+  // Before 4.4 the SDK shared nothing through an App Group, so there is nothing to agree on.
+  if (sdkVersion && compareVersions(sdkVersion, APP_GROUP_SINCE) < 0) {
+    return skipped(
+      'app_group_agreement',
+      'App Group agrees across app, extension and code',
+      `the SDK (${sdkVersion}) shares nothing through an App Group before ${APP_GROUP_SINCE}`
+    );
+  }
+  // From 4.4, with no appGroupId() in code, the SDK uses group.<app bundle id>.cio: any
+  // other group the two targets share is not the one it reads.
+  const sdkDefault =
+    inCode.length === 0 && sdkVersion && app.settings.PRODUCT_BUNDLE_IDENTIFIER
+      ? `group.${app.settings.PRODUCT_BUNDLE_IDENTIFIER}.cio`
+      : undefined;
+  if (sdkDefault) evidence.push(`SDK default: ${sdkDefault}`);
+
   if (inCode.length === 0 && inApp.length === 0 && inExtension.length === 0) {
     return warn(
       'app_group_agreement',
@@ -554,7 +585,8 @@ async function appGroupCheck(
     );
   }
 
-  const declared = inCode.length > 0 ? inCode : inApp;
+  const declared =
+    inCode.length > 0 ? inCode : sdkDefault ? [sdkDefault] : inApp;
   const agreed = declared.filter(
     (group) => inApp.includes(group) && inExtension.includes(group)
   );

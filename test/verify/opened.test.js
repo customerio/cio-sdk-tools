@@ -6,6 +6,7 @@ const test = require('node:test');
 const keepAlive = setInterval(() => {}, 1_000);
 test.after(() => clearInterval(keepAlive));
 const assert = require('node:assert');
+const { lineMatch, matches } = require('../../dist/verify/areas/push/on_device/markers');
 
 const {
   judgeOpened,
@@ -114,15 +115,15 @@ test('the markers match the SDK sentences verbatim', () => {
     'Handling push notification deep link with url: apn-uikit://settings',
     'Deep link handled by host app callback implementation',
   ];
-  assert.ok(OPENED_MARKERS.clicked.test(lines[0]));
+  assert.ok(matches(OPENED_MARKERS.clicked, lines[0]));
   assert.strictEqual(
-    OPENED_MARKERS.tracked.exec(lines[1])[1],
+    lineMatch(OPENED_MARKERS.tracked, lines[1]).id,
     'dgS_ugcABQAAAaCvRsEX24T-ZFs'
   );
-  assert.ok(OPENED_MARKERS.linkHandling.test(lines[2]));
-  assert.ok(OPENED_MARKERS.linkHandled.test(lines[3]));
-  assert.ok(OPENED_MARKERS.linkUnhandled.test('Deep link was not handled'));
-  assert.ok(!OPENED_MARKERS.linkHandled.test('Deep link was not handled'));
+  assert.ok(matches(OPENED_MARKERS.linkHandling, lines[2]));
+  assert.ok(matches(OPENED_MARKERS.linkHandled, lines[3]));
+  assert.ok(matches(OPENED_MARKERS.linkUnhandled, 'Deep link was not handled'));
+  assert.ok(!matches(OPENED_MARKERS.linkHandled, 'Deep link was not handled'));
 });
 
 test('foreground is not offered by default — there is no banner to tap', () => {
@@ -232,19 +233,18 @@ test('the Android markers match that SDK sentence for sentence', () => {
   const payload =
     'CustomerIOParsedPushPayload(deliveryId=dgS_ugc, deviceToken=cjst)';
   assert.ok(
-    ANDROID_OPENED_MARKERS.tracked.test(
-      `Tracking push message opened with payload: ${payload}`
+    matches(ANDROID_OPENED_MARKERS.tracked, `Tracking push message opened with payload: ${payload}`
     )
   );
   assert.ok(
-    ANDROID_OPENED_MARKERS.skippedNoId.test(
-      'Skipping opened metric for notification without a delivery id/token (locally started, not delivered by Customer.io): x'
+    matches(ANDROID_OPENED_MARKERS.skippedNoId, 'Skipping opened metric for notification without a delivery id/token (locally started, not delivered by Customer.io): x'
     )
   );
-  const handling = ANDROID_OPENED_MARKERS.linkHandling.exec(
+  const handling = lineMatch(
+    ANDROID_OPENED_MARKERS.linkHandling,
     `Handling push notification deep link with payload: ${payload} - pushClickBehavior: RESET_TASK_STACK`
   );
-  assert.strictEqual(handling[1], 'RESET_TASK_STACK');
+  assert.strictEqual(handling.behavior, 'RESET_TASK_STACK');
 
   // Android has two outcomes iOS does not, because it can hand the URL to another app
   // or fall back to the launcher.
@@ -253,18 +253,18 @@ test('the Android markers match that SDK sentence for sentence', () => {
     'Deep link handled by internal host app navigation',
     'Deep link handled by external app',
   ]) {
-    assert.ok(ANDROID_OPENED_MARKERS.linkHandled.test(line), line);
+    assert.ok(matches(ANDROID_OPENED_MARKERS.linkHandled, line), line);
   }
   // The launcher fallback is what the SDK does when nothing can open the link: with a
   // link sent, the link went nowhere. It passed `cio-nowhere://x` on the S24 (2026-10-16).
   const fallBack = 'Deep link handled by opening default host app';
-  assert.ok(!ANDROID_OPENED_MARKERS.linkHandled.test(fallBack));
-  assert.ok(ANDROID_OPENED_MARKERS.linkFellBack.test(fallBack));
+  assert.ok(!matches(ANDROID_OPENED_MARKERS.linkHandled, fallBack));
+  assert.ok(matches(ANDROID_OPENED_MARKERS.linkFellBack, fallBack));
   assert.ok(
-    !ANDROID_OPENED_MARKERS.linkHandled.test('Deep link was not handled')
+    !matches(ANDROID_OPENED_MARKERS.linkHandled, 'Deep link was not handled')
   );
   assert.ok(
-    ANDROID_OPENED_MARKERS.linkUnhandled.test('Deep link was not handled')
+    matches(ANDROID_OPENED_MARKERS.linkUnhandled, 'Deep link was not handled')
   );
 });
 

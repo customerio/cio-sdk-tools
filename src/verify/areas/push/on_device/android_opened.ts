@@ -11,37 +11,9 @@ import {
 } from './opened';
 import { AppState } from '../../../platform/app_state';
 import { androidOpenedIdentity } from './identity';
+import { ANDROID_OPENED_MARKERS, Marker, lineMatch, matches } from './markers';
 
-/**
- * `opened` on Android: the same claim, a different set of sentences.
- *
- * The SDK's wording differs from iOS — the metric line carries the whole parsed payload
- * rather than a bare delivery id, and there are two extra deep-link outcomes because
- * Android can hand a URL to another app or fall back to the launcher. The *judgement* is
- * shared with iOS on purpose: one cause vocabulary is what lets the plugin learn a single
- * contract instead of one per platform.
- *
- * The push tapped is the one the delivered check just sent and saw arrive, in the
- * notification list or by the SDK's own "Showing notification" line.
- */
-export const ANDROID_OPENED_MARKERS = {
-  tracked: /Tracking push message opened with payload: (.+)/,
-  skippedNoId:
-    /Skipping opened metric for notification without a delivery id\/token/,
-  failedClick: /Failed to handle push click/,
-  linkHandling:
-    /Handling push notification deep link with payload: .* - pushClickBehavior: (\S+)/,
-  linkHandled:
-    /Deep link handled by (?:host app callback implementation|internal host app navigation|external app)/,
-  /**
-   * Nothing on the device could open the link, so the SDK opened the app's main screen
-   * (PushMessageProcessorImpl). The same line ends a tap that carried no link, where it is
-   * the whole job; with a link, the link went nowhere. Counted as handled, a link no app
-   * routes passed on the S24 (2026-10-16).
-   */
-  linkFellBack: /Deep link handled by opening default host app/,
-  linkUnhandled: /Deep link was not handled/,
-};
+export { ANDROID_OPENED_MARKERS };
 
 /** How long a tap's sequence gets to finish; the wait ends as soon as it does. */
 const TAP_SEQUENCE_TIMEOUT_MS = 30_000;
@@ -71,7 +43,8 @@ export async function tapAndroidPush(
   ];
   // From the push's own start, not from the answer: people tap first and answer after.
   const since = () => capture.since(push.mark).map((line) => line.message);
-  const seen = (marker: RegExp) => since().some((line) => marker.test(line));
+  const seen = (marker: Marker) =>
+    since().some((line) => matches(marker, line));
 
   const shot = await screenshot(
     options.serial,
@@ -123,7 +96,7 @@ export async function tapAndroidPush(
   // The opened line names the tapped push by title and id, so an open of an older banner
   // is recognised as that rather than counted for this push.
   const opens = lines
-    .filter((line) => ANDROID_OPENED_MARKERS.tracked.test(line))
+    .filter((line) => matches(ANDROID_OPENED_MARKERS.tracked, line))
     .map(androidOpenedIdentity);
   const isThisPush = (open: { title?: string; deliveryId?: string }) =>
     open.title
@@ -161,7 +134,9 @@ export async function tapAndroidPush(
       );
     }
     const behaviour = lines
-      .map((line) => ANDROID_OPENED_MARKERS.linkHandling.exec(line)?.[1])
+      .map(
+        (line) => lineMatch(ANDROID_OPENED_MARKERS.linkHandling, line)?.behavior
+      )
       .find(Boolean);
     if (behaviour) evidence.push(`pushClickBehavior: ${behaviour}`);
   } else {
@@ -177,6 +152,11 @@ export async function tapAndroidPush(
       available: capture.available,
       lossy: capture.lossy,
       matched,
+      // The open names neither a title nor an id this tool can read, so an open of an older
+      // banner would look the same.
+      idUnread: Boolean(
+        opened && !opened.title && !opened.deliveryId && push.expectedId
+      ),
       // Android logs no separate "clicked" line: the open, the skip and the failure are
       // each evidence that the click reached the SDK at all.
       clicked: tracked || emptyId || failed,

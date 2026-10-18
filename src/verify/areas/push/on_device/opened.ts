@@ -12,6 +12,7 @@ import {
   openPidWindow,
 } from '../../../platform/ios/pid_window';
 import { blameStoppedCapture } from './sdk_lines';
+import { Marker, OPENED_MARKERS, lineMatch, matches } from './markers';
 import { AppState } from '../../../platform/app_state';
 
 /**
@@ -28,35 +29,7 @@ import { AppState } from '../../../platform/app_state';
  * exit code, never a pass: a silently skipped tap looks exactly like a passing one in a
  * green pipeline, and that is the one confusion worth refusing outright.
  */
-export const OPENED_MARKERS = {
-  /** The OS handed the click to the SDK at all. */
-  clicked: /Clicked (?:notification for message|CIO push message)/,
-  /** The SDK handling the open, naming the delivery it belongs to. */
-  tracked: /Tracking push message opened with deliveryId: (\S+)/,
-  /** The SDK saw a click it decided was not ours. */
-  foreign: /Clicked non CIO push message/,
-  emptyId: /Clicked message with empty deliveryId/,
-  /** Deep link: attempted, then one of four outcomes, then the failure. */
-  linkHandling: /Handling push notification deep link with url: (\S+)/,
-  linkHandled:
-    /Deep link handled by (?:host app callback implementation|internal host app navigation|system)/,
-  linkUnhandled: /Deep link was not handled/,
-  /** The SDK handed the link to iOS. The SDK says this whatever iOS then does with it. */
-  linkBySystem: /Deep link handled by system/,
-  /**
-   * iOS could not open what it was handed, logged by LaunchServices in the app's own process
-   * (`Code=-10814`: no app for the URL). The URL itself is redacted on a phone.
-   */
-  linkOpenFailed: /^Failed to open URL /,
-  /**
-   * iOS itself handing the tap to the app, logged by UIKit in the app's own process. It
-   * proves the tap happened whatever the SDK does next — on a phone, a cold launch from a
-   * tap logged these and the SDK logged nothing, which the cell used to call a tap that
-   * never arrived. (A simulator's capture is filtered to the SDK, so it never sees them.)
-   */
-  osDelivered:
-    /Decode <UINotificationResponseAction|Received action\(s\) in scene-(?:create|update): <UINotificationResponseAction/,
-};
+export { OPENED_MARKERS };
 
 /** Only the states where a banner exists to tap. */
 export const OPENED_STATES: AppState[] = ['killed', 'background'];
@@ -286,7 +259,7 @@ export async function tapIosPush(
     if (observed.osDelivered && !observed.clicked) {
       const handed = capture
         .since(push.mark)
-        .find((line) => OPENED_MARKERS.osDelivered.test(line.message));
+        .find((line) => matches(OPENED_MARKERS.osDelivered, line.message));
       evidence.push(
         `iOS handed the tap to the app${
           handed ? ` at ${handed.at}` : ''
@@ -306,6 +279,9 @@ export async function tapIosPush(
       // A launch read from its first line has lost nothing, so what is missing is missing.
       lossy: launch?.complete ? false : capture.lossy,
       matched,
+      // The SDK tracked an open and its line names no id this tool can read, so it can't be
+      // told apart from an open of an older banner.
+      idUnread: Boolean(push.expectedId && observed.tracked && !deliveryId),
       linkSent: Boolean(options.tap.link),
       linkToOwnApp,
       ...observed,
@@ -543,14 +519,14 @@ export function observeOpened(lines: string[]): {
   observed: Omit<Parameters<typeof judgeOpened>[0], 'available'>;
   deliveryId?: string;
 } {
-  const seen = (marker: RegExp) => lines.some((line) => marker.test(line));
+  const seen = (marker: Marker) => lines.some((line) => matches(marker, line));
   const deliveryId = lines
-    .map((line) => OPENED_MARKERS.tracked.exec(line)?.[1])
+    .map((line) => lineMatch(OPENED_MARKERS.tracked, line)?.id)
     .find(Boolean);
   const linkAttempted = seen(OPENED_MARKERS.linkHandling);
   // Only a failure after the SDK handed the link over is about this link.
   const handedOver = lines.findIndex((line) =>
-    OPENED_MARKERS.linkBySystem.test(line)
+    matches(OPENED_MARKERS.linkBySystem, line)
   );
   return {
     observed: {
@@ -566,7 +542,7 @@ export function observeOpened(lines: string[]): {
         handedOver >= 0 &&
         lines
           .slice(handedOver + 1)
-          .some((line) => OPENED_MARKERS.linkOpenFailed.test(line)),
+          .some((line) => matches(OPENED_MARKERS.linkOpenFailed, line)),
       osDelivered: seen(OPENED_MARKERS.osDelivered),
     },
     deliveryId,
@@ -590,6 +566,8 @@ export function judgeOpened(observed: {
   lossy?: boolean;
   /** The open names this push (true), another push (false), or cannot be matched. */
   matched?: boolean;
+  /** The open was tracked, and its line names no delivery id that can be read. */
+  idUnread?: boolean;
   clicked: boolean;
   tracked: boolean;
   foreign: boolean;
@@ -633,6 +611,9 @@ export function judgeOpened(observed: {
   // about this one.
   if (observed.matched === false) {
     return { verdict: 'skip', cause: 'runtime.tap_other_push' };
+  }
+  if (observed.idUnread) {
+    return { verdict: 'skip', cause: 'runtime.tap_unmatched' };
   }
   if (observed.emptyId) {
     return { verdict: 'fail', cause: 'runtime.opened_without_delivery_id' };

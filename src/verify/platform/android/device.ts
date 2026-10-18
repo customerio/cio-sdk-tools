@@ -202,6 +202,11 @@ export interface AndroidSdkState {
   siteId?: string;
   writeKey?: string;
   sources: string[];
+  /**
+   * Which stores were there to read at all: the SDK's own, and the CDP layer's. A store that
+   * is missing and a store that holds no token are different things.
+   */
+  stores: { sdk: boolean; cdp: boolean };
   error?: string;
   /**
    * `run-as` refused the package: only a debuggable build lets another process read its
@@ -213,6 +218,10 @@ export interface AndroidSdkState {
 /**
  * What the SDK recorded on the device.
  *
+ * The SDK's own file is a contract it tests (docs/verify-contract.md). The CDP layer's is a
+ * library's internals, and the only place with the user id: the SDK keeps its own copy
+ * encrypted.
+ *
  * Easier than iOS in every respect: plain XML in two files, both readable with `run-as` on
  * a debuggable build. The token especially has to come from here and never from logcat,
  * which truncates long lines — a clipped FCM token comes back from a send as
@@ -222,7 +231,10 @@ export async function readAndroidSdkState(
   serial: string,
   packageName: string
 ): Promise<AndroidSdkState> {
-  const state: AndroidSdkState = { sources: [] };
+  const state: AndroidSdkState = {
+    sources: [],
+    stores: { sdk: false, cdp: false },
+  };
 
   const global = await readAppFile(
     serial,
@@ -230,6 +242,7 @@ export async function readAndroidSdkState(
     `shared_prefs/io.customer.sdk.${packageName}.xml`
   );
   if (global.text) {
+    state.stores.sdk = true;
     state.sources.push(`io.customer.sdk.${packageName}.xml`);
     state.deviceToken = prefString(global.text, 'device_token');
     const settings = prefString(global.text, 'config_settings');
@@ -262,6 +275,7 @@ export async function readAndroidSdkState(
   );
   if (!cdp.text) return state;
 
+  state.stores.cdp = true;
   state.sources.push(analytics);
   // Named after the key the SDK was initialized with, like the iOS store.
   state.writeKey ||= analytics.slice(
