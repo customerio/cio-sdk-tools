@@ -40,7 +40,7 @@ export function isDirectoryNonEmpty(path: string): boolean {
 export function readDirectory(path: string): string[] | undefined {
   try {
     return fs.readdirSync(path, 'utf8');
-  } catch (err) {
+  } catch {
     return undefined;
   }
 }
@@ -48,7 +48,7 @@ export function readDirectory(path: string): string[] | undefined {
 export function readFileContent(path: string): string | undefined {
   try {
     return fs.readFileSync(path, 'utf8');
-  } catch (err) {
+  } catch {
     return undefined;
   }
 }
@@ -143,7 +143,7 @@ export async function parseXML(
     return await xml2js.parseStringPromise(fileContent, {
       explicitArray: false,
     });
-  } catch (err) {
+  } catch {
     /* empty */
     return undefined;
   }
@@ -172,7 +172,7 @@ export function readFileWithStats(paths: string[]): FileWithStats[] {
     try {
       result.content = fs.readFileSync(path, 'utf8');
       result.lastUpdated = fs.statSync(path).mtime.getTime();
-    } catch (err) {
+    } catch {
       /* empty */
     }
     results.push(result);
@@ -196,7 +196,7 @@ export function getFileLinkStats(filepath: string): FileLinkStats | undefined {
       isFile: linkStat.isFile(),
       isSymbolicLink: linkStat.isSymbolicLink(),
     };
-  } catch (err) {
+  } catch {
     /* empty */
     return undefined;
   }
@@ -205,11 +205,11 @@ export function getFileLinkStats(filepath: string): FileLinkStats | undefined {
 export function getFilename(absolutePath: string): string {
   try {
     return path.basename(absolutePath);
-  } catch (err) {
+  } catch {
     try {
       const parts = absolutePath.split(path.sep);
       return parts[parts.length - 1];
-    } catch (err) {
+    } catch {
       /* empty */
       return absolutePath;
     }
@@ -226,7 +226,7 @@ export function getReadablePath(
       directoryName,
       path.relative(baseDirectoryPath, absolutePath)
     );
-  } catch (err) {
+  } catch {
     /* empty */
     return absolutePath;
   }
@@ -238,7 +238,7 @@ export function getAbsolutePath(
 ): string {
   try {
     return path.resolve(baseDirectoryPath, filepath);
-  } catch (err) {
+  } catch {
     /* empty */
     return filepath;
   }
