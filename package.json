@@ -42,11 +42,11 @@
     "@tsconfig/node20": "^20.1.1",
     "@types/node": "^20.4.8",
     "@types/xml2js": "^0.4.11",
-    "@typescript-eslint/eslint-plugin": "^6.3.0",
-    "@typescript-eslint/parser": "^6.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.71.2",
+    "@typescript-eslint/parser": "^8.71.2",
     "eslint": "^8.46.0",
     "eslint-config-prettier": "^9.0.0",
-    "eslint-plugin-prettier": "^5.0.0",
+    "eslint-plugin-prettier": "^5.5.7",
     "lefthook": "^1.4.9",
     "prettier": "^3.0.1",
     "typescript": "^5.1.6"
@@ -74,5 +74,8 @@
   },
   "eslintIgnore": [
     "node_modules/"
-  ]
+  ],
+  "overrides": {
+    "uuid": "^11.1.1"
+  }
 }
