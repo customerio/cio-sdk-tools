@@ -345,23 +345,20 @@ export const ANDROID_OPENED_MARKERS = {
  * device (docs/verify-contract.md).
  */
 export function canaryLiterals(): Record<'ios' | 'android', string[]> {
+  // Not the permission line: no released SDK writes it yet, and the run reads the OS's
+  // settings without it. Each SDK's contract tests hold it still once it ships.
   const groups: Record<string, Marker>[] = [
     NSE_MARKERS,
     ANDROID_MARKERS,
     OPENED_MARKERS,
     ANDROID_OPENED_MARKERS,
-    { permission: NOTIFICATION_PERMISSION },
   ];
   const ios = new Set<string>();
   const android = new Set<string>();
   for (const marker of groups.flatMap((group) => Object.values(group))) {
     if (!marker.literal) continue;
-    if (marker.owner === 'ios-sdk' || marker === NOTIFICATION_PERMISSION) {
-      ios.add(marker.literal);
-    }
-    if (marker.owner === 'android-sdk' || marker === NOTIFICATION_PERMISSION) {
-      android.add(marker.literal);
-    }
+    if (marker.owner === 'ios-sdk') ios.add(marker.literal);
+    if (marker.owner === 'android-sdk') android.add(marker.literal);
   }
   return {
     ios: [

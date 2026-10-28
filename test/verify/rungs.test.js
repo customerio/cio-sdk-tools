@@ -531,3 +531,9 @@ test("Android's stores say nothing missing for an SDK version the tool hasn't ch
   const checked = androidDeviceReady(facts({ sdkVersion: { version: '4.23.2', source: 'Gradle' } }), 'io.app');
   assert.deepStrictEqual(causes(checked).sort(), ['device.identity_anonymous', 'device.token_unregistered']);
 });
+
+test('--user and --token reach the run as what the person said', () => {
+  const { settingsFrom } = require('../../dist/verify/areas/push/options');
+  assert.deepStrictEqual(settingsFrom({ user: 'u-42', token: 'abc' }).given, { userId: 'u-42', token: 'abc' });
+  assert.deepStrictEqual(settingsFrom({}).given, { userId: undefined, token: undefined });
+});
