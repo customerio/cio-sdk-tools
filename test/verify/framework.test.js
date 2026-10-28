@@ -56,6 +56,21 @@ test('a Flutter app is found through pubspec.yaml and its package config', async
   assert.deepStrictEqual(wrapper.initSites, [{ file: path.join('lib', 'src', 'customer_io.dart'), line: 2 }]);
 });
 
+test("a Flutter app whose sources are a link to another app's is still searched, once", async () => {
+  const root = project({
+    'app/pubspec.yaml': 'name: sample\ndependencies:\n  customer_io: ^4.7.2\n',
+    'app/lib/main.dart': 'void main() {}\n',
+    'shared/customer_io.dart': 'void start() async {\n  await CustomerIO.initialize(config: config);\n}\n',
+  });
+  fs.symlinkSync(path.join(root, 'shared'), path.join(root, 'app', 'lib', 'src'));
+  // A link back up the tree would loop forever if it were followed again.
+  fs.symlinkSync(path.join(root, 'app', 'lib'), path.join(root, 'shared', 'loop'));
+
+  const wrapper = await loadWrapper(path.join(root, 'app', 'ios', 'Runner.xcodeproj'));
+  assert.strictEqual(wrapper.framework, 'flutter');
+  assert.deepStrictEqual(wrapper.initSites, [{ file: path.join('lib', 'src', 'customer_io.dart'), line: 2 }]);
+});
+
 test('a native app has no wrapper, and an uninstalled package is declared but not found', async () => {
   const native = project({ 'app/build.gradle': "apply plugin: 'com.android.application'" });
   assert.strictEqual(await loadWrapper(path.join(native, 'app')), undefined);
