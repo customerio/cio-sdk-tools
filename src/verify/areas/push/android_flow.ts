@@ -186,6 +186,11 @@ export async function climbAndroid(
   });
   ladder.adopt(profile, profileTimer());
   profileRung.done(profile);
+  // The last rung: nothing after it to skip, but a blocker here still stops the sends.
+  if (ladder.halted) {
+    skipRest(ladder, reporter, [], options);
+    return { projectName: wiring.model.appModuleName };
+  }
 
   const androidFreshness = freshness({
     installedAt: device.installedAt,

@@ -200,6 +200,11 @@ export async function climb(
     });
     ladder.adopt(profile, profileTimer());
     profileRung.done(profile);
+    // The last rung: nothing after it to skip, but a blocker here still stops the sends.
+    if (ladder.halted) {
+      skipRest(ladder, reporter, [], options);
+      return { projectName: wiring.model.projectName };
+    }
 
     // A phone whose log cannot be read can prove nothing, so it is sent nothing, and the
     // person is not asked to agree to pushes that could never be followed.
