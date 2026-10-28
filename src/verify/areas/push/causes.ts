@@ -456,6 +456,14 @@ export const CAUSES: Record<string, PushCause> = {
     remedy:
       'Usually an older notification was tapped. Tap the one whose title ends in this run’s tag, as the prompt names it, or clear old notifications and run again.',
   },
+  'runtime.tap_unmatched': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      "The SDK tracked an open, but its line names no delivery id this tool can read, so the open can't be tied to the push this run sent.",
+    remedy:
+      'Update cio-sdk-tools: the SDK may now write the id differently. Until then, clear older notifications before the run so the only banner to tap is this one.',
+  },
   'runtime.capture_stopped': {
     stage: 'delivered_matrix',
     severity: 'warning',
