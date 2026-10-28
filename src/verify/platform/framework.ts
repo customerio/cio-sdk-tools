@@ -203,8 +203,14 @@ async function searchInitSites(
   const sites: WrapperInitSite[] = [];
   let files = 0;
 
+  // A folder can be a link, as when one sample shares another's sources. Each is read once,
+  // by where it really is, so a link back up the tree ends.
+  const visited = new Set<string>();
   const walk = async (dir: string, depth: number): Promise<void> => {
     if (depth > 8) return;
+    const real = await fs.realpath(dir).catch(() => dir);
+    if (visited.has(real)) return;
+    visited.add(real);
     const entries = await fs
       .readdir(dir, { withFileTypes: true })
       .catch(() => []);
@@ -213,7 +219,10 @@ async function searchInitSites(
         continue;
       }
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
+      const isDirectory = entry.isSymbolicLink()
+        ? (await fs.stat(full).catch(() => undefined))?.isDirectory()
+        : entry.isDirectory();
+      if (isDirectory) {
         await walk(full, depth + 1);
         continue;
       }
