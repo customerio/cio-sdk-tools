@@ -5,7 +5,7 @@ import { doctorCommand } from './doctor';
 import { sendPushCommand } from './send_push';
 import { verifyCommand } from './verify';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const packageJson = require('../package.json');
 
 program
