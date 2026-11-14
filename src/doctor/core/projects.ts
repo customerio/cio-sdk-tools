@@ -260,7 +260,7 @@ const iOSProjectBase = <TBase extends Constructor>(Base: TBase) =>
         if (doesExists(rootPath)) {
           return rootPath;
         }
-      } catch (error) {
+      } catch {
         // If we can't read the directory, fall through to default
       }
 
