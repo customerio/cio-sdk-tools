@@ -28,7 +28,7 @@ export async function setAndroidState(
   await sleep(6_000);
 
   if (state === 'foreground') {
-    return { ok: true, how: 'monkey launch (foreground)' };
+    return { ok: true, how: 'launch (foreground)' };
   }
 
   if (state === 'background') {
@@ -81,6 +81,37 @@ export async function launchAndroidApp(
   serial: string,
   packageName: string
 ): Promise<StateResult> {
+  // `monkey` launches nothing on some API 35 Play Store images, so resolve the app's launcher
+  // activity and start that component explicitly.
+  const resolved = await adb(serial, [
+    'shell',
+    'cmd',
+    'package',
+    'resolve-activity',
+    '--brief',
+    '-a',
+    'android.intent.action.MAIN',
+    '-c',
+    'android.intent.category.LAUNCHER',
+    packageName,
+  ]);
+  const component = resolved.stdout.trim().split('\n').pop()?.trim() ?? '';
+  if (resolved.code === 0 && component.includes('/')) {
+    const started = await adb(serial, [
+      'shell',
+      'am',
+      'start',
+      '-a',
+      'android.intent.action.MAIN',
+      '-c',
+      'android.intent.category.LAUNCHER',
+      '-n',
+      component,
+    ]);
+    if (started.code === 0 && !/^Error/m.test(started.stdout)) {
+      return { ok: true, how: 'am start launch' };
+    }
+  }
   const launch = await adb(
     serial,
     [
