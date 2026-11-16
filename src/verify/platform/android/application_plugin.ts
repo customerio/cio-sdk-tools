@@ -19,7 +19,16 @@ export async function appliesApplicationPlugin(
   moduleDir: string,
   buildFileText: string
 ): Promise<boolean> {
-  if (buildFileText.includes(APPLICATION_PLUGIN)) return true;
+  // A line that declares the id and ends in `apply false` only makes the plugin available to
+  // the modules below (the root build file does this), as the alias form does below.
+  const applied = buildFileText
+    .split('\n')
+    .filter(
+      (line) =>
+        !(line.includes(APPLICATION_PLUGIN) && /\bapply\s+false\b/.test(line))
+    )
+    .join('\n');
+  if (applied.includes(APPLICATION_PLUGIN)) return true;
 
   const used = [
     ...buildFileText.matchAll(
