@@ -505,6 +505,9 @@ async function runCellBody(
     }
   }
 
+  // The re-send, when there was one: which title and delivery id it carried.
+  let retried: { title: string; deliveryId?: string } | undefined;
+
   // Nothing arrived and the extension never woke: on a simulator that is as often APNs
   // being slow as it is a real failure, and the tool has no business calling a delayed
   // push a broken one. One re-send, said out loud in the evidence, settles which it was.
@@ -531,6 +534,7 @@ async function runCellBody(
         : `re-send rejected: ${again.error ?? 'unknown error'}`
     );
     if (again.accepted) {
+      retried = { title: retryTitle, deliveryId: again.deliveryId };
       stored = await waitForArrival(
         options.target,
         [title, retryTitle],
@@ -590,8 +594,7 @@ async function runCellBody(
   // delivery, and proves less than it appears to.
   const freshIds = ids.filter((id) => !seenIds.has(id));
   for (const id of ids) seenIds.add(id);
-  const expectedId =
-    sent.deliveryId ?? (stored ? stored.deliveryId : undefined);
+  const expectedId = expectedDeliveryId(sent.deliveryId, stored, retried);
 
   if (capture.available) {
     evidence.push(`log: ${lines.length} lines, extension ran: ${extensionRan}`);
@@ -648,6 +651,28 @@ async function runCellBody(
       mark,
     },
   };
+}
+
+/**
+ * The delivery id of the push that arrived. After a re-send the push that arrived is often
+ * the retry, so the first send's id would be the wrong one to look for: the OS's stored copy
+ * says what arrived, and failing that the send whose title it carries.
+ */
+export function expectedDeliveryId(
+  sentId: string | undefined,
+  stored: { title: string; deliveryId?: string } | false | undefined,
+  retried?: { title: string; deliveryId?: string }
+): string | undefined {
+  if (stored && stored.deliveryId) return stored.deliveryId;
+  if (
+    stored &&
+    retried &&
+    stored.title === retried.title &&
+    retried.deliveryId
+  ) {
+    return retried.deliveryId;
+  }
+  return sentId;
 }
 
 /** The causes a cell gets when nothing at all reached the app in its state. */

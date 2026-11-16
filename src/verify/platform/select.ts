@@ -7,6 +7,7 @@ import {
   AndroidTarget,
   describeAndroidTarget,
   listAndroidTargets,
+  selectAndroidTarget,
 } from './android/device';
 import { CioContext } from './cio/cli';
 import { WorkspaceResolution, resolveWorkspace } from './cio/workspace';
@@ -186,27 +187,31 @@ export async function chooseIosTarget(input: PickInput): Promise<Picked> {
 
 export async function chooseAndroidTarget(input: PickInput): Promise<Picked> {
   const targets = await listAndroidTargets();
+  // The same rules the run matches with: only a target adb reports as `device` is usable
+  // (an offline or unauthorized one cannot be driven), and `--device` takes a serial or a
+  // model name.
+  const { target: named, usable } = selectAndroidTarget(targets, input.target);
   if (input.target) {
-    const named = targets.find((target) => target.serial === input.target);
     return {
-      selector: input.target,
+      // The serial, so every later `adb -s` gets one even when a model name was given.
+      selector: named?.serial ?? input.target,
       name: named?.model,
       id: named?.serial,
       source: 'flag',
     };
   }
-  if (targets.length === 0) return {};
-  if (targets.length === 1) {
+  if (usable.length === 0) return {};
+  if (usable.length === 1) {
     return {
-      selector: targets[0].serial,
-      name: targets[0].model,
-      id: targets[0].serial,
+      selector: usable[0].serial,
+      name: usable[0].model,
+      id: usable[0].serial,
       source: 'only one',
     };
   }
   const picked = await input.asker.select(
     'Which device?',
-    targets.map((target: AndroidTarget) => ({
+    usable.map((target: AndroidTarget) => ({
       value: target,
       label: describeAndroidTarget(target),
       hint: target.serial,

@@ -176,20 +176,21 @@ export async function tapAndroidPush(
   };
 }
 
-async function screenshot(
+export async function screenshot(
   serial: string,
   directory: string | undefined,
   state: AppState
 ): Promise<string | undefined> {
   if (!directory) return undefined;
   const file = `${directory}/opened-${state}.png`;
-  // `exec-out` keeps the PNG bytes off the shell's line endings, which `shell screencap`
-  // corrupts on some devices.
-  const { code, stdout } = await adb(serial, ['exec-out', 'screencap', '-p']);
-  if (code !== 0 || !stdout) return undefined;
-  const { promises: fs } = await import('fs');
-  await fs.writeFile(file, Buffer.from(stdout, 'binary'));
-  return file;
+  // The PNG is written on the device and pulled: its bytes never pass through a string,
+  // which decodes stdout as text and corrupts a binary stream.
+  const remote = '/data/local/tmp/cio-verify-screen.png';
+  const captured = await adb(serial, ['shell', 'screencap', '-p', remote]);
+  if (captured.code !== 0) return undefined;
+  const pulled = await adb(serial, ['pull', remote, file]);
+  await adb(serial, ['shell', 'rm', '-f', remote]);
+  return pulled.code === 0 ? file : undefined;
 }
 
 async function waitFor(

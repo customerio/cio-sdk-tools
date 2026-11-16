@@ -332,18 +332,18 @@ test("a silent SDK's delivered-metric worker says it received the push", () => {
   const title = 'cio verify Q3S95 · killed';
 
   // A React Native app started for a push: no JavaScript, so its SDK writes nothing.
-  assert.deepStrictEqual(sdkReceived([worker], title), { received: true, byWorker: true });
+  assert.deepStrictEqual(sdkReceived([worker], title, true), { received: true, byWorker: true });
   // Another app's forwarded line does not hide it.
-  assert.deepStrictEqual(sdkReceived(['[Push] Getting current device token', worker], title), {
+  assert.deepStrictEqual(sdkReceived(['[Push] Getting current device token', worker], title, true), {
     received: true,
     byWorker: true,
   });
   // The SDK's own receipt line comes first when it writes one.
-  assert.deepStrictEqual(sdkReceived(['Received new message with deliveryId: dgS_abc', worker], title), {
+  assert.deepStrictEqual(sdkReceived(['Received new message with deliveryId: dgS_abc', worker], title, true), {
     received: true,
     byWorker: false,
   });
-  assert.deepStrictEqual(sdkReceived([], title), { received: false, byWorker: false });
+  assert.deepStrictEqual(sdkReceived([], title, true), { received: false, byWorker: false });
 });
 
 test("a shown line logcat split over several lines still names its push, by the tail on its last line", () => {
