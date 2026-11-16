@@ -6,7 +6,7 @@ import {
   findProfile,
 } from '../../../platform/cio/profile';
 import { Workspace } from '../../../platform/cio/workspace';
-import { fail, pass, warn } from '../../../core/report/ladder';
+import { fail, pass, skipped, warn } from '../../../core/report/ladder';
 import { Rung } from '../../../core/report/types';
 import { NotificationAuthorization, RUNG_TITLES } from '../types';
 
@@ -95,15 +95,17 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
       return null;
     }
   };
+  // Unproven, never a warning: a warning exits 0 and the run says the device is registered
+  // for a link nobody checked.
   const unreadable = () =>
-    rung.checks.push(
-      warn(
+    rung.checks.push({
+      ...skipped(
         'profile_found',
         `Profile exists for ${identifier}`,
-        'profile.lookup_failed',
-        [lookupFailed ?? 'the lookup failed']
-      )
-    );
+        lookupFailed ?? 'the lookup failed'
+      ),
+      cause: 'profile.lookup_failed',
+    });
   let profile = await read();
   if (lookupFailed) {
     unreadable();
@@ -139,9 +141,13 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
         )}s of ${settle.maxMs / 1000}s)`
       );
       await new Promise((resolve) => setTimeout(resolve, settle.pollMs));
-      profile = await read();
-      linked = holds(profile);
-      if (profile && linked) break;
+      // A poll that fails says nothing new: what earlier reads established stays.
+      const polled = await read();
+      if (!lookupFailed) {
+        profile = polled;
+        linked = holds(profile);
+        if (profile && linked) break;
+      }
     }
     const seconds = Math.round((Date.now() - startedAt) / 1000);
     waited.push(
