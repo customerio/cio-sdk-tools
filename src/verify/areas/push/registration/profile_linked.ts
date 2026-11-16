@@ -82,7 +82,33 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
   const environmentId = input.environmentId;
   const holds = (found: Profile | null) =>
     Boolean(found?.devices.some((device) => device.id === input.token));
-  let profile = await find(environmentId, identifier);
+  // A lookup that fails is not a profile that is missing: it is said as its own finding,
+  // and a later read that works wins over an earlier failure.
+  let lookupFailed: string | undefined;
+  const read = async (): Promise<Profile | null> => {
+    try {
+      const found = await find(environmentId, identifier);
+      lookupFailed = undefined;
+      return found;
+    } catch (error) {
+      lookupFailed = error instanceof Error ? error.message : String(error);
+      return null;
+    }
+  };
+  const unreadable = () =>
+    rung.checks.push(
+      warn(
+        'profile_found',
+        `Profile exists for ${identifier}`,
+        'profile.lookup_failed',
+        [lookupFailed ?? 'the lookup failed']
+      )
+    );
+  let profile = await read();
+  if (lookupFailed) {
+    unreadable();
+    return rung;
+  }
   let linked = holds(profile);
 
   // Sweep only when the chosen workspace has not answered the question.
@@ -113,7 +139,7 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
         )}s of ${settle.maxMs / 1000}s)`
       );
       await new Promise((resolve) => setTimeout(resolve, settle.pollMs));
-      profile = await find(environmentId, identifier);
+      profile = await read();
       linked = holds(profile);
       if (profile && linked) break;
     }
@@ -123,6 +149,11 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
         ? `there after ${seconds}s: a new login or device takes a while to reach Customer.io`
         : `read again for ${seconds}s, in case a new login had not reached Customer.io yet`
     );
+  }
+
+  if (!profile && lookupFailed) {
+    unreadable();
+    return rung;
   }
 
   if (!profile) {

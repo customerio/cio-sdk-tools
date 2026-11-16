@@ -291,7 +291,7 @@ async function runCellBody(
     const now = messages();
     if (!listed) listed = (await postedTitles(options.serial)).includes(title);
     if (
-      sdkReceived(now, title).received &&
+      sdkReceived(now, title, listed || shownBySdk(now, title)).received &&
       (listed || shownBySdk(now, title))
     ) {
       break;
@@ -307,8 +307,8 @@ async function runCellBody(
   const lines = since();
   const now = lines.map((line) => line.message);
   const titledId = androidIdForTitle(now, title);
-  const { received, byWorker } = sdkReceived(now, title);
   const shown = shownBySdk(now, title);
+  const { received, byWorker } = sdkReceived(now, title, listed || shown);
   const has = (marker: Marker) =>
     now.some((message) => matches(marker, message));
   const duplicate = has(ANDROID_MARKERS.duplicate);
@@ -400,13 +400,20 @@ function receivedBySdk(messages: string[], title: string): boolean {
  */
 export function sdkReceived(
   messages: string[],
-  title: string
+  title: string,
+  /**
+   * Whether this push reached the device: its notification is listed, or the SDK showed it.
+   * The worker's line names no title and no delivery id, so a worker left over from the
+   * previous cell can finish inside this one's window. Counting it for a push that never
+   * arrived would blame the SDK for a notification nobody posted.
+   */
+  pushArrived: boolean
 ): { received: boolean; byWorker: boolean } {
   if (receivedBySdk(messages, title))
     return { received: true, byWorker: false };
-  const byWorker = messages.some((message) =>
-    matches(ANDROID_MARKERS.metricsWorker, message)
-  );
+  const byWorker =
+    pushArrived &&
+    messages.some((message) => matches(ANDROID_MARKERS.metricsWorker, message));
   return { received: byWorker, byWorker };
 }
 
