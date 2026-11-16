@@ -12,6 +12,19 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-tools-'));
 fs.writeFileSync(
   path.join(dir, 'xcrun'),
   `#!/bin/sh
+case "$*" in
+  *"info processes"*)
+    out=""
+    prev=""
+    for arg in "$@"; do [ "$prev" = "--json-output" ] && out="$arg"; prev="$arg"; done
+    case "$FAKE_PROCESSES" in
+      fail) exit 1 ;;
+      garbage) printf 'not json' > "$out"; exit 0 ;;
+      running) printf '{"result":{"runningProcesses":[{"executable":"file:///private/var/App.app/App","processIdentifier":4242}]}}' > "$out"; exit 0 ;;
+      *) printf '{"result":{"runningProcesses":[]}}' > "$out"; exit 0 ;;
+    esac ;;
+  *"process terminate"*) exit 0 ;;
+esac
 case "$FAKE_TERMINATE" in
   ok) exit 0 ;;
   nothing) echo 'The request to terminate "x" failed. found nothing to terminate' >&2; exit 3 ;;
@@ -97,4 +110,31 @@ test('a failed lookup is an error, and an empty answer is no profile', async () 
   );
   process.env.FAKE_CIO = 'ok';
   assert.strictEqual(await findProfile('1', 'me@example.com'), null);
+});
+
+const phone = { kind: 'device', udid: 'PHONE' };
+
+test('on a phone, killed is proven only from a process list that was read', async () => {
+  // The list was read and the app is not in it: nothing to kill.
+  process.env.FAKE_PROCESSES = 'empty';
+  const gone = await setAppState(phone, 'a.b', 'killed', 'App');
+  assert.strictEqual(gone.ok, true);
+  assert.strictEqual(gone.how, 'process was not running');
+  // The list was read and the app is running: it is terminated.
+  process.env.FAKE_PROCESSES = 'running';
+  assert.strictEqual(
+    (await setAppState(phone, 'a.b', 'killed', 'App')).ok,
+    true
+  );
+  // Anything that leaves the list unread says nothing about the app.
+  for (const broken of ['fail', 'garbage']) {
+    process.env.FAKE_PROCESSES = broken;
+    const result = await setAppState(phone, 'a.b', 'killed', 'App');
+    assert.strictEqual(result.ok, false, broken);
+    assert.ok(result.error, broken);
+  }
+  process.env.FAKE_PROCESSES = 'empty';
+  const unnamed = await setAppState(phone, 'a.b', 'killed');
+  assert.strictEqual(unnamed.ok, false);
+  assert.match(unnamed.error, /executable name/);
 });
