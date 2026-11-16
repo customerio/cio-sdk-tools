@@ -115,3 +115,47 @@ test('an app that applies the plugin through the catalog is loaded', async () =>
   assert.ok(model, 'the project is found');
   assert.strictEqual(model.applicationId, 'io.customer.sample');
 });
+
+test('a literal declaration that ends in apply false is not an app module either', async () => {
+  const root = project({ 'app/build.gradle': '' });
+  assert.strictEqual(
+    await appliesApplicationPlugin(
+      root,
+      'plugins { id("com.android.application") version "8.5.0" apply false }'
+    ),
+    false
+  );
+  assert.strictEqual(
+    await appliesApplicationPlugin(
+      root,
+      "plugins {\n  id 'com.android.application' version '8.5.0' apply false\n}"
+    ),
+    false
+  );
+  // The module itself applies it, even with a declaration above it that does not.
+  assert.strictEqual(
+    await appliesApplicationPlugin(
+      root,
+      'plugins { id("com.android.application") version "8.5.0" apply false }\napply plugin: \'com.android.application\''
+    ),
+    true
+  );
+});
+
+test('loaded from the project root, the app module is chosen and not the root', async () => {
+  const root = project({
+    'settings.gradle.kts': 'include(":app")',
+    'build.gradle.kts':
+      'plugins { id("com.android.application") version "8.5.0" apply false }',
+    'app/build.gradle.kts': [
+      'plugins { id("com.android.application") }',
+      'android { namespace = "io.customer.sample"',
+      '  defaultConfig { applicationId = "io.customer.sample" } }',
+    ].join('\n'),
+    'app/src/main/AndroidManifest.xml': '<manifest><application /></manifest>',
+  });
+  const model = await loadAndroidProject(root);
+  assert.ok(model, 'the project is found');
+  assert.strictEqual(model.applicationId, 'io.customer.sample');
+  assert.strictEqual(model.appModuleName, 'app');
+});
