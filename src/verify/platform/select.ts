@@ -190,8 +190,21 @@ export async function chooseAndroidTarget(input: PickInput): Promise<Picked> {
   // The same rules the run matches with: only a target adb reports as `device` is usable
   // (an offline or unauthorized one cannot be driven), and `--device` takes a serial or a
   // model name.
-  const { target: named, usable } = selectAndroidTarget(targets, input.target);
+  const {
+    target: named,
+    usable,
+    ambiguous,
+  } = selectAndroidTarget(targets, input.target);
   if (input.target) {
+    if (ambiguous.length > 1) {
+      throw new MissingInput(
+        `--device ${input.target} names ${ambiguous.length} running devices — pass one's serial`,
+        '--device <serial>',
+        ambiguous.map(
+          (target) => `${target.serial}  ${describeAndroidTarget(target)}`
+        )
+      );
+    }
     return {
       // The serial, so every later `adb -s` gets one even when a model name was given.
       selector: named?.serial ?? input.target,

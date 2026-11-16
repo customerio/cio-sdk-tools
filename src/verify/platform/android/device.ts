@@ -52,19 +52,35 @@ export async function listAndroidTargets(): Promise<AndroidTarget[]> {
 export function selectAndroidTarget(
   targets: AndroidTarget[],
   selector?: string
-): { target?: AndroidTarget; usable: AndroidTarget[] } {
+): {
+  target?: AndroidTarget;
+  usable: AndroidTarget[];
+  /** Usable targets a model name matched, when it matched more than one. */
+  ambiguous: AndroidTarget[];
+} {
   // Emulators and phones alike. The earlier emulator-only filter existed so a run could
   // not silently pick whichever phone was plugged in — the target prompt now covers that,
   // and a physical device is where the failures this tool cares about actually happen
   // (Doze, battery optimisation, an OEM killing the process).
   const usable = targets.filter((t) => t.state === 'device');
   if (selector) {
+    // A serial names one device. A model name can name several (two emulators from the
+    // same image report the same model), and picking the first would act on a device
+    // nobody named.
+    const bySerial = usable.find((t) => t.serial === selector);
+    if (bySerial) return { target: bySerial, usable, ambiguous: [] };
+    const byModel = usable.filter((t) => t.model === selector);
     return {
-      target: usable.find((t) => t.serial === selector || t.model === selector),
+      target: byModel.length === 1 ? byModel[0] : undefined,
       usable,
+      ambiguous: byModel.length > 1 ? byModel : [],
     };
   }
-  return { target: usable.length === 1 ? usable[0] : undefined, usable };
+  return {
+    target: usable.length === 1 ? usable[0] : undefined,
+    usable,
+    ambiguous: [],
+  };
 }
 
 export async function packageInstalled(

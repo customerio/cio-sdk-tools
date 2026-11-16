@@ -73,6 +73,25 @@ test('--device takes a model name and hands back the serial', async () => {
   assert.strictEqual((await pick(USABLE, 'nope')).selector, 'nope');
 });
 
+test('a model name that two devices share is refused, and a serial still works', async () => {
+  const twins =
+    'emulator-5554\\tdevice product:sdk model:sdk_gphone64\\n' +
+    'emulator-5556\\tdevice product:sdk model:sdk_gphone64\\n';
+  await assert.rejects(
+    pick(twins, 'sdk_gphone64'),
+    (error) =>
+      error.name === 'MissingInput' &&
+      error.candidates.length === 2 &&
+      /pass one's serial/.test(error.message)
+  );
+  assert.strictEqual((await pick(twins, 'emulator-5556')).id, 'emulator-5556');
+  // A model only one device has is still a way to name it.
+  assert.strictEqual(
+    (await pick(twins + 'R5CT12345\\tdevice model:SM_S921B\\n', 'SM_S921B')).id,
+    'R5CT12345'
+  );
+});
+
 test('DNS is judged by the name resolving, not by a ping reply', () => {
   const resolved =
     'PING fcm.googleapis.com (142.250.1.95) 56(84) bytes of data.\n\n--- 1 packets transmitted, 0 received, 100% packet loss';
