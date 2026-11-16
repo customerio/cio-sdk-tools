@@ -306,7 +306,9 @@ export function judgeNotificationPermission(
   const label = 'iOS allows notifications for the app';
   const evidence = [
     said.source === 'simulator settings'
-      ? `iOS says ${said.status}, in the simulator's notification settings at ${said.at}`
+      ? said.status === 'notDetermined'
+        ? `the simulator's notification settings have no entry for the app at ${said.at}: it has never asked for permission`
+        : `iOS says ${said.status}, in the simulator's notification settings at ${said.at}`
       : `iOS says ${said.status}, as the SDK logged at ${said.at}`,
   ];
   ladder.rungs
