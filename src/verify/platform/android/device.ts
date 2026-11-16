@@ -191,8 +191,22 @@ export async function connectivity(serial: string): Promise<Connectivity> {
   );
   return {
     ip: /1 received|1 packets received/.test(ip.stdout),
-    dns: !/unknown host/i.test(dns.stdout + dns.stderr) && dns.code === 0,
+    dns: dnsResolved(dns.stdout, dns.stderr, dns.code),
   };
+}
+
+/**
+ * Whether the ping resolved the host name. Resolution is what Firebase needs: a network
+ * that drops ICMP still prints the address it resolved, and exits non-zero because no reply
+ * came, which is not a DNS failure.
+ */
+export function dnsResolved(
+  stdout: string,
+  stderr: string,
+  code: number
+): boolean {
+  if (/unknown host|bad address/i.test(`${stdout}\n${stderr}`)) return false;
+  return code === 0 || /^PING \S+ \(\S+\)/m.test(stdout);
 }
 
 export interface AndroidSdkState {

@@ -238,6 +238,12 @@ async function readStoredConfig(): Promise<
  * a file with `profiles` must never fall back to its top level, and a file without them is
  * the legacy flat shape that belongs to `default`.
  */
+/** An account id the config file stores as a string or as a number. */
+function accountIdText(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  return typeof value === 'number' ? String(value) : undefined;
+}
+
 export function selectCredentials(
   parsed: StoredConfig & Credentials,
   name: string
@@ -251,10 +257,7 @@ export function selectCredentials(
 
   return {
     profile: name,
-    account_id:
-      typeof credentials.account_id === 'string'
-        ? credentials.account_id
-        : undefined,
+    account_id: accountIdText(credentials.account_id),
     region:
       typeof credentials.region === 'string' ? credentials.region : undefined,
   };
