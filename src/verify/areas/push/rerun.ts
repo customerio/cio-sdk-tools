@@ -72,6 +72,14 @@ export function pushRerun(input: {
     parts.push(['--android-app-id', selection.packageName]);
   }
   if (options.profile) parts.push(['--cio-profile', options.profile]);
+  // What the run was told about the device, for a target whose own stores cannot say. A rerun
+  // without them ends unproven the same way. The token is a secret and is never printed: the
+  // command reads it from the environment, so the caller sets CIO_PUSH_TOKEN before running it.
+  const given = options.given ?? {};
+  if (given.userId) parts.push(['--user', given.userId]);
+  if (given.token) {
+    parts.push({ flag: '--token', variable: 'CIO_PUSH_TOKEN' });
+  }
   if (options.observe) parts.push('--watch-registration');
   if (input.flags.evidenceDir) {
     parts.push(['--evidence-dir', input.flags.evidenceDir]);
