@@ -1,0 +1,324 @@
+import { LogLine } from '../../../platform/logs';
+import { SDK_SUBSYSTEM_PREDICATE } from '../../../platform/ios/logs';
+import { sdkEvent } from '../../../platform/sdk_events';
+import { SdkPlatform } from '../../../platform/sdk_version';
+import { MatrixCell, NotificationAuthorization } from '../types';
+import {
+  ANDROID_MARKERS,
+  NOTIFICATION_PERMISSION,
+  NSE_MARKERS,
+  lineMatch,
+  linesChecked,
+} from './markers';
+
+export { ANDROID_MARKERS, NOTIFICATION_PERMISSION, NSE_MARKERS };
+
+/**
+ * What push reads in a log: the SDK's own sentences, the extension's process, and the
+ * judgements that turn on whether those lines were there at all. The capture that collects
+ * them knows nothing about push.
+ */
+
+/**
+ * A cell that "saw nothing" after the capture stopped saw nothing because nothing was
+ * being read. It is re-judged as the capture's problem, so the person is not blamed for a
+ * tap they made or the app for a delivery it reported.
+ */
+export function blameStoppedCapture(
+  cell: MatrixCell,
+  stoppedReason: string | undefined,
+  silentCauses: string[]
+): MatrixCell {
+  if (!stoppedReason || !cell.cause || !silentCauses.includes(cell.cause)) {
+    return cell;
+  }
+  return {
+    ...cell,
+    verdict: 'skip',
+    cause: 'runtime.capture_stopped',
+    summary: undefined,
+    evidence: [...cell.evidence, `${stoppedReason} (was: ${cell.cause})`],
+    detail: stoppedReason,
+  };
+}
+
+/**
+ * The SDK's subsystem, plus the extension's process by name: a line from that process is the
+ * OS's word that the extension ran, whether or not the SDK logs anything. Extensions are
+ * usually called NotificationService-something, which the substring keeps covering when the
+ * project does not say.
+ */
+export function simulatorPredicate(
+  extensionName?: string,
+  /** The app's process: iOS's word that it could not open a link the SDK handed it. */
+  appProcess?: string
+): string {
+  const quoted = (name: string) => `"${name.replace(/["\\]/g, '')}"`;
+  const named =
+    extensionName && !extensionName.includes('NotificationService')
+      ? ` OR process == ${quoted(extensionName)}`
+      : '';
+  const openFailed = appProcess
+    ? ` OR (process == ${quoted(
+        appProcess
+      )} AND eventMessage BEGINSWITH "Failed to open URL")`
+    : '';
+  return `${SDK_SUBSYSTEM_PREDICATE} OR processImagePath CONTAINS "NotificationService"${named}${openFailed}`;
+}
+
+/** The latest answer the SDK logged, or nothing when it never read one in the run. */
+export function lastAuthorization(
+  lines: LogLine[]
+): NotificationAuthorization | undefined {
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const status = lineMatch(NOTIFICATION_PERMISSION, lines[index].message)
+      ?.status;
+    if (!status) continue;
+    return {
+      status,
+      at: lines[index].at,
+      source: 'sdk',
+      allowed: notificationsAllowed(status),
+    };
+  }
+  return undefined;
+}
+
+/** Whether a status lets the app's notifications show; unknown for one iOS has not named. */
+export function notificationsAllowed(status: string): boolean | undefined {
+  if (['authorized', 'provisional', 'ephemeral', 'granted'].includes(status)) {
+    return true;
+  }
+  if (['denied', 'notDetermined'].includes(status)) return false;
+  return undefined;
+}
+
+/** The SDK starts every line with its tag; `[Push]` is the module these checks read. */
+export const SDK_PUSH_LINE = /^\[Push\] /;
+
+/** The tags the SDK's modules put in front of their lines. */
+export const SDK_MODULE_TAG =
+  /^\[(?:Push|InApp|Init|Geofence|LiveActivities|CIO-Inbox|SSE|Polling)\] /;
+
+/**
+ * Whether a line shows the SDK writing at debug level, which is what the checks that read
+ * its lines need. By the line's log type: the in-app and init modules write at debug and at
+ * info, so a tag alone said "debug" for an SDK set to info. On a simulator the subsystem
+ * says it is the SDK's; on a phone, the tag. A reader that gives no type falls back to the
+ * push module's lines, which are all debug.
+ */
+export function isSdkDebugLine(line: LogLine): boolean {
+  if (line.level === undefined) return SDK_PUSH_LINE.test(line.message);
+  if (line.level !== 'debug') return false;
+  if (line.subsystem !== undefined) return line.subsystem === 'io.customer.sdk';
+  return SDK_MODULE_TAG.test(line.message);
+}
+
+/** Causes that mean something only if the SDK was writing its lines at all. */
+const NEEDS_SDK_LINES = [
+  'runtime.no_evidence',
+  'runtime.push_not_handled',
+  'runtime.tap_not_seen',
+  'runtime.tap_lines_lost',
+  // An SDK that writes nothing writes nothing during a launch either: a cold tap with no SDK
+  // line was read as the SDK set up too late, a false failure with the wrong fix.
+  'runtime.cold_tap_not_handled',
+  'runtime.opened_not_tracked',
+];
+
+/** The SDK wrote not one line in a run where the app was plainly at work. */
+export function sdkWasQuiet(seen: { appSpoke: boolean; sdkSpoke: boolean }) {
+  return seen.appSpoke && !seen.sdkSpoke;
+}
+
+/**
+ * A run where the app was plainly there and the SDK wrote not one line did not show an SDK
+ * doing nothing. Its push lines are debug lines, and an app built with a quieter log level
+ * prints none of them — which reads exactly like a push the SDK ignored. Cells that turned
+ * on the SDK's silence are re-judged as that, and printed again.
+ */
+export function explainSdkSilence(
+  cells: MatrixCell[],
+  seen: {
+    /** Something independent of the SDK showed the app at work. */
+    appSpoke: boolean;
+    sdkSpoke: boolean;
+    /** What showed the app at work, for the evidence. */
+    how: string;
+  },
+  reporter?: { cell(state: string): { done(cell: MatrixCell): void } }
+): MatrixCell[] {
+  if (!sdkWasQuiet(seen)) return cells;
+  return cells.map((cell) => {
+    if (!cell.cause || !NEEDS_SDK_LINES.includes(cell.cause)) return cell;
+    const quiet: MatrixCell = {
+      ...cell,
+      verdict: 'skip',
+      cause: 'runtime.sdk_logging_off',
+      // The row is printed again under the same state, so its summary says what changed; a
+      // longer label ran past the state column.
+      summary: 'unproven: the SDK logged nothing',
+      evidence: [
+        ...cell.evidence,
+        `not one [Push] line from the SDK in this run, though ${seen.how} (was: ${cell.cause})`,
+      ],
+    };
+    reporter?.cell(cell.state).done(quiet);
+    return quiet;
+  });
+}
+
+/** Causes that rest on a line the SDK didn't write, which a reworded line looks exactly like. */
+const NEEDS_KNOWN_LINES = [
+  'runtime.push_not_handled',
+  'runtime.cold_tap_not_handled',
+  'runtime.opened_not_tracked',
+];
+
+/**
+ * A missing line fails a cell only for an SDK version whose sentences this tool was checked
+ * against. For any other, a newer major or a version the project doesn't say, the SDK may
+ * have written the line in other words, so those cells are re-judged as unproven.
+ */
+export function explainUncheckedSdk(
+  cells: MatrixCell[],
+  sdk: { platform: SdkPlatform; version?: string },
+  reporter?: { cell(state: string): { done(cell: MatrixCell): void } }
+): MatrixCell[] {
+  if (linesChecked(sdk.platform, sdk.version)) return cells;
+  return cells.map((cell) => {
+    if (
+      cell.verdict !== 'fail' ||
+      !cell.cause ||
+      !NEEDS_KNOWN_LINES.includes(cell.cause)
+    ) {
+      return cell;
+    }
+    const unchecked: MatrixCell = {
+      ...cell,
+      verdict: 'skip',
+      cause: 'runtime.sdk_lines_unchecked',
+      summary: "unproven: an SDK version this tool hasn't checked",
+      evidence: [
+        ...cell.evidence,
+        `the SDK is ${
+          sdk.version ?? 'a version the project does not say'
+        }, and this tool's lines were checked against other versions (was: ${
+          cell.cause
+        })`,
+      ],
+    };
+    reporter?.cell(cell.state).done(unchecked);
+    return unchecked;
+  });
+}
+
+/**
+ * Did the extension run? Read from which process wrote a line — the OS's attribution — never
+ * from what the line says, so it holds whatever the SDK logs or fails to.
+ */
+export function ranInExtension(
+  lines: LogLine[],
+  extensionName?: string
+): boolean {
+  return lines.some((line) =>
+    extensionName && line.process === extensionName
+      ? true
+      : /NotificationService/.test(line.process)
+  );
+}
+
+/**
+ * Did the extension run on a push? A line from its own process is the OS's word for it. So is
+ * an SDK delivered line that says it came from the extension. The bare sentence counts only
+ * when the line's process was lost, which a parser regression once did to every line, turning
+ * a working extension into an accusation: a line the app's own process wrote is no evidence,
+ * since nothing stops the app logging the same sentence, as Android's does.
+ */
+export function extensionRanIn(
+  lines: LogLine[],
+  extensionName?: string
+): boolean {
+  return (
+    ranInExtension(lines, extensionName) ||
+    lines.some((line) => {
+      const fields = lineMatch(NSE_MARKERS.tracking, line.message);
+      if (!fields) return false;
+      return fields.in ? fields.in === 'extension' : line.process === '';
+    })
+  );
+}
+
+/**
+ * The extension ran and its SDK wrote not one line. The OS still writes lines from the
+ * extension's process, which is how the run knows it ran; none of them is the SDK's, so
+ * nothing shows it tracked a delivery. An extension set up with a placeholder key and no log
+ * level looks exactly like this.
+ */
+export function extensionSdkQuiet(
+  lines: LogLine[],
+  extensionName?: string
+): boolean {
+  const fromExtension = lines.filter((line) =>
+    ranInExtension([line], extensionName)
+  );
+  return (
+    fromExtension.length > 0 &&
+    !fromExtension.some(
+      (line) =>
+        line.subsystem === 'io.customer.sdk' ||
+        SDK_MODULE_TAG.test(line.message)
+    )
+  );
+}
+
+/** Delivery ids are base64url with a `dgS_` prefix — a charset without `_` and `-` misses. */
+export function deliveryIdsIn(lines: LogLine[]): string[] {
+  const ids = new Set<string>();
+  for (const line of lines) {
+    for (const match of line.message.matchAll(
+      /(dgS_[A-Za-z0-9_-]{8,}={0,2})/g
+    )) {
+      ids.add(match[1].replace(/[,)]+$/, ''));
+    }
+  }
+  return [...ids];
+}
+
+/**
+ * The SDK's own phrasings on Android.
+ *
+ * The delivered metric goes through a handoff queue backed by WorkManager, and the worker
+ * says either `worker success, removed key=<id>` or `worker skipped, already delivered
+ * key=<id>`. Both mean the SDK sent its report; the second means it had already gone out
+ * directly. They are kept as evidence and never judged: what was recorded is Customer.io's
+ * to say. The verdict rests on the push being on the device and the SDK receiving it.
+ *
+ * The timing matters as much as the wording. A full sequence observed on API 35:
+ *
+ *   00.000  Received new message with deliveryId
+ *   00.030  Tracking push message delivered with deliveryId
+ *   00.050  handoff: appended pending entry
+ *   00.160  handoff: enqueued WM
+ *   05.650  handleNotificationTrigger (FCM re-delivers the message)
+ *   05.900  Received duplicate message with deliveryId  ← normal, the SDK dedupes
+ *   06.010  Showing notification for message
+ *   38.300  handoff: worker success / skipped
+ *
+ * Stopping at `tracked` therefore misses the notification and the acceptance entirely — the
+ * same mistake as waiting for `delivered` instead of `normal completion` on iOS.
+ */
+
+export function androidDeliveryIds(lines: LogLine[]): string[] {
+  const ids = new Set<string>();
+  for (const line of lines) {
+    const tailed = sdkEvent(line.message)?.fields.id;
+    if (tailed && tailed !== 'none') ids.add(tailed);
+    for (const match of line.message.matchAll(
+      /deliveryId[:=]\s*([A-Za-z0-9_-]{8,}={0,2})/g
+    )) {
+      ids.add(match[1]);
+    }
+  }
+  return [...ids];
+}
