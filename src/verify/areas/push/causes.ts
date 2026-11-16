@@ -45,6 +45,15 @@ export const CAUSES: Record<string, PushCause> = {
       'Move initialization to app launch: the app delegate launch method or the App type initializer on iOS, Application.onCreate on Android.',
     docs: SDK_DOCS,
   },
+  'wiring.google_services_unverified': {
+    stage: 'project_wiring',
+    severity: 'warning',
+    summary:
+      "google-services.json was found, but the app's applicationId could not be resolved to compare it against.",
+    remedy:
+      "Check that a client in google-services.json lists the app's package name, including any flavor suffix. A file for the wrong package gives the app no Firebase token, and nothing here proves it either way.",
+    docs: ANDROID_PUSH_DOCS,
+  },
   'wiring.init_launch_unproven': {
     stage: 'project_wiring',
     severity: 'warning',
@@ -271,6 +280,15 @@ export const CAUSES: Record<string, PushCause> = {
       "Pushes still arrive and show, but their delivered metrics go to another workspace, or nowhere. Initialize the extension's SDK with the app's key, where this finding points.",
     docs: IOS_RICH_PUSH_DOCS,
   },
+  'workspace.build_environment_unknown': {
+    stage: 'workspace_ready',
+    severity: 'warning',
+    summary:
+      "The credential's environment is known, but the build declares no aps-environment to compare it against.",
+    remedy:
+      "Add the Push Notifications capability so the build's entitlements carry aps-environment. Until the build says sandbox or production, a mismatch with the credential cannot be seen, and it is silent on both ends.",
+    docs: IOS_PUSH_DOCS,
+  },
   'workspace.lookup_failed': {
     stage: 'workspace_ready',
     severity: 'warning',
@@ -362,6 +380,14 @@ export const CAUSES: Record<string, PushCause> = {
       'The identity this app logged in as exists in a different workspace.',
     remedy:
       "Either the app is using another workspace's CDP API key, or this login happened against a different environment. Compare the key in CustomerIO.initialize with the workspace you picked.",
+  },
+  'profile.lookup_failed': {
+    stage: 'profile_linked',
+    severity: 'warning',
+    summary:
+      'The profile lookup failed, so whether the device is linked is unknown.',
+    remedy:
+      'Check that the authenticated account can read profiles in this workspace (`cio auth status`), then run again. The failure is in the lookup itself: nothing about the profile is proven either way.',
   },
   'profile.not_found': {
     stage: 'profile_linked',

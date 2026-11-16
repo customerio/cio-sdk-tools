@@ -211,7 +211,7 @@ function wrapperInitCheck(
       );
 }
 
-function googleServicesCheck(model: AndroidProjectModel): Check {
+export function googleServicesCheck(model: AndroidProjectModel): Check {
   const services = model.googleServices;
   if (!services) {
     return fail(
@@ -227,7 +227,7 @@ function googleServicesCheck(model: AndroidProjectModel): Check {
     return warn(
       'google_services',
       'google-services.json is present and matches this app',
-      'wiring.init_launch_unproven',
+      'wiring.google_services_unverified',
       [
         'google-services.json found, but the applicationId could not be resolved to compare against',
         `packages in file: ${services.packageNames.join(', ')}`,
