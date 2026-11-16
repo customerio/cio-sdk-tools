@@ -26,6 +26,7 @@ import { stopwatch } from '../../../core/clock';
 import { CellHandle, Reporter } from '../../../core/report/render';
 import {
   androidIdForTitle,
+  receiptNamesOtherPush,
   deliveredTitle,
   pushTag,
   tapBody,
@@ -381,14 +382,25 @@ async function runCellBody(
 }
 
 /**
- * Did the SDK receive this push? Its line naming the push's title says so exactly; an SDK
- * that prints only "Received new message with deliveryId" still counts, matched by
- * freshness instead.
+ * Did the SDK receive this push? Its line naming the push's title says so exactly. An SDK
+ * that prints only "Received new message with deliveryId" names no push, so that line counts
+ * only once the push is known to have reached the device: a late push from the last cell, or
+ * another app's SDK, writes the same sentence into this cell's window. A line that names a
+ * different push never counts.
  */
-function receivedBySdk(messages: string[], title: string): boolean {
+function receivedBySdk(
+  messages: string[],
+  title: string,
+  pushArrived: boolean
+): boolean {
+  if (androidIdForTitle(messages, title) !== undefined) return true;
   return (
-    androidIdForTitle(messages, title) !== undefined ||
-    messages.some((message) => matches(ANDROID_MARKERS.received, message))
+    pushArrived &&
+    messages.some(
+      (message) =>
+        matches(ANDROID_MARKERS.received, message) &&
+        !receiptNamesOtherPush(message, title)
+    )
   );
 }
 
@@ -409,7 +421,7 @@ export function sdkReceived(
    */
   pushArrived: boolean
 ): { received: boolean; byWorker: boolean } {
-  if (receivedBySdk(messages, title))
+  if (receivedBySdk(messages, title, pushArrived))
     return { received: true, byWorker: false };
   const byWorker =
     pushArrived &&
