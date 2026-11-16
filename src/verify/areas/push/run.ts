@@ -255,6 +255,11 @@ export async function runPush(
             `${climbed.freshnessNote} — a run that watches a fresh install proves more; see --watch-registration`,
           ]
         : []),
+      ...(options.given.token
+        ? [
+            'the rerun commands read the push token from the CIO_PUSH_TOKEN environment variable, because the token is never printed — set it before running them',
+          ]
+        : []),
     ]),
     consent: climbed.consent,
     tool: { name: packageJson.name, version: packageJson.version },

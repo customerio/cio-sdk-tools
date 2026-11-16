@@ -147,8 +147,10 @@ export async function awaitRecord(
     const records = reads.flatMap((answer) =>
       answer.ok ? [answer.record] : []
     );
-    // A read that fails after one succeeded takes nothing away from what was learned.
-    best = furthest(best ? [best, ...records] : records);
+    // A read that fails after one succeeded takes nothing away from what was learned. The
+    // fresh reads come first so that on equal rank they win: an `opened` record that later
+    // gains its `delivered` is the same rank, and keeping the older one would never see it.
+    best = furthest(best ? [...records, best] : records);
     const settled =
       best !== undefined &&
       (best.failed !== undefined ||

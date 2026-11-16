@@ -44,10 +44,15 @@ test('a worker left over from the last cell is not receipt of a push that never 
     received: true,
     byWorker: true,
   });
-  // The SDK's own line never needed the push to be listed.
+  // The SDK's line naming this push's title proves receipt by itself.
   assert.strictEqual(
-    sdkReceived(['Received new message with deliveryId: dgS_abc'], title, false)
-      .received,
+    sdkReceived(
+      [
+        'Received notification for message: {title=cio verify Q3S95 · killed, CIO-Delivery-ID=dgS_abc12345}',
+      ],
+      title,
+      false
+    ).received,
     true
   );
 });
@@ -81,4 +86,16 @@ test('a failed pull gives no screenshot', async () => {
     await screenshot('emulator-5554', undefined, 'killed'),
     undefined
   );
+});
+
+test('a receipt line that names no push counts only once the push arrived, and another push never counts', () => {
+  const title = 'cio verify Q3S95 · killed';
+  const untitled = 'Received new message with deliveryId: dgS_abc';
+  // No push on the device: a stray line from the last cell or another app is not this push.
+  assert.strictEqual(sdkReceived([untitled], title, false).received, false);
+  assert.strictEqual(sdkReceived([untitled], title, true).received, true);
+  // A tail that names a different push is never evidence for this one.
+  const other =
+    '[CIO] sdk.event ev=push.received id=dgS_other title=cio verify OTHER · killed';
+  assert.strictEqual(sdkReceived([other], title, true).received, false);
 });
