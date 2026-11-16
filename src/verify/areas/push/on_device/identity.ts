@@ -52,6 +52,20 @@ const DELIVERY_ID = /[A-Za-z0-9_-]{8,}={0,2}/;
  * message's data map on one line — `{…, title=<title>, CIO-Delivery-ID=<id>}` — which is the
  * one place on Android where the title and the id are written down together.
  */
+/**
+ * Whether a receipt line names a different push: an SDK with key tails writes the title on
+ * its `push.received` line, and a line for another push is no evidence for this one.
+ */
+export function receiptNamesOtherPush(message: string, title: string): boolean {
+  const event = sdkEvent(message);
+  return (
+    event !== undefined &&
+    event.ev === 'push.received' &&
+    event.fields.title !== undefined &&
+    event.fields.title !== title
+  );
+}
+
 export function androidIdForTitle(
   messages: string[],
   title: string
