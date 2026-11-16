@@ -335,7 +335,7 @@ function environmentCheck(
     return warn(
       'credential_environment',
       "Credential environment matches the build's",
-      'workspace.lookup_failed',
+      'workspace.build_environment_unknown',
       [
         `credential is ${config}`,
         'the build declares no aps-environment, so there is nothing to compare',

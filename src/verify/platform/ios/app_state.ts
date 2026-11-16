@@ -3,7 +3,7 @@ import * as path from 'path';
 import { run } from '../../core/exec';
 import { scratchDirectory } from '../../core/cleanup';
 import { AppState, StateResult } from '../app_state';
-import { Target } from './device';
+import { Target, simctlError } from './device';
 
 /** Launching another app is how the target is sent to the background, on both kinds. */
 const BACKGROUND_FOIL = 'com.apple.Preferences';
@@ -35,11 +35,16 @@ async function simulatorState(
       ['simctl', 'terminate', target.udid, bundleId],
       60_000
     );
-    // Terminating something already dead is a success for our purposes.
+    // An app that is not running has nothing to terminate, which is the state wanted. Any
+    // other failure (a shut-down simulator, an unknown device) leaves the app's state
+    // unknown, and a run must not go on to judge a background or foreground push on it.
+    if (code === 0 || /found nothing to terminate/i.test(stderr)) {
+      return { ok: true, how: 'simctl terminate' };
+    }
     return {
-      ok: true,
+      ok: false,
       how: 'simctl terminate',
-      error: code === 0 ? undefined : stderr.trim().split('\n')[0],
+      error: simctlError(stderr) ?? 'simctl terminate failed',
     };
   }
 
