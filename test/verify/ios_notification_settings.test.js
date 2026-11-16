@@ -67,7 +67,7 @@ test('settings that cannot be read claim nothing', async () => {
   );
 });
 
-test('a never-asked app is warned about, in words that say it never asked', () => {
+test('a never-asked app is warned about, in words that hold with or without a settings entry', () => {
   const rungs = [{ id: 'device_ready', checks: [] }];
   judgeNotificationPermission(
     { rungs },
@@ -82,6 +82,8 @@ test('a never-asked app is warned about, in words that say it never asked', () =
   assert.strictEqual(check.cause, 'device.notifications_not_allowed');
   assert.match(
     check.evidence[0],
-    /no entry for the app.*never asked for permission/
+    /iOS says notDetermined.*the app has not asked for permission/
   );
+  // Wording that holds with or without a settings entry.
+  assert.doesNotMatch(check.evidence[0], /no entry/);
 });
