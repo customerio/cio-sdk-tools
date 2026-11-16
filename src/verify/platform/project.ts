@@ -1,4 +1,5 @@
 import { promises as fs } from 'fs';
+import { appliesApplicationPlugin } from './android/application_plugin';
 import * as path from 'path';
 
 /**
@@ -54,7 +55,7 @@ async function locateAndroidProject(root: string): Promise<string | undefined> {
       const text = await fs
         .readFile(path.join(dir, name), 'utf8')
         .catch(() => '');
-      if (/com\.android\.application/.test(text)) return true;
+      if (await appliesApplicationPlugin(dir, text)) return true;
     }
     return false;
   };
