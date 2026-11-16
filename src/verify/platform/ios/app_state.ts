@@ -82,7 +82,17 @@ async function deviceState(
   executableName?: string
 ): Promise<StateResult> {
   if (state === 'killed') {
-    const pid = await devicePid(target, executableName);
+    const found = await devicePid(target, executableName);
+    // A list that could not be read says nothing about the app: calling it "not running"
+    // would prove a cold-launch push against an app that may be warm.
+    if (found.unreadable) {
+      return {
+        ok: false,
+        how: 'devicectl process list',
+        error: found.unreadable,
+      };
+    }
+    const pid = found.pid;
     if (!pid) return { ok: true, how: 'process was not running' };
     const { code, stderr } = await run(
       'xcrun',
@@ -154,7 +164,7 @@ async function deviceState(
       };
     }
     const foilError = foil.stderr.trim().split('\n')[0] || `exit ${foil.code}`;
-    const pid = await devicePid(target, executableName);
+    const pid = (await devicePid(target, executableName)).pid;
     if (!pid) {
       return {
         ok: false,
@@ -193,11 +203,16 @@ async function deviceState(
  * file URL to the executable. Matching the bundle id there silently finds nothing, which
  * reads as "the app was not running" about an app that was.
  */
-async function devicePid(
+export async function devicePid(
   target: Target,
   executableName?: string
-): Promise<string | undefined> {
-  if (!executableName) return undefined;
+): Promise<{ pid?: string; unreadable?: string }> {
+  if (!executableName) {
+    return {
+      unreadable:
+        "the app's executable name is unknown, so its process cannot be found",
+    };
+  }
 
   const scratch = await scratchDirectory();
   const output = path.join(scratch.path, 'processes.json');
@@ -219,7 +234,9 @@ async function devicePid(
   const text =
     code === 0 ? await fs.readFile(output, 'utf8').catch(() => '') : '';
   await scratch.remove();
-  if (!text) return undefined;
+  if (!text) {
+    return { unreadable: "devicectl could not list the phone's processes" };
+  }
 
   try {
     const parsed = JSON.parse(text) as {
@@ -235,9 +252,9 @@ async function devicePid(
       decodeURIComponent(entry.executable ?? '').endsWith(wanted)
     );
     return match?.processIdentifier
-      ? String(match.processIdentifier)
-      : undefined;
+      ? { pid: String(match.processIdentifier) }
+      : {};
   } catch {
-    return undefined;
+    return { unreadable: "devicectl's process list could not be parsed" };
   }
 }

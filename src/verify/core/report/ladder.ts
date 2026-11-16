@@ -143,7 +143,9 @@ export class Ladder<S extends Section = Section> {
       if (entry.kind === 'checks') {
         for (const check of entry.rung.checks) {
           if (!check.cause) continue;
-          if (check.verdict !== 'fail' && check.verdict !== 'warn') continue;
+          // A skip that names its cause decides the rung's verdict (see verdictOf), so its
+          // cause is reported too: without it the run exits inconclusive with nothing to act on.
+          if (check.verdict === 'pass') continue;
           add(check.cause, check.evidence ?? []);
         }
         continue;
