@@ -275,6 +275,27 @@ const SDK_SUPPORT_PATH = [
   'io.customer.sdk.background',
 ];
 
+/**
+ * Whether devicectl's app list holds this exact bundle id. A substring match read
+ * `com.foo.app` as installed on a phone that only has `com.foo.application`.
+ */
+export function listsBundle(listing: string, bundleId: string): boolean {
+  const holds = (value: unknown): boolean => {
+    if (Array.isArray(value)) return value.some(holds);
+    if (!value || typeof value !== 'object') return false;
+    return Object.entries(value).some(
+      ([key, inner]) =>
+        (key === 'bundleIdentifier' && inner === bundleId) || holds(inner)
+    );
+  };
+  try {
+    return holds(JSON.parse(listing));
+  } catch {
+    const escaped = bundleId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`"bundleIdentifier"\\s*:\\s*"${escaped}"`).test(listing);
+  }
+}
+
 async function locateDeviceApp(
   target: Target,
   bundleId: string
@@ -308,7 +329,7 @@ async function locateDeviceApp(
   }
 
   const text = await fs.readFile(listing, 'utf8').catch(() => '');
-  if (!text.includes(bundleId)) {
+  if (!listsBundle(text, bundleId)) {
     await cleanup();
     return { installed: false };
   }

@@ -43,6 +43,11 @@ export async function findProfile(
       '/v1/environments/{environment_id}/customers',
       { environment_id: environmentId, filters }
     );
+    // A refused or failed call is not an absent profile: reading it as one sent a login
+    // problem down the "no such profile" path.
+    if (!res.ok) {
+      throw new Error(`customer lookup failed: ${res.error ?? 'no detail'}`);
+    }
     const found = res.data?.customers?.[0];
     if (!found) continue;
 
@@ -109,7 +114,12 @@ export async function findIdentityElsewhere(options: {
         const workspace = queue.shift();
         if (!workspace) return;
         options.onProgress?.(workspace);
-        const profile = await findProfile(workspace.id, options.identifier);
+        // This only hints where else the identity lives, so a workspace that cannot be read
+        // is skipped rather than ending the search.
+        const profile = await findProfile(
+          workspace.id,
+          options.identifier
+        ).catch(() => null);
         if (!profile) continue;
         hits.push({
           workspace,
