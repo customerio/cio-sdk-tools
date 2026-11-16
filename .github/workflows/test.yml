@@ -26,6 +26,18 @@ jobs:
           npm version prerelease --preid ci --no-git-tag-version
           npm publish --dry-run --tag ci
 
+  verify-tests:
+    name: Verify command tests pass
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:verify
+
   assert-lint:
     name: Assert lint check passes and no lint errors exist
     runs-on: ubuntu-latest
