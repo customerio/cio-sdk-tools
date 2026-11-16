@@ -1,0 +1,260 @@
+import { promises as fs } from 'fs';
+import * as path from 'path';
+import { run } from '../../core/exec';
+import { scratchDirectory } from '../../core/cleanup';
+import { AppState, StateResult } from '../app_state';
+import { Target, simctlError } from './device';
+
+/** Launching another app is how the target is sent to the background, on both kinds. */
+const BACKGROUND_FOIL = 'com.apple.Preferences';
+/** A locked phone waits to launch an app rather than failing, so the wait is bounded. */
+const FOIL_LAUNCH_TIMEOUT_MS = 45_000;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export async function setAppState(
+  target: Target,
+  bundleId: string,
+  state: AppState,
+  /** The app's executable name, which is how a phone's process list identifies it. */
+  executableName?: string
+): Promise<StateResult> {
+  return target.kind === 'simulator'
+    ? simulatorState(target, bundleId, state)
+    : deviceState(target, bundleId, state, executableName);
+}
+
+async function simulatorState(
+  target: Target,
+  bundleId: string,
+  state: AppState
+): Promise<StateResult> {
+  if (state === 'killed') {
+    const { code, stderr } = await run(
+      'xcrun',
+      ['simctl', 'terminate', target.udid, bundleId],
+      60_000
+    );
+    // An app that is not running has nothing to terminate, which is the state wanted. Any
+    // other failure (a shut-down simulator, an unknown device) leaves the app's state
+    // unknown, and a run must not go on to judge a background or foreground push on it.
+    if (code === 0 || /found nothing to terminate/i.test(stderr)) {
+      return { ok: true, how: 'simctl terminate' };
+    }
+    return {
+      ok: false,
+      how: 'simctl terminate',
+      error: simctlError(stderr) ?? 'simctl terminate failed',
+    };
+  }
+
+  const launch = await run(
+    'xcrun',
+    ['simctl', 'launch', target.udid, bundleId],
+    120_000
+  );
+  if (launch.code !== 0) {
+    return {
+      ok: false,
+      how: 'simctl launch',
+      error: launch.stderr.trim().split('\n')[0],
+    };
+  }
+  await sleep(3_000);
+
+  if (state === 'background') {
+    await run(
+      'xcrun',
+      ['simctl', 'launch', target.udid, BACKGROUND_FOIL],
+      60_000
+    );
+    await sleep(2_000);
+    return { ok: true, how: `simctl launch ${BACKGROUND_FOIL} over the app` };
+  }
+
+  return { ok: true, how: 'simctl launch' };
+}
+
+async function deviceState(
+  target: Target,
+  bundleId: string,
+  state: AppState,
+  executableName?: string
+): Promise<StateResult> {
+  if (state === 'killed') {
+    const found = await devicePid(target, executableName);
+    // A list that could not be read says nothing about the app: calling it "not running"
+    // would prove a cold-launch push against an app that may be warm.
+    if (found.unreadable) {
+      return {
+        ok: false,
+        how: 'devicectl process list',
+        error: found.unreadable,
+      };
+    }
+    const pid = found.pid;
+    if (!pid) return { ok: true, how: 'process was not running' };
+    const { code, stderr } = await run(
+      'xcrun',
+      [
+        'devicectl',
+        'device',
+        'process',
+        'terminate',
+        '--device',
+        target.udid,
+        '--pid',
+        pid,
+      ],
+      120_000
+    );
+    return {
+      ok: code === 0,
+      how: 'devicectl process terminate',
+      error: code === 0 ? undefined : stderr.trim().split('\n')[0],
+    };
+  }
+
+  const launch = await run(
+    'xcrun',
+    [
+      'devicectl',
+      'device',
+      'process',
+      'launch',
+      '--device',
+      target.udid,
+      bundleId,
+    ],
+    180_000
+  );
+  if (launch.code !== 0) {
+    return {
+      ok: false,
+      how: 'devicectl process launch',
+      error: launch.stderr.trim().split('\n')[0],
+    };
+  }
+  await sleep(4_000);
+
+  if (state === 'background') {
+    // Opening another app sends this one through the real lifecycle, as pressing Home
+    // does. Freezing its process did not: on an iPhone, tapping the frozen app's
+    // notification made iOS start a new process, and the log stream from the phone went
+    // quiet. Freezing stays as the fallback, named as such, for a phone that will not open
+    // the other app.
+    const foil = await run(
+      'xcrun',
+      [
+        'devicectl',
+        'device',
+        'process',
+        'launch',
+        '--device',
+        target.udid,
+        BACKGROUND_FOIL,
+      ],
+      FOIL_LAUNCH_TIMEOUT_MS
+    );
+    if (foil.code === 0) {
+      await sleep(2_000);
+      return {
+        ok: true,
+        how: `devicectl process launch ${BACKGROUND_FOIL} over the app`,
+      };
+    }
+    const foilError = foil.stderr.trim().split('\n')[0] || `exit ${foil.code}`;
+    const pid = (await devicePid(target, executableName)).pid;
+    if (!pid) {
+      return {
+        ok: false,
+        how: 'devicectl process suspend',
+        error: 'no pid to suspend',
+      };
+    }
+    const { code, stderr } = await run(
+      'xcrun',
+      [
+        'devicectl',
+        'device',
+        'process',
+        'suspend',
+        '--device',
+        target.udid,
+        '--pid',
+        pid,
+      ],
+      120_000
+    );
+    // Worth naming in the report: suspend stops the process rather than sending the app
+    // through the lifecycle, so the app may never see applicationDidEnterBackground.
+    return {
+      ok: code === 0,
+      how: `devicectl process suspend (process-level, not a lifecycle transition; ${BACKGROUND_FOIL} would not open: ${foilError})`,
+      error: code === 0 ? undefined : stderr.trim().split('\n')[0],
+    };
+  }
+
+  return { ok: true, how: 'devicectl process launch' };
+}
+
+/**
+ * A phone's process list never mentions the bundle id — each entry is a percent-encoded
+ * file URL to the executable. Matching the bundle id there silently finds nothing, which
+ * reads as "the app was not running" about an app that was.
+ */
+export async function devicePid(
+  target: Target,
+  executableName?: string
+): Promise<{ pid?: string; unreadable?: string }> {
+  if (!executableName) {
+    return {
+      unreadable:
+        "the app's executable name is unknown, so its process cannot be found",
+    };
+  }
+
+  const scratch = await scratchDirectory();
+  const output = path.join(scratch.path, 'processes.json');
+  const { code } = await run(
+    'xcrun',
+    [
+      'devicectl',
+      'device',
+      'info',
+      'processes',
+      '--device',
+      target.udid,
+      '--json-output',
+      output,
+    ],
+    180_000
+  );
+
+  const text =
+    code === 0 ? await fs.readFile(output, 'utf8').catch(() => '') : '';
+  await scratch.remove();
+  if (!text) {
+    return { unreadable: "devicectl could not list the phone's processes" };
+  }
+
+  try {
+    const parsed = JSON.parse(text) as {
+      result?: {
+        runningProcesses?: {
+          executable?: string;
+          processIdentifier?: number;
+        }[];
+      };
+    };
+    const wanted = `/${executableName}.app/${executableName}`;
+    const match = (parsed.result?.runningProcesses ?? []).find((entry) =>
+      decodeURIComponent(entry.executable ?? '').endsWith(wanted)
+    );
+    return match?.processIdentifier
+      ? { pid: String(match.processIdentifier) }
+      : {};
+  } catch {
+    return { unreadable: "devicectl's process list could not be parsed" };
+  }
+}
