@@ -256,13 +256,12 @@ function credentialCheck(facts: WorkspaceFacts): Check {
       : 'Workspace has an APNs push credential';
 
   if (facts.credentialError) {
-    return warn(
-      'push_credential',
-      label,
-      'workspace.lookup_failed',
-      [facts.credentialError],
-      facts.credentialError
-    );
+    // Unproven, never a warning: the credential that could not be read may be the missing
+    // one, and a warning exits 0 with "registered for push".
+    return {
+      ...skipped('push_credential', label, facts.credentialError),
+      cause: 'workspace.lookup_failed',
+    };
   }
   if (!facts.credential) {
     return fail(
