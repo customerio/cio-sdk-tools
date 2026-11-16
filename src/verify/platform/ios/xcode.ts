@@ -50,8 +50,14 @@ export function expandBuildVariables(
   });
 }
 
+/**
+ * Whether a value still holds a build variable, including one written with a modifier such
+ * as `$(PRODUCT_NAME:rfc1034identifier)`, the React Native template's bundle id. Treating
+ * that form as resolved used the literal text as the bundle id and skipped `xcodebuild`,
+ * the one thing that evaluates it.
+ */
 export function hasUnresolvedVariable(value: string): boolean {
-  return /\$[({][A-Za-z0-9_]+[)}]/.test(value);
+  return /\$[({][A-Za-z0-9_]+(?::[^)}]*)?[)}]/.test(value);
 }
 
 /**

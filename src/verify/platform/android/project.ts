@@ -1,4 +1,5 @@
 import { promises as fs } from 'fs';
+import { appliesApplicationPlugin } from './application_plugin';
 import * as path from 'path';
 import { WrapperSdk, loadWrapper } from '../framework';
 import { SdkVersion } from '../sdk_version';
@@ -149,7 +150,7 @@ async function isAppModule(dir: string): Promise<boolean> {
     const text = await fs
       .readFile(path.join(dir, name), 'utf8')
       .catch(() => '');
-    if (/com\.android\.application/.test(text)) return true;
+    if (await appliesApplicationPlugin(dir, text)) return true;
   }
   return false;
 }
@@ -210,11 +211,7 @@ async function findAppModules(projectPath: string): Promise<string[]> {
       const text = await fs
         .readFile(path.join(dir, name), 'utf8')
         .catch(() => '');
-      if (
-        /com\.android\.application|id\s*\(?\s*['"]com\.android\.application/.test(
-          text
-        )
-      ) {
+      if (await appliesApplicationPlugin(dir, text)) {
         found.push(dir);
       }
     }
