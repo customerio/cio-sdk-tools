@@ -1,0 +1,27 @@
+name: SDK canary
+
+# Does each SDK's latest release, and its main branch, still say what `verify push` reads?
+# A reworded log line or a renamed store fails here before a customer's run is misjudged.
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  sdk-canary:
+    name: SDK lines verify push reads
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: ['', main]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run compile
+      - name: Check the SDKs' ${{ matrix.ref || 'latest releases' }}
+        run: node scripts/sdk-canary.js ${{ matrix.ref && format('--ref {0}', matrix.ref) || '' }}
