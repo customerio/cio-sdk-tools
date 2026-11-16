@@ -83,6 +83,26 @@ export function wantsVerbose(options: OutputOptions): boolean {
 }
 
 /**
+ * Whether a person can answer a question. Prompts and pickers are drawn on stderr and read
+ * from stdin, so both must be a terminal: with stderr redirected the question would be
+ * invisible and the run would sit until its timeout instead of failing fast with the flag
+ * that would have answered it.
+ */
+export function canAsk(input: {
+  level: string;
+  nonInteractive?: boolean;
+  stdin: { isTTY?: boolean };
+  stderr: { isTTY?: boolean };
+}): boolean {
+  return (
+    input.level !== 'json' &&
+    !input.nonInteractive &&
+    Boolean(input.stdin.isTTY) &&
+    Boolean(input.stderr.isTTY)
+  );
+}
+
+/**
  * Run one area: set up how the run is shown and whether it may ask, let the area produce its
  * report, then emit it. Every area gets the same output, the same questions and the same
  * exit codes, whatever it verifies.
@@ -99,10 +119,12 @@ export async function runArea(
   // would have answered it. `--json` implies non-interactive: a machine reading stdout is
   // not going to type a number.
   const asker = createAsker({
-    interactive:
-      level !== 'json' &&
-      !options.nonInteractive &&
-      Boolean(process.stdin.isTTY),
+    interactive: canAsk({
+      level,
+      nonInteractive: options.nonInteractive,
+      stdin: process.stdin,
+      stderr: process.stderr,
+    }),
   });
 
   let report: Report;
