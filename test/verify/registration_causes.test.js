@@ -165,3 +165,29 @@ test('workspace keys that could not be read are unproven, never a skip that exit
   ladder.adopt(rung);
   assert.strictEqual(ladder.exitCode, EXIT.inconclusive);
 });
+
+test('an Android target older than 13 has no notification permission to read, and is not told it is denied', () => {
+  const { androidDeviceReady } = require('../../dist/verify/areas/push/registration/android_device');
+  const facts = (apiLevel) => ({
+    target: { serial: 'S', model: 'Pixel', kind: 'emulator', apiLevel },
+    usable: [],
+    installed: true,
+    sdk: { userId: 'u', deviceToken: 't', sources: [], stores: { sdk: true, cdp: true } },
+    permissionGranted: undefined,
+    network: { ip: true, dns: true },
+    stopped: false,
+  });
+  const check = (apiLevel) =>
+    androidDeviceReady(facts(apiLevel), 'com.example.app', false).checks.find(
+      (c) => c.id === 'notification_permission'
+    );
+
+  assert.strictEqual(check(31).verdict, 'pass');
+  assert.strictEqual(check(31).cause, undefined);
+  // From Android 13 an entry is expected, so its absence is unknown rather than denied.
+  assert.deepStrictEqual(
+    [check(34).verdict, check(34).cause],
+    ['warn', 'device.notification_permission_unread']
+  );
+  assert.strictEqual(check(undefined).cause, 'device.notification_permission_unread');
+});
