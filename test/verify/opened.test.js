@@ -65,11 +65,16 @@ test('a click the SDK never turned into an open fails, unless the log can drop l
   assert.deepStrictEqual(judgeOpened({ ...tapped, tracked: false }), {
     verdict: 'fail',
     cause: 'runtime.opened_not_tracked',
+    linkOutcome: { verdict: 'pass' },
   });
   // On a phone the missing line may simply be lost.
   assert.deepStrictEqual(
     judgeOpened({ ...tapped, tracked: false, lossy: true }),
-    { verdict: 'skip', cause: 'runtime.tap_lines_lost' }
+    {
+      verdict: 'skip',
+      cause: 'runtime.tap_lines_lost',
+      linkOutcome: { verdict: 'pass' },
+    }
   );
 });
 
@@ -321,7 +326,11 @@ test('internal event lines no longer stand in for the SDK handling the open', ()
   assert.strictEqual(observed.tracked, false);
   assert.deepStrictEqual(
     judgeOpened({ available: true, lossy: true, ...observed }),
-    { verdict: 'skip', cause: 'runtime.tap_lines_lost' }
+    {
+      verdict: 'skip',
+      cause: 'runtime.tap_lines_lost',
+      linkOutcome: { verdict: 'pass' },
+    }
   );
 });
 
@@ -759,7 +768,11 @@ test('with the launch held from its first line, silence after the tap is the SDK
   // A click with no open, read in full, is the open never being reported.
   assert.deepStrictEqual(
     judgeOpened({ ...tapped, tracked: false, lossy: false }),
-    { verdict: 'fail', cause: 'runtime.opened_not_tracked' }
+    {
+      verdict: 'fail',
+      cause: 'runtime.opened_not_tracked',
+      linkOutcome: { verdict: 'pass' },
+    }
   );
 });
 
@@ -818,6 +831,26 @@ test("Customer.io's record of the open settles what the phone's log could not", 
   // It overturns a failure the log suggested: only lost lines can explain the two disagreeing.
   const failed = { ...lost, verdict: 'fail', cause: 'runtime.cold_tap_not_handled' };
   assert.strictEqual(withRecordedOpen(failed, recorded, false).verdict, 'pass');
+
+  // Link lines the log did hold keep their own verdict: a recorded open settles the open only.
+  const { judgeOpened } = require('../../dist/verify/areas/push/on_device/opened');
+  const seenLink = judgeOpened({
+    available: true,
+    clicked: true,
+    tracked: false,
+    foreign: false,
+    emptyId: false,
+    linkAttempted: true,
+    linkHandled: false,
+    linkUnhandled: true,
+    linkSent: true,
+  });
+  assert.strictEqual(seenLink.cause, 'runtime.opened_not_tracked');
+  assert.deepStrictEqual(seenLink.linkOutcome, { verdict: 'fail', cause: 'runtime.deep_link_not_handled' });
+  const settled = withRecordedOpen({ state: 'background', evidence: [], ...seenLink }, recorded, true);
+  assert.strictEqual(settled.verdict, 'fail');
+  assert.strictEqual(settled.cause, 'runtime.deep_link_not_handled');
+  assert.strictEqual(settled.recorded, 'recorded');
 
   // No open recorded yet, or no record at all, leaves the device's verdict as it was.
   const none = withRecordedOpen(failed, { answer: 'not_opened', deliveryIds: ['dgS_ug'], waitedMs: 30000 }, false);
