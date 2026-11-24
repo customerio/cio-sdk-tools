@@ -33,14 +33,20 @@ export async function setAndroidState(
 
   if (state === 'background') {
     // A real home press, which is more faithful than anything the iOS simulator offers.
-    await adb(serial, ['shell', 'input', 'keyevent', 'KEYCODE_HOME'], 60_000);
+    const homeError = await pressHome(serial);
+    if (homeError) {
+      return { ok: false, how: 'KEYCODE_HOME', error: homeError };
+    }
     await sleep(2_500);
     return { ok: true, how: 'KEYCODE_HOME (background)' };
   }
 
   // `am kill` ends only a process in the background. Killed straight from the foreground, the
   // app kept running, and the killed push reached a live app.
-  await adb(serial, ['shell', 'input', 'keyevent', 'KEYCODE_HOME'], 60_000);
+  const homeError = await pressHome(serial);
+  if (homeError) {
+    return { ok: false, how: 'KEYCODE_HOME', error: homeError };
+  }
   await sleep(2_500);
   await adb(serial, ['shell', 'am', 'kill', packageName], 60_000);
   await sleep(2_500);
@@ -62,6 +68,21 @@ export async function setAndroidState(
         ? 'the package is in the stopped state, which blocks delivery by design'
         : undefined,
   };
+}
+
+/**
+ * The Home press, with what went wrong when it did not land. A press that failed leaves the
+ * app in front, so a push sent next is a foreground push however the cell is labelled.
+ */
+async function pressHome(serial: string): Promise<string | undefined> {
+  const home = await adb(
+    serial,
+    ['shell', 'input', 'keyevent', 'KEYCODE_HOME'],
+    60_000
+  );
+  if (home.code === 0) return undefined;
+  const reason = home.stderr.trim().split('\n')[0] || `exit ${home.code}`;
+  return `the Home press failed, so the app may still be in front: ${reason}`;
 }
 
 async function processRunning(
