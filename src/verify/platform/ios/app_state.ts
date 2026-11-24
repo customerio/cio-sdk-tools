@@ -63,11 +63,22 @@ async function simulatorState(
   await sleep(3_000);
 
   if (state === 'background') {
-    await run(
+    const foil = await run(
       'xcrun',
       ['simctl', 'launch', target.udid, BACKGROUND_FOIL],
       60_000
     );
+    // The app stays in front when the other app does not open, so a push sent now is a
+    // foreground push. Reporting that as a background setup would prove the wrong cell.
+    if (foil.code !== 0) {
+      return {
+        ok: false,
+        how: `simctl launch ${BACKGROUND_FOIL}`,
+        error:
+          simctlError(foil.stderr) ??
+          (foil.stderr.trim().split('\n')[0] || `exit ${foil.code}`),
+      };
+    }
     await sleep(2_000);
     return { ok: true, how: `simctl launch ${BACKGROUND_FOIL} over the app` };
   }
