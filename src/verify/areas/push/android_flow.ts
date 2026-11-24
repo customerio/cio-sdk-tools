@@ -125,6 +125,9 @@ export async function climbAndroid(
   // A user the SDK identified, and a token store the tool couldn't find: Customer.io's own
   // record of the app's one device on that profile stands in.
   const environmentId = workspace.resolution?.workspace?.id;
+  // The profile's token answers the registration checks. It is not sent to: the profile's one
+  // device for the app can be another phone, and a push to it proves nothing about this one.
+  let tokenFromProfile = false;
   if (
     device.sdk &&
     !device.sdk.deviceToken &&
@@ -141,6 +144,7 @@ export async function climbAndroid(
     );
     if (token) {
       device.sdk.deviceToken = token;
+      tokenFromProfile = true;
       device.sdk.sources.push(
         "Customer.io: the profile's one Android device for this app"
       );
@@ -205,7 +209,7 @@ export async function climbAndroid(
     app: packageName,
     workspace: workspace.resolution?.workspace,
     login: cio.profile,
-    token: device.sdk?.deviceToken,
+    token: tokenFromProfile ? undefined : device.sdk?.deviceToken,
     delivered: selection.states,
     retries: false,
   });
@@ -216,7 +220,8 @@ export async function climbAndroid(
       packageName,
       environmentId: workspace.resolution?.workspace?.id,
       workspaceReason: workspace.resolution?.unresolvedReason ?? cio.reason,
-      token: device.sdk?.deviceToken,
+      token: tokenFromProfile ? undefined : device.sdk?.deviceToken,
+      tokenFromProfile,
       sdkVersion: device.sdkVersion?.version,
     });
   }
@@ -337,6 +342,7 @@ async function androidMatrix(
     environmentId?: string;
     workspaceReason?: string;
     token?: string;
+    tokenFromProfile?: boolean;
     sdkVersion?: string;
   }
 ): Promise<void> {
@@ -356,6 +362,7 @@ async function androidMatrix(
         workspaceId: inputs.environmentId,
         workspaceReason: inputs.workspaceReason,
         token: inputs.token,
+        tokenFromProfile: inputs.tokenFromProfile,
       }) ?? 'no push was sent';
     skipSending(ladder, options, skipped);
     return;

@@ -31,6 +31,7 @@ test("React Native's forwarded SDK lines are the SDK's own, read as the native S
   assert.deepStrictEqual(sdkLine(forwarded), {
     at: '10-17 18:02:11.420',
     process: 'ReactNativeJS',
+    pid: '4242',
     message: '[Push] Received new message with deliveryId: dgS_abc',
   });
 

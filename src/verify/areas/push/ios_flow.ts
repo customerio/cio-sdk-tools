@@ -142,6 +142,10 @@ export async function climb(
     // A user the SDK identified, and a token store the tool couldn't find: Customer.io's own
     // record of the app's one device on that profile stands in.
     const environmentId = workspace.resolution?.workspace?.id;
+    // The profile's token answers the registration checks. It is not sent to: the profile's
+    // one device for the app can be another phone, and a push to it proves nothing about this
+    // one.
+    let tokenFromProfile = false;
     if (
       device.sdk &&
       !device.sdk.pushDeviceToken &&
@@ -157,6 +161,7 @@ export async function climb(
       );
       if (token) {
         device.sdk.pushDeviceToken = token;
+        tokenFromProfile = true;
         device.sdk.sources.push(
           "Customer.io: the profile's one iOS device for this app"
         );
@@ -235,7 +240,7 @@ export async function climb(
             app: wiring.bundleId,
             workspace: workspace.resolution?.workspace,
             login: cio.profile,
-            token: device.sdk?.pushDeviceToken,
+            token: tokenFromProfile ? undefined : device.sdk?.pushDeviceToken,
             delivered: selection.states,
             retries: options.resend !== false,
           });
@@ -246,7 +251,8 @@ export async function climb(
         provider: wiring.provider,
         environmentId: workspace.resolution?.workspace?.id,
         workspaceReason: workspace.resolution?.unresolvedReason ?? cio.reason,
-        token: device.sdk?.pushDeviceToken,
+        token: tokenFromProfile ? undefined : device.sdk?.pushDeviceToken,
+        tokenFromProfile,
         sandbox: wiring.apsEnvironment !== 'production',
         processNames: wiring.processNames,
         extensionName: wiring.extensionName,
@@ -389,6 +395,7 @@ async function matrix(
     environmentId?: string;
     workspaceReason?: string;
     token?: string;
+    tokenFromProfile?: boolean;
     sandbox: boolean;
     provider: PushProvider;
     processNames?: string[];
@@ -414,6 +421,7 @@ async function matrix(
         workspaceId: inputs.environmentId,
         workspaceReason: inputs.workspaceReason,
         token: inputs.token,
+        tokenFromProfile: inputs.tokenFromProfile,
       }) ?? 'no push was sent';
     skipSending(ladder, options, skipped);
     return;
