@@ -157,11 +157,7 @@ function keyChecks(facts: WorkspaceFacts): Check[] {
   if (sdkKey) {
     const label = `App reports to ${name}`;
     const check = keys.error
-      ? skipped(
-          'sdk_key',
-          label,
-          `the workspace's keys could not be read: ${keys.error}`
-        )
+      ? keysUnreadable('sdk_key', label, keys.error)
       : keyCheck(keys, sdkKey, {
           id: 'sdk_key',
           label,
@@ -190,11 +186,7 @@ function keyChecks(facts: WorkspaceFacts): Check[] {
     const label = `Extension reports to ${name}`;
     checks.push(
       keys.error
-        ? skipped(
-            'extension_key',
-            label,
-            `the workspace's keys could not be read: ${keys.error}`
-          )
+        ? keysUnreadable('extension_key', label, keys.error)
         : keyCheck(keys, keys.extensionKey.value, {
             id: 'extension_key',
             label,
@@ -204,6 +196,17 @@ function keyChecks(facts: WorkspaceFacts): Check[] {
     );
   }
   return checks;
+}
+
+/**
+ * Unproven, with a cause so the run ends inconclusive. A skip with no cause exits 0 as
+ * "registered for push", while the key that could not be checked may be the foreign one.
+ */
+function keysUnreadable(id: string, label: string, error: string): Check {
+  return {
+    ...skipped(id, label, `the workspace's keys could not be read: ${error}`),
+    cause: 'workspace.lookup_failed',
+  };
 }
 
 function keyCheck(
