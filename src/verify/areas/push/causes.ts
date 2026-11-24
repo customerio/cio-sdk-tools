@@ -292,9 +292,9 @@ export const CAUSES: Record<string, PushCause> = {
   'workspace.lookup_failed': {
     stage: 'workspace_ready',
     severity: 'warning',
-    summary: 'The workspace credential could not be read.',
+    summary: "The workspace's push credential or keys could not be read.",
     remedy:
-      'Check that the authenticated account can read this workspace. Nothing about the credential is proven either way.',
+      'Check that the authenticated account can read this workspace, including its keys. Nothing about the credential or the keys is proven either way.',
   },
   'device.build_not_debuggable': {
     stage: 'device_ready',

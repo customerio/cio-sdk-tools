@@ -9,8 +9,9 @@ import { LogCapture, LogLine, trackCapture } from '../logs';
  * Android's log needs no extra tooling and no root — `adb logcat` gives the SDK's debug
  * output directly, which is the single biggest difference from verifying on a phone.
  *
- * The buffer is cleared first so a cell's window starts empty, and lines are written to
- * disk as they arrive because buffered evidence dies with the process.
+ * The capture starts from the device's clock rather than clearing the buffer, which
+ * belongs to whoever else is reading it. Lines are written to disk as they arrive because
+ * buffered evidence dies with the process.
  */
 export async function startAndroidCapture(
   serial: string,
@@ -29,7 +30,7 @@ export async function startAndroidCapture(
     };
   }
 
-  await adb(serial, ['logcat', '-c'], 30_000);
+  const from = await deviceClock(serial);
 
   const evidencePath = evidenceDirectory
     ? path.join(evidenceDirectory, `android-${serial}.log`)
@@ -42,6 +43,10 @@ export async function startAndroidCapture(
     'logcat',
     '-v',
     'time',
+    // `-T` replays history from a point and goes on streaming. Without a readable clock the
+    // last line stands in, which keeps the replay to a line or two.
+    '-T',
+    from ?? '1',
   ]);
   trackCapture(child);
 
@@ -67,14 +72,15 @@ export async function startAndroidCapture(
     for (const part of parts) {
       const line = parseLogcat(part);
       if (!line) continue;
-      // Everything goes to the evidence file; only the SDK's own lines are retained in
-      // memory. A Samsung S24 produced 60,840 lines in one run, of which 2,553 were ours
-      // — the rest is vendor chatter that pushed the retained window over and, before
-      // `mark()` existed, invalidated the cells' own indices. Every marker this tool
+      // Only the SDK's own lines are kept, in memory and in the evidence file. A Samsung
+      // S24 produced 60,840 lines in one run, of which 2,553 were ours — the rest is vendor
+      // chatter that pushed the retained window over and, before `mark()` existed,
+      // invalidated the cells' own indices. The evidence file is something a developer
+      // attaches to a report, so other apps' lines stay out of it. Every marker this tool
       // judges on is tagged `[CIO]`, verified against a real capture.
-      sink?.write(`${line.at} ${line.process}: ${line.message}\n`);
       const own = sdkLine(line);
       if (!own) continue;
+      sink?.write(`${line.at} ${line.process}: ${line.message}\n`);
       lines.push(own);
       if (lines.length > 40_000) {
         lines.splice(0, 10_000);
@@ -110,6 +116,23 @@ export async function startAndroidCapture(
       await new Promise<void>((resolve) => sink?.end(resolve) ?? resolve());
     },
   };
+}
+
+/**
+ * The device's clock in the form `logcat -T` takes, or nothing when it cannot be read. The
+ * date command's output is split by adb's shell at a space, so the two halves are joined
+ * with an underscore on the device and a space here.
+ */
+async function deviceClock(serial: string): Promise<string | undefined> {
+  const { stdout, code } = await adb(
+    serial,
+    ['shell', 'date', '+%m-%d_%H:%M:%S.000'],
+    15_000
+  );
+  const text = stdout.trim().replace('_', ' ');
+  return code === 0 && /^\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}$/.test(text)
+    ? text
+    : undefined;
 }
 
 /** `-v time` prints `MM-DD HH:MM:SS.mmm LEVEL/TAG( pid): message`. */
