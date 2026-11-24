@@ -342,10 +342,14 @@ export function analyticsStore(
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.startsWith('analytics-android-'));
-  return (
-    stores.find((store) => store === `analytics-android-${writeKey}.xml`) ??
-    stores[0]
-  );
+  // A known key with no store of its own has no store yet. The one that is there belongs
+  // to a key the app no longer runs with, and its user and token are not the app's.
+  if (writeKey) {
+    return stores.find(
+      (store) => store === `analytics-android-${writeKey}.xml`
+    );
+  }
+  return stores[0];
 }
 
 function safeJson(text: string): Record<string, unknown> | undefined {
