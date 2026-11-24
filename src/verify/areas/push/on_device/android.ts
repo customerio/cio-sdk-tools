@@ -353,11 +353,9 @@ async function runCellBody(
 
   const deliveryId =
     expectedId ?? (freshIds.length === 1 ? freshIds[0] : undefined);
-  const cell: MatrixCell = {
-    state,
-    title,
-    deliveryId,
-    ...judgeAndroid({
+  const cell = androidCell(
+    { state, title, deliveryId, evidence },
+    {
       available: capture.available,
       sawLines: lines.length > 0,
       stopped: Boolean(stopped),
@@ -366,9 +364,8 @@ async function runCellBody(
       expectedId,
       loggedIds: ids,
       freshIds,
-    }),
-    evidence,
-  };
+    }
+  );
   if (!listed && !shown && !received) {
     return {
       cell,
@@ -378,6 +375,27 @@ async function runCellBody(
   return {
     cell,
     push: { title, expectedId: deliveryId, arrivalSeen: true, mark },
+  };
+}
+
+/**
+ * The cell for one push, judged. A push the OS listed during its cell has arrived, whatever
+ * the log said: marking it keeps `markLateArrivals` from calling a push that was on time
+ * late, which would hide that the SDK's log was silent.
+ */
+export function androidCell(
+  base: {
+    state: AppState;
+    title: string;
+    deliveryId?: string;
+    evidence: string[];
+  },
+  observed: Parameters<typeof judgeAndroid>[0]
+): MatrixCell {
+  return {
+    ...base,
+    ...judgeAndroid(observed),
+    arrived: observed.posted ? true : undefined,
   };
 }
 
