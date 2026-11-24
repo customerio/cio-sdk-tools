@@ -107,13 +107,23 @@ export async function profileToken(
   platform: 'ios' | 'android',
   appIdentifier?: string
 ): Promise<string | undefined> {
+  // Without the app's own id there is no telling its record from another app's.
+  if (!appIdentifier) return undefined;
   const profile = await findProfile(environmentId, userId).catch(() => null);
-  const devices = (profile?.devices ?? []).filter(
-    (device) =>
-      device.platform === platform &&
-      (!appIdentifier ||
-        !device.appIdentifier ||
-        device.appIdentifier === appIdentifier)
-  );
+  const devices = devicesOfApp(profile?.devices ?? [], platform, appIdentifier);
   return devices.length === 1 ? devices[0].id : undefined;
+}
+
+/**
+ * The profile's devices that are this app's on this platform. A record that names no app
+ * is not taken for this one: it may be any app the person uses, and its token would be
+ * registered and linked on this device's behalf.
+ */
+export function devicesOfApp<
+  T extends { platform?: string; appIdentifier?: string },
+>(devices: T[], platform: string, appIdentifier: string): T[] {
+  return devices.filter(
+    (device) =>
+      device.platform === platform && device.appIdentifier === appIdentifier
+  );
 }

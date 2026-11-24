@@ -67,3 +67,21 @@ test('a send without a device-read token says to pass --token when the profile h
     /no push token registered on the target/
   );
 });
+
+test("a profile record that names no app is not taken for the selected app", () => {
+  const { devicesOfApp } = require('../../dist/verify/areas/push/state_line');
+  const devices = [
+    { id: 'a', platform: 'android', appIdentifier: 'com.example.mine' },
+    { id: 'b', platform: 'android' },
+    { id: 'c', platform: 'android', appIdentifier: 'com.example.other' },
+    { id: 'd', platform: 'ios', appIdentifier: 'com.example.mine' },
+  ];
+  assert.deepStrictEqual(
+    devicesOfApp(devices, 'android', 'com.example.mine').map((d) => d.id),
+    ['a']
+  );
+  assert.deepStrictEqual(
+    devicesOfApp([devices[1]], 'android', 'com.example.mine'),
+    []
+  );
+});
