@@ -364,7 +364,8 @@ function openedAnswer(answer: RecordAnswer, ids: string[]): RecordedOpen {
  * An open the device's log could not show, read from Customer.io's record instead. An open it
  * recorded is the SDK reporting this exact push's open, so it overturns a failure the log
  * suggested, which can only have come from lines the stream lost. Where the tap went is in
- * the log alone, so with a deep link sent that part stays unproven. No open recorded leaves
+ * the log alone, so with a deep link sent that part stays unproven, unless the log held the
+ * link's own lines: their outcome then stands. No open recorded leaves
  * the device's verdict as it was: the metric may still be on its way.
  */
 export function withRecordedOpen(
@@ -399,7 +400,9 @@ export function withRecordedOpen(
     deliveryId: recorded.deliveryId,
     recorded: 'recorded',
     ...(linkSent
-      ? { verdict: 'warn', cause: 'runtime.opened_recorded_link_unseen' }
+      ? cell.linkOutcome
+        ? { verdict: cell.linkOutcome.verdict, cause: cell.linkOutcome.cause }
+        : { verdict: 'warn', cause: 'runtime.opened_recorded_link_unseen' }
       : { verdict: 'pass', cause: undefined }),
     summary: undefined,
     evidence: [
