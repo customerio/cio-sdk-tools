@@ -116,6 +116,8 @@ test("the CDP store read is the one for the SDK's configured key, not a stale on
   // With no configured key to go by, the only store there is.
   assert.strictEqual(analyticsStore('analytics-android-abc.xml\n'), 'analytics-android-abc.xml');
   assert.strictEqual(analyticsStore('io.customer.sdk.app.xml\n', 'abc'), undefined);
+  // A configured key that has no store of its own does not borrow another key's.
+  assert.strictEqual(analyticsStore('analytics-android-OLDKEY.xml\n', 'NEWKEY'), undefined);
 });
 
 test('the native SDK version is read written out, from a variable, or from a version catalog', () => {
