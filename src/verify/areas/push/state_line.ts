@@ -1,9 +1,10 @@
-import { LogCapture } from '../../platform/logs';
+import { LogCapture, LogLine } from '../../platform/logs';
 import { findProfile } from '../../platform/cio/profile';
 import { SdkStateLine, latestSdkState } from '../../platform/sdk_events';
 import { Target } from '../../platform/ios/device';
 import { SDK_SUBSYSTEM_PREDICATE, startCapture } from '../../platform/ios/logs';
 import { setAppState } from '../../platform/ios/app_state';
+import { adb } from '../../platform/android/adb';
 import { startAndroidCapture } from '../../platform/android/logcat';
 import {
   launchAndroidApp,
@@ -24,6 +25,9 @@ export async function readIosStateLine(
   bundleId: string,
   executableName?: string
 ): Promise<SdkStateLine | undefined> {
+  // Without the app's executable name the log can't be narrowed to this app, and another
+  // app's SDK writes the same line. Its user and token would be taken for this app's.
+  if (!executableName) return undefined;
   const capture = await startCapture(target, undefined, {
     processes: executableName ? [executableName] : [],
     predicate: SDK_SUBSYSTEM_PREDICATE,
@@ -39,15 +43,34 @@ export async function readAndroidStateLine(
   packageName: string
 ): Promise<SdkStateLine | undefined> {
   const capture = await startAndroidCapture(serial);
-  return readAfter(capture, async () => {
-    await setAndroidState(serial, packageName, 'killed');
-    await launchAndroidApp(serial, packageName);
-  });
+  // Every app's SDK writes this line into one shared log. A line counts only when the
+  // process that wrote it is this package's, and a process is this package's when `pidof`
+  // says so while the line is being waited for.
+  const pids = new Set<string>();
+  return readAfter(
+    capture,
+    async () => {
+      await setAndroidState(serial, packageName, 'killed');
+      await launchAndroidApp(serial, packageName);
+    },
+    async () => {
+      for (const pid of await appPids(serial, packageName)) pids.add(pid);
+      return (line) => line.pid !== undefined && pids.has(line.pid);
+    }
+  );
 }
 
-async function readAfter(
+async function appPids(serial: string, packageName: string): Promise<string[]> {
+  const { stdout, code } = await adb(serial, ['shell', 'pidof', packageName]);
+  return code === 0 ? stdout.trim().split(/\s+/).filter(Boolean) : [];
+}
+
+export async function readAfter(
   capture: LogCapture,
-  restart: () => Promise<void>
+  restart: () => Promise<void>,
+  /** Says which lines are the app's own, where the log mixes apps. */
+  belongs?: () => Promise<(line: LogLine) => boolean>,
+  timeoutMs = STATE_LINE_TIMEOUT_MS
 ): Promise<SdkStateLine | undefined> {
   try {
     if (!capture.available) return undefined;
@@ -55,9 +78,11 @@ async function readAfter(
     await sleep(2_000);
     const mark = capture.mark();
     await restart();
-    const deadline = Date.now() + STATE_LINE_TIMEOUT_MS;
+    const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      const line = latestSdkState(capture.since(mark));
+      const own = belongs ? await belongs() : undefined;
+      const lines = capture.since(mark);
+      const line = latestSdkState(own ? lines.filter(own) : lines);
       if (line) return line;
       await sleep(500);
     }

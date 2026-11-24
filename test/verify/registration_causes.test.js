@@ -134,3 +134,34 @@ test('a credential that could not be read is unproven, never a warning that exit
   ladder.adopt(rung);
   assert.strictEqual(ladder.exitCode, EXIT.inconclusive);
 });
+
+test('workspace keys that could not be read are unproven, never a skip that exits 0', () => {
+  const rung = workspaceReady({
+    cio: authed,
+    resolution: {
+      how: 'explicit',
+      candidates: [],
+      workspace: { id: '1', name: 'W' },
+    },
+    credential: { kind: 'apns' },
+    keys: {
+      sdkKey: 'abc',
+      sdkKeyChecked: true,
+      extensionKey: { value: 'abc', site: 'NotificationService.swift:10' },
+      workspaceKeys: [],
+      error: 'API error 403',
+    },
+  });
+  const checks = rung.checks.filter((c) => c.id.endsWith('_key'));
+  assert.deepStrictEqual(
+    checks.map((c) => [c.verdict, c.cause]),
+    [
+      ['skip', 'workspace.lookup_failed'],
+      ['skip', 'workspace.lookup_failed'],
+    ]
+  );
+  assert.strictEqual(Ladder.verdictOf(rung), 'skip');
+  const ladder = new Ladder();
+  ladder.adopt(rung);
+  assert.strictEqual(ladder.exitCode, EXIT.inconclusive);
+});
