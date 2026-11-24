@@ -1,5 +1,5 @@
 import { Ladder } from '../../core/report/ladder';
-import { Cell, Section } from '../../core/report/types';
+import { Cell, Section, Verdict } from '../../core/report/types';
 
 /** Push's registration steps, in the order they are reported. */
 export type RungId =
@@ -47,6 +47,11 @@ export interface MatrixCell extends Cell {
   tapped?: boolean;
   /** The OS's notification store held this push while its cell was waiting. */
   arrived?: boolean;
+  /**
+   * On an opened cell whose open line was missing: what the deep link's own lines said, when
+   * any arrived. A recorded open settles the open and leaves this to stand.
+   */
+  linkOutcome?: { verdict: Verdict; cause?: string };
 }
 
 /**
