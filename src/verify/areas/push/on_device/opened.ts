@@ -292,6 +292,7 @@ export async function tapIosPush(
   const explained = explainUnseenTap(judged, {
     stoppedReason: capture.stoppedReason?.(),
     linesAfterTap: capture.since(afterTap).length,
+    phone: options.target.kind === 'device',
     lastLineAt: all.length > 0 ? all[all.length - 1].at : undefined,
   });
   // What the log could not prove, Customer.io's record of the open may: it is read for every
@@ -463,6 +464,12 @@ export function explainUnseenTap(
   context: {
     stoppedReason?: string;
     linesAfterTap: number;
+    /**
+     * The target is a phone. A stalled log relay was seen only there. A simulator's stream
+     * is filtered and idle once the extension has finished, so its silence after a tap says
+     * nothing about the stream.
+     */
+    phone: boolean;
     lastLineAt?: string;
   }
 ): MatrixCell {
@@ -476,7 +483,7 @@ export function explainUnseenTap(
     return blameStoppedCapture(cell, context.stoppedReason, unseen);
   }
   if (cell.cause !== 'runtime.tap_not_seen') return cell;
-  if (context.linesAfterTap === 0 && context.lastLineAt) {
+  if (context.phone && context.linesAfterTap === 0 && context.lastLineAt) {
     return {
       ...cell,
       cause: 'runtime.capture_silent',
