@@ -157,9 +157,14 @@ export async function tapAndroidPush(
       idUnread: Boolean(
         opened && !opened.title && !opened.deliveryId && push.expectedId
       ),
-      // Android logs no separate "clicked" line: the open, the skip and the failure are
-      // each evidence that the click reached the SDK at all.
-      clicked: tracked || emptyId || failed,
+      clicked: androidClicked({
+        tracked,
+        emptyId,
+        failed,
+        linkAttempted,
+        linkHandled: seen(ANDROID_OPENED_MARKERS.linkHandled),
+        linkUnhandled: seen(ANDROID_OPENED_MARKERS.linkUnhandled),
+      }),
       tracked,
       foreign: false,
       emptyId,
@@ -174,6 +179,29 @@ export async function tapAndroidPush(
       : undefined,
     evidence,
   };
+}
+
+/**
+ * Whether the click reached the SDK. Android logs no separate "clicked" line, so the open,
+ * the skip and the failure are each evidence of it. So is anything the SDK says about the
+ * deep link, as on iOS: it follows a push's link only from its click path.
+ */
+export function androidClicked(seen: {
+  tracked: boolean;
+  emptyId: boolean;
+  failed: boolean;
+  linkAttempted: boolean;
+  linkHandled: boolean;
+  linkUnhandled: boolean;
+}): boolean {
+  return (
+    seen.tracked ||
+    seen.emptyId ||
+    seen.failed ||
+    seen.linkAttempted ||
+    seen.linkHandled ||
+    seen.linkUnhandled
+  );
 }
 
 export async function screenshot(

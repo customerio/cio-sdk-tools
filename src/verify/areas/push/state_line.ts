@@ -32,10 +32,23 @@ export async function readIosStateLine(
     processes: executableName ? [executableName] : [],
     predicate: SDK_SUBSYSTEM_PREDICATE,
   });
-  return readAfter(capture, async () => {
-    await setAppState(target, bundleId, 'killed', executableName);
-    await setAppState(target, bundleId, 'foreground', executableName);
-  });
+  return readAfter(
+    capture,
+    async () => {
+      await setAppState(target, bundleId, 'killed', executableName);
+      await setAppState(target, bundleId, 'foreground', executableName);
+    },
+    // A phone's reader already takes only this process, by name. A simulator's streams the
+    // whole SDK subsystem and applies no process filter, so the lines are narrowed here.
+    target.kind === 'simulator'
+      ? async () => writtenBy(executableName)
+      : undefined
+  );
+}
+
+/** A line written by the process with this executable name. */
+export function writtenBy(executableName: string): (line: LogLine) => boolean {
+  return (line) => line.process === executableName;
 }
 
 export async function readAndroidStateLine(

@@ -255,15 +255,28 @@ function networkCheck(facts: AndroidDeviceFacts): Check | undefined {
   );
 }
 
+/** The first Android API with a runtime notification permission (Android 13). */
+const POST_NOTIFICATIONS_API = 33;
+
 function permissionCheck(
   facts: AndroidDeviceFacts,
   packageName: string
 ): Check {
   if (facts.permissionGranted === undefined) {
+    // Android 13 added the permission. Before it there is nothing to grant and dumpsys lists
+    // nothing, which is how every healthy older target looks.
+    const api = facts.target?.apiLevel;
+    if (api !== undefined && api < POST_NOTIFICATIONS_API) {
+      return pass(
+        'notification_permission',
+        'Notification permission is not required on this Android version',
+        [`Android API ${api} has no runtime notification permission`]
+      );
+    }
     return warn(
       'notification_permission',
       'Notification permission is granted',
-      'device.notification_permission_denied',
+      'device.notification_permission_unread',
       ['the permission state could not be read from dumpsys']
     );
   }

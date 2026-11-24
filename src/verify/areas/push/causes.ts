@@ -219,6 +219,13 @@ export const CAUSES: Record<string, PushCause> = {
     remedy:
       'Grant it with the command shown with this finding, or accept the prompt in the app. Deliveries are counted either way; nothing is displayed.',
   },
+  'device.notification_permission_unread': {
+    stage: 'device_ready',
+    severity: 'warning',
+    summary: "The target's notification permission could not be read.",
+    remedy:
+      "dumpsys listed no POST_NOTIFICATIONS entry for the app on an Android 13 or newer target, so the permission's state is unknown. Check it in the app's settings, or grant it with `adb shell pm grant <app> android.permission.POST_NOTIFICATIONS`, and run again.",
+  },
   'workspace.fcm_credential_missing': {
     stage: 'workspace_ready',
     severity: 'blocker',
