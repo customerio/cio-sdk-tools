@@ -85,3 +85,18 @@ test("a profile record that names no app is not taken for the selected app", () 
     []
   );
 });
+
+test("on a simulator, a state line from another app's process is not taken for the selected app", async () => {
+  const { writtenBy } = require('../../dist/verify/areas/push/state_line');
+  const line = (process, user, token) => ({ ...state('', user, token), pid: undefined, process });
+  const lines = [line('MyApp', 'mine', 'tok-mine'), line('OtherApp', 'other', 'tok-other')];
+  const own = writtenBy('MyApp');
+  assert.deepStrictEqual(lines.filter(own).map((l) => l.process), ['MyApp']);
+
+  const read = await readAfter(capture(lines), async () => undefined, async () => own, 1_000);
+  assert.strictEqual(read.userId, 'mine');
+  assert.strictEqual(
+    await readAfter(capture([lines[1]]), async () => undefined, async () => own, 600),
+    undefined
+  );
+});
