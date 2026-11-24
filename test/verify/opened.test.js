@@ -476,6 +476,7 @@ test('a tap followed by not one log line says the stream may have stopped', () =
   };
   const silent = explainUnseenTap(unseen, {
     linesAfterTap: 0,
+    phone: true,
     lastLineAt: '04:32:00.270',
   });
   assert.strictEqual(silent.cause, 'runtime.capture_silent');
@@ -489,7 +490,7 @@ test('a tap followed by not one log line says the stream may have stopped', () =
     'runtime.capture_stopped'
   );
   assert.strictEqual(
-    explainUnseenTap(unseen, { linesAfterTap: 412, lastLineAt: 'x' }),
+    explainUnseenTap(unseen, { linesAfterTap: 412, phone: true, lastLineAt: 'x' }),
     unseen,
     'a busy log after the tap means the tap really was not seen'
   );
