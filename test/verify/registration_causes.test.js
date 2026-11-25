@@ -330,3 +330,24 @@ test('an init at launch passes, and a leftover call elsewhere is a warning besid
   const only = initializationChecks({ files: 1, initSites: [site(false, 'ContentView.body')] });
   assert.deepStrictEqual(only.map((check) => check.cause), ['wiring.init_not_at_launch']);
 });
+
+test('a token given over an unreadable container goes on, and says the stores were not read', () => {
+  const { deviceReady } = require('../../dist/verify/areas/push/registration/device_ready');
+  const facts = {
+    target: { kind: 'simulator', name: 'iPhone 16', udid: 'U1', state: 'booted' },
+    usable: [],
+    ambiguous: [],
+    installed: true,
+    containerError: 'container copy failed',
+    sdk: {
+      pushDeviceToken: 'a'.repeat(64),
+      userId: 'person@example.com',
+      sources: ['--token', '--user'],
+      stores: { sdk: false, context: false, cdp: false },
+    },
+  };
+  const rung = deviceReady(facts, 'io.example.app');
+  assert.deepStrictEqual(causes(rung), ['device.container_unreadable_token_known']);
+  assert.strictEqual(Ladder.verdictOf(rung), 'warn');
+  assert.ok(rung.checks.some((check) => check.id === 'token_registered' && check.verdict === 'pass'));
+});
