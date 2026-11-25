@@ -14,8 +14,8 @@ import {
   sdkWasQuiet,
   lastAuthorization,
   notificationsAllowed,
-  extensionRanIn,
   extensionHandled,
+  extensionRanFor,
   simulatorPredicate,
 } from './sdk_lines';
 import {
@@ -434,7 +434,10 @@ async function runCellBody(
   );
 
   const since = () => capture.since(mark);
-  const ranNow = () => extensionRanIn(since(), options.extensionName);
+  // The extension ran for this push: a late earlier push's lines do not count (see
+  // extensionRanFor). Every wait and verdict below reads this one.
+  const ranNow = () =>
+    extensionRanFor(since(), options.extensionName, sends.ids ?? []);
   // The extension handled this very push: its lines name a delivery id this state's sends
   // returned. Lines for a late earlier push say nothing about this one.
   // Without an id from the send, any extension activity is all there is to go by.

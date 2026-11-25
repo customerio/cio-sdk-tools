@@ -233,3 +233,41 @@ test('test and androidTest sources are not read as the app', async () => {
     [path.join('src', 'main', 'java', 'com', 'example', 'MainActivity.kt')]
   );
 });
+
+test('an SDK version pinned unquoted in gradle.properties is read', () => {
+  assert.strictEqual(
+    gradleSdkVersion('cioVersion=4.5.0\nimplementation "io.customer.android:messaging-push-fcm:${cioVersion}"'),
+    '4.5.0'
+  );
+  assert.strictEqual(
+    gradleSdkVersion('cioVersion = 4.6.1\nimplementation "io.customer.android:datapipelines:$cioVersion"'),
+    '4.6.1'
+  );
+});
+
+test('instrumentation test APKs are not offered as build variants', async () => {
+  const root = project({
+    'settings.gradle': '',
+    'app/build.gradle': "apply plugin: 'com.android.application'",
+    'app/build/outputs/apk/debug/output-metadata.json': JSON.stringify({
+      applicationId: 'io.customer.app',
+      variantName: 'debug',
+    }),
+    'app/build/outputs/apk/androidTest/debug/output-metadata.json': JSON.stringify({
+      applicationId: 'io.customer.app.test',
+      variantName: 'debugAndroidTest',
+    }),
+  });
+  const variants = await buildVariants(path.join(root, 'app'));
+  assert.deepStrictEqual(variants.map((variant) => variant.applicationId), ['io.customer.app']);
+});
+
+test("a Kotlin DSL apply(from = …) script is folded in like Groovy's apply from:", async () => {
+  const root = project({
+    'settings.gradle.kts': 'include(":app")',
+    'shared/sdk.gradle': 'dependencies { implementation "io.customer.android:messaging-push-fcm:4.5.0" }',
+    'app/build.gradle.kts': 'plugins { id("com.android.application") }\napply(from = "$rootDir/shared/sdk.gradle")',
+  });
+  const model = await loadAndroidProject(path.join(root, 'app'));
+  assert.ok(model.sdkModules.includes('messaging-push-fcm'), `modules: ${model.sdkModules}`);
+});
