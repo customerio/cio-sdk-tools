@@ -537,7 +537,11 @@ export function observeOpened(lines: string[]): {
   );
   return {
     observed: {
-      clicked: seen(OPENED_MARKERS.clicked) || linkAttempted,
+      // The SDK's refusal of a click with no delivery id is still a click it received.
+      clicked:
+        seen(OPENED_MARKERS.clicked) ||
+        linkAttempted ||
+        seen(OPENED_MARKERS.emptyId),
       tracked: seen(OPENED_MARKERS.tracked),
       foreign: seen(OPENED_MARKERS.foreign),
       emptyId: seen(OPENED_MARKERS.emptyId),
