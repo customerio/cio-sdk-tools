@@ -9,6 +9,7 @@ import { setAndroidState } from '../../../platform/android/app_state';
 import { LogCapture } from '../../../platform/logs';
 import {
   SDK_PUSH_LINE,
+  blameStoppedCapture,
   explainSdkSilence,
   explainUncheckedSdk,
   sdkWasQuiet,
@@ -64,6 +65,28 @@ export interface AndroidMatrixOptions {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** The delivered causes that rest on a log line being absent. */
+const ANDROID_SILENT = ['runtime.no_evidence', 'runtime.push_not_handled'];
+
+/** The tap causes that rest on a log line being absent. */
+const ANDROID_UNSEEN_TAP = [
+  'runtime.tap_not_seen',
+  'runtime.tap_lines_lost',
+  'runtime.opened_not_tracked',
+];
+
+/** The tapped cell, re-judged when the capture stopped before its lines could be read. */
+async function tapAndroidPushJudged(
+  ...args: Parameters<typeof tapAndroidPush>
+): Promise<MatrixCell> {
+  const capture = args[3];
+  return blameStoppedCapture(
+    await tapAndroidPush(...args),
+    capture.stoppedReason?.(),
+    ANDROID_UNSEEN_TAP
+  );
+}
 
 /**
  * The Android delivered matrix.
@@ -190,14 +213,20 @@ async function runCell(
     handle
   );
   const { push, noPush } = body;
-  const cell: MatrixCell = { ...body.cell, sentIds: sends.ids };
+  // A logcat that died partway read nothing after it died: the causes that rest on a line
+  // being absent are the capture's, as on iOS. What dumpsys proved stands.
+  const cell = blameStoppedCapture(
+    { ...body.cell, sentIds: sends.ids },
+    capture.stoppedReason?.(),
+    ANDROID_SILENT
+  );
   handle?.done(cell);
 
   // The same push, tapped: asked for straight after it appeared, while the banner is up.
   if (options.tap?.states.includes(state)) {
     const tapHandle = options.reporter?.cell(state, 'opened');
     const opened = push
-      ? await tapAndroidPush(
+      ? await tapAndroidPushJudged(
           state,
           push,
           {
