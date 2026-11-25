@@ -197,3 +197,38 @@ test("an app's own :core module is not the SDK", () => {
   assert.deepStrictEqual(sdkModulesFrom('implementation project(":core")'), []);
   assert.deepStrictEqual(sdkModulesFrom('implementation(project(":messagingpush"))'), ['messagingpush']);
 });
+
+test('a module opened as "." still finds the Gradle root above it and the scripts it applies', async () => {
+  const root = project({
+    'settings.gradle': "include ':app'",
+    'shared/sdk.gradle': 'dependencies { implementation "io.customer.android:messaging-push-fcm:4.5.0" }',
+    'app/build.gradle':
+      "apply plugin: 'com.android.application'\napply from: \"${rootDir}/shared/sdk.gradle\"",
+  });
+  const before = process.cwd();
+  process.chdir(path.join(root, 'app'));
+  try {
+    const model = await loadAndroidProject('.');
+    assert.ok(model, 'no project found');
+    assert.strictEqual(model.projectPath, fs.realpathSync(root));
+    assert.ok(model.sdkModules.includes('messaging-push-fcm'), `modules: ${model.sdkModules}`);
+  } finally {
+    process.chdir(before);
+  }
+});
+
+test('test and androidTest sources are not read as the app', async () => {
+  const root = project({
+    'settings.gradle': "include ':app'",
+    'app/build.gradle': "apply plugin: 'com.android.application'",
+    'app/src/main/java/com/example/MainActivity.kt': 'class MainActivity : AppCompatActivity()',
+    'app/src/androidTest/java/com/example/TestActivity.kt':
+      'class TestActivity : Activity() { fun setUp() { CustomerIO.initialize(this) } }',
+    'app/src/test/java/com/example/UnitTest.kt': 'class UnitTest { val x = CustomerIOBuilder(app, "k") }',
+  });
+  const model = await loadAndroidProject(path.join(root, 'app'));
+  assert.deepStrictEqual(
+    model.sources.map((source) => source.path).sort(),
+    [path.join('src', 'main', 'java', 'com', 'example', 'MainActivity.kt')]
+  );
+});
