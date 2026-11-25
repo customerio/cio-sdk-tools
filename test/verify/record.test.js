@@ -579,3 +579,20 @@ test('a refused first send does not end the wait while its re-send is still on i
   assert.strictEqual(answer.record.id, 'dgS_retry');
   assert.strictEqual(answer.record.delivered, 4);
 });
+
+test("a refused first send does not end the wait while the re-send's record has not landed", async () => {
+  let reads = 0;
+  const answer = await awaitRecord('1', ['dgS_first', 'dgS_retry'], { delivered: true, opened: false }, {
+    read: async (_env, id) => {
+      reads += 1;
+      if (id === 'dgS_first') return { ok: true, record: { id, sent: 1, failed: 2 } };
+      // The re-send's record is written a moment after the send: 404 until then.
+      return reads > 6
+        ? { ok: true, record: { id, sent: 3, delivered: 4 } }
+        : { ok: false, notFound: true, permanent: false, error: 'API error 404' };
+    },
+    limits: { deliveredMs: 2_000, pollMs: 5 },
+  });
+  assert.strictEqual(answer.record.id, 'dgS_retry');
+  assert.strictEqual(answer.record.delivered, 4);
+});
