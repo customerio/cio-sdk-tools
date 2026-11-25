@@ -93,6 +93,8 @@ async function listSimulators(): Promise<Target[]> {
     };
     const out: Target[] = [];
     for (const runtime of Object.keys(parsed.devices)) {
+      // A watchOS, tvOS or visionOS simulator cannot run the app: only iOS runtimes count.
+      if (!/\.iOS-/.test(runtime)) continue;
       // Runtime identifiers read `com.apple.CoreSimulator.SimRuntime.iOS-18-0`.
       const version = runtime
         .split('.')
