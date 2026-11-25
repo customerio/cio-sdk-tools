@@ -146,7 +146,11 @@ export function explainSdkSilence(
     /** What showed the app at work, for the evidence. */
     how: string;
   },
-  reporter?: { cell(state: string): { done(cell: MatrixCell): void } }
+  reporter?: {
+    cell(state: string, section?: string): { done(cell: MatrixCell): void };
+  },
+  /** The section the cells print under: opened cells reprint beneath the opened rows. */
+  section?: string
 ): MatrixCell[] {
   if (!sdkWasQuiet(seen)) return cells;
   return cells.map((cell) => {
@@ -163,7 +167,7 @@ export function explainSdkSilence(
         `not one [Push] line from the SDK in this run, though ${seen.how} (was: ${cell.cause})`,
       ],
     };
-    reporter?.cell(cell.state).done(quiet);
+    reporter?.cell(cell.state, section).done(quiet);
     return quiet;
   });
 }
@@ -183,7 +187,10 @@ const NEEDS_KNOWN_LINES = [
 export function explainUncheckedSdk(
   cells: MatrixCell[],
   sdk: { platform: SdkPlatform; version?: string },
-  reporter?: { cell(state: string): { done(cell: MatrixCell): void } }
+  reporter?: {
+    cell(state: string, section?: string): { done(cell: MatrixCell): void };
+  },
+  section?: string
 ): MatrixCell[] {
   if (linesChecked(sdk.platform, sdk.version)) return cells;
   return cells.map((cell) => {
@@ -208,7 +215,7 @@ export function explainUncheckedSdk(
         })`,
       ],
     };
-    reporter?.cell(cell.state).done(unchecked);
+    reporter?.cell(cell.state, section).done(unchecked);
     return unchecked;
   });
 }

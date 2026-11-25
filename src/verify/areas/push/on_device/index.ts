@@ -205,9 +205,10 @@ export async function runDeliveredMatrix(
       0,
       tapped.length,
       ...explainUncheckedSdk(
-        explainSdkSilence(tapped, silence, options.reporter),
+        explainSdkSilence(tapped, silence, options.reporter, 'opened'),
         sdk,
-        options.reporter
+        options.reporter,
+        'opened'
       )
     );
   } finally {
@@ -524,7 +525,12 @@ async function runCellBody(
     const again = await send(retryTitle);
     if (again.rateLimited) {
       return {
-        cell: rejectedCell(state, again, evidence, 're-send rejected'),
+        // The first send was accepted and may still arrive: its title stays on the cell so
+        // the end-of-run check can look for it.
+        cell: {
+          ...rejectedCell(state, again, evidence, 're-send rejected'),
+          title,
+        },
         noPush: 'the push was not sent, so nobody was asked to tap it',
       };
     }
@@ -611,6 +617,7 @@ async function runCellBody(
   const cell: MatrixCell = {
     state,
     title,
+    retryTitle: retried?.title,
     deliveryId,
     arrived: stored ? true : undefined,
     ...judge({
@@ -676,8 +683,7 @@ export function expectedDeliveryId(
 }
 
 /** The causes a cell gets when nothing at all reached the app in its state. */
-const SILENT = [
-  'runtime.push_never_arrived',
+export const SILENT = [
   'runtime.no_evidence',
   'runtime.nse_did_not_run',
   'runtime.push_not_seen',
