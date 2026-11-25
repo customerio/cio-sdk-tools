@@ -382,6 +382,14 @@ export const CAUSES: Record<string, PushCause> = {
     remedy:
       'Container access needs a development build installed by Xcode. Without it the token and identity cannot be read, so the later rungs prove nothing.',
   },
+  'device.container_unreadable_token_known': {
+    stage: 'device_ready',
+    severity: 'warning',
+    summary:
+      "The app's data container could not be read; the run continues with the token from --token or the SDK's log.",
+    remedy:
+      "The SDK's stored state, and whether the token belongs to this install, stay unchecked. Install a development build from Xcode to read them.",
+  },
   'device.installed_build_cannot_register': {
     stage: 'device_ready',
     severity: 'blocker',

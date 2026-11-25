@@ -11,8 +11,10 @@ import { runAndroidDeliveredMatrix } from './on_device/android';
 import { ALL_STATES, AppState } from '../../platform/app_state';
 import {
   describeAndroidTarget,
+  listAndroidTargets,
   packageInstalled,
   readAndroidSdkState,
+  selectAndroidTarget,
 } from '../../platform/android/device';
 import {
   androidDeviceReady,
@@ -77,14 +79,21 @@ export async function climbAndroid(
 
   let observed = false;
   if (options.observe && selection.targetSelector && packageName) {
-    const watch = await observeAndroid({
-      serial: selection.targetSelector,
-      packageName,
-      reporter,
-      asker,
-      evidenceDirectory: options.evidence,
-    });
-    observed = watch.observed;
+    // Matched the way `--device` matched it, so a model name watches that device's serial.
+    const { target: chosen } = selectAndroidTarget(
+      await listAndroidTargets(),
+      selection.targetSelector
+    );
+    if (chosen) {
+      const watch = await observeAndroid({
+        serial: chosen.serial,
+        packageName,
+        reporter,
+        asker,
+        evidenceDirectory: options.evidence,
+      });
+      observed = watch.observed;
+    }
   }
 
   const deviceTimer = stopwatch();
