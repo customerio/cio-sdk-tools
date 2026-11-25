@@ -129,6 +129,7 @@ test('a 404 is told apart from other errors', async () => {
   assert.deepStrictEqual(missing, {
     ok: false,
     notFound: true,
+    permanent: false,
     error: 'API error 404: Not Found',
   });
   const denied = await readDelivery('122175', ID, async () => ({
@@ -505,4 +506,44 @@ test('on the device, only an open the log could not prove is read, and the recor
   assert.strictEqual(result.opened.cells[1].verdict, 'pass');
   assert.strictEqual(result.opened.cells[1].recorded, undefined);
   assert.strictEqual(result.delivered.cells[0].recorded, undefined);
+});
+
+test('a 401 or 403 ends the wait at once, and a 404 is still read again', async () => {
+  let refusals = 0;
+  const refused = await awaitRecord('1', ['dgS_a'], { delivered: true, opened: true }, {
+    read: async () => (refusals++, { ok: false, notFound: false, permanent: true, error: '403 forbidden' }),
+    limits: { openedMs: 60_000, pollMs: 5 },
+  });
+  assert.strictEqual(refusals, 1);
+  assert.strictEqual(refused.record, undefined);
+  assert.match(refused.error.message, /403/);
+
+  let misses = 0;
+  await awaitRecord('1', ['dgS_a'], { delivered: true, opened: true }, {
+    read: async () => (misses++, { ok: false, notFound: true, permanent: false, error: '404 not found' }),
+    limits: { openedMs: 60, pollMs: 5 },
+  });
+  assert.ok(misses > 2, `a 404 was read ${misses} times`);
+});
+
+test('a failed read of a record is classified from the answer it carries', async () => {
+  const read = (error) => readDelivery('1', 'dgS_a', async () => ({ ok: false, error }));
+  assert.strictEqual((await read('cio api failed: 403 Forbidden')).permanent, true);
+  assert.strictEqual((await read('cio api failed: 401 Unauthorized')).permanent, true);
+  assert.strictEqual((await read('cio api failed: 404 Not Found')).permanent, false);
+  assert.strictEqual((await read('cio api failed: 503 Unavailable')).permanent, false);
+});
+
+test('a delivery the provider refused is said to be refused, not to be one that may still open', () => {
+  const { openedAnswer, withRecordedOpen } = require('../../dist/verify/areas/push/record');
+  const answer = openedAnswer(
+    { record: { id: 'dgS_a', failed: 1791983000, providerStatus: 400, failureMessage: 'BadDeviceToken' }, waitedMs: 3000 },
+    ['dgS_a']
+  );
+  assert.deepStrictEqual(answer, { answer: 'failed', deliveryId: 'dgS_a', reason: 'BadDeviceToken' });
+  const cell = { state: 'killed', verdict: 'skip', cause: 'runtime.tap_lines_lost', evidence: [] };
+  const settled = withRecordedOpen(cell, answer, false);
+  assert.strictEqual(settled.verdict, 'skip');
+  assert.match(settled.evidence.at(-1), /recorded dgS_a as failed \(BadDeviceToken\), so no open can arrive/);
+  assert.doesNotMatch(settled.evidence.join(' '), /can still arrive later/);
 });

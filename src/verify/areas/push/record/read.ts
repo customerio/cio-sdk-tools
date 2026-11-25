@@ -32,7 +32,13 @@ export interface DeliveryRecord {
 
 export type DeliveryRead =
   | { ok: true; record: DeliveryRecord }
-  | { ok: false; notFound: boolean; error: string };
+  | {
+      ok: false;
+      notFound: boolean;
+      /** The answer was a refusal that waiting cannot change: a login or permission error. */
+      permanent?: boolean;
+      error: string;
+    };
 
 export type ReadDelivery = (
   environmentId: string,
@@ -64,7 +70,12 @@ export async function readDelivery(
   );
   if (!res.ok) {
     const error = res.error ?? 'no answer';
-    return { ok: false, notFound: /\b404\b/.test(error), error };
+    return {
+      ok: false,
+      notFound: /\b404\b/.test(error),
+      permanent: /\b(401|403)\b/.test(error),
+      error,
+    };
   }
   return {
     ok: true,
@@ -158,7 +169,13 @@ export async function awaitRecord(
           (!wait.opened || best.opened !== undefined)));
     const waitedMs = Date.now() - startedAt;
     // A 404 is read again like a missing report: a read straight after the send may beat it.
-    if (settled || waitedMs + limits.pollMs >= budget) {
+    // A 401 or 403 does not change by waiting: only a 404 can, because the write may not have
+    // landed yet. Every id refused that way ends the wait now.
+    const refused =
+      best === undefined &&
+      reads.length > 0 &&
+      reads.every((answer) => !answer.ok && answer.permanent === true);
+    if (settled || refused || waitedMs + limits.pollMs >= budget) {
       const failed = reads.find(
         (answer): answer is Extract<DeliveryRead, { ok: false }> => !answer.ok
       );
