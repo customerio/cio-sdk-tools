@@ -177,8 +177,10 @@ export async function tapIosPush(
   } catch (error) {
     await cold?.finish();
     throw error;
+  } finally {
+    // The spinner comes back whatever the prompt did, or later cells print nothing.
+    options.reporter?.resume();
   }
-  options.reporter?.resume();
   if (answer !== 'tapped') {
     await cold?.finish();
     return untappedCell(state, answer, evidence, push.arrivalSeen);
@@ -537,11 +539,16 @@ export function observeOpened(lines: string[]): {
   );
   return {
     observed: {
-      // The SDK's refusal of a click with no delivery id is still a click it received.
+      // The SDK's refusal of a click with no delivery id is still a click it received, and
+      // so is any word on the link's outcome, as on Android: a lossy stream can drop the
+      // click line and keep the outcome.
       clicked:
         seen(OPENED_MARKERS.clicked) ||
         linkAttempted ||
-        seen(OPENED_MARKERS.emptyId),
+        seen(OPENED_MARKERS.emptyId) ||
+        seen(OPENED_MARKERS.linkHandled) ||
+        seen(OPENED_MARKERS.linkUnhandled) ||
+        seen(OPENED_MARKERS.linkBySystem),
       tracked: seen(OPENED_MARKERS.tracked),
       foreign: seen(OPENED_MARKERS.foreign),
       emptyId: seen(OPENED_MARKERS.emptyId),
