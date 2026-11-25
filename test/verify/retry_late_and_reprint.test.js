@@ -77,3 +77,25 @@ test("only the extension's lines for this delivery say this push arrived; a late
     false
   );
 });
+
+test("a late earlier push's extension lines do not count as this push's extension running", () => {
+  const { extensionRanFor } = require('../../dist/verify/areas/push/on_device/sdk_lines');
+  const ext = (message) => ({ at: '', process: 'NotificationService', message });
+  const tracked = (id) => ext(`[CIO] Tracking push message delivered with deliveryId: ${id}`);
+  const ours = ['dgS_ours12345678'];
+  const leftover = tracked('dgS_older1234567');
+  // Only the leftover: not this push.
+  assert.strictEqual(extensionRanFor([leftover, ext('normal completion')], 'NotificationService', ours), false);
+  // The same build logs every push the same way: an SDK that named the earlier push's id
+  // names this one's too, so id-less lines beside it are the earlier push's tail.
+  assert.strictEqual(
+    extensionRanFor([leftover, ext('[CIO] invoking contentHandler')], 'NotificationService', ours),
+    false
+  );
+  // This push named.
+  assert.strictEqual(extensionRanFor([leftover, tracked(ours[0])], 'NotificationService', ours), true);
+  // Nothing names any id: it cannot be told apart, so it counts, as before.
+  assert.strictEqual(extensionRanFor([ext('service extension started')], 'NotificationService', ours), true);
+  // No id from the send: any extension activity, as before.
+  assert.strictEqual(extensionRanFor([leftover], 'NotificationService', []), true);
+});
