@@ -118,3 +118,11 @@ test('a deep-link outcome line is a click the SDK received, even with its click 
     );
   }
 });
+
+test("a re-send the extension handled, though the store kept neither push, is the delivery expected", () => {
+  const { expectedDeliveryId } = require('../../dist/verify/areas/push/on_device');
+  const retried = { title: 'second', deliveryId: 'dgS_retry1234567' };
+  assert.strictEqual(expectedDeliveryId('dgS_first1234567', false, retried, ['dgS_retry1234567']), 'dgS_retry1234567');
+  assert.strictEqual(expectedDeliveryId('dgS_first1234567', false, retried, ['dgS_first1234567']), 'dgS_first1234567');
+  assert.strictEqual(expectedDeliveryId('dgS_first1234567', false, retried, []), 'dgS_first1234567');
+});
