@@ -245,6 +245,18 @@ export function deviceReady(facts: DeviceFacts, bundleId?: string): Rung {
     if (facts.stateLine?.noToken) rung.checks.push(tokenCheck(facts));
     return rung;
   }
+  if (!facts.preferences) {
+    // The token came from --token or the SDK's log, so the run goes on, the way Android's does
+    // with a build it cannot read. What the stores would have said stays unchecked.
+    rung.checks.push(
+      warn(
+        'container_readable',
+        "App's data container is readable",
+        'device.container_unreadable_token_known',
+        facts.containerError ? [facts.containerError] : []
+      )
+    );
+  }
 
   const capable = installedBuildCheck(facts);
   if (capable) rung.checks.push(capable);
