@@ -7,7 +7,7 @@ import {
 } from '../../../platform/cio/profile';
 import { Workspace } from '../../../platform/cio/workspace';
 import { fail, pass, skipped, warn } from '../../../core/report/ladder';
-import { Rung } from '../../../core/report/types';
+import { Check, Rung } from '../../../core/report/types';
 import { NotificationAuthorization, RUNG_TITLES } from '../types';
 
 /**
@@ -201,28 +201,9 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
 
   // The profile is here and the device is not. If the device is on the same identity in
   // another workspace, that is the explanation, and it outranks "the token is stale".
+  const sweepCheck = elsewhereCheck(linked, hits);
+  if (sweepCheck) rung.checks.push(sweepCheck);
   const holder = hits.find((hit) => hit.hasToken);
-  if (!linked && holder) {
-    rung.checks.push(
-      fail(
-        'device_elsewhere',
-        'This device belongs to the chosen workspace',
-        'profile.device_in_other_workspace',
-        describeHits(hits),
-        describeHits(hits)[0]
-      )
-    );
-  } else if (!linked && hits.length > 0) {
-    rung.checks.push(
-      warn(
-        'identity_elsewhere',
-        'This identity exists only in the chosen workspace',
-        'profile.identity_in_other_workspace',
-        describeHits(hits),
-        describeHits(hits)[0]
-      )
-    );
-  }
 
   const devices = profile?.devices?.length ?? 0;
   rung.summary = holder
@@ -243,6 +224,39 @@ async function sweep(
     skip: input.environmentId,
     onProgress: input.onSweep,
   });
+}
+
+/**
+ * What the sweep of other workspaces adds once the profile is found here and this device is
+ * not linked to it. Exported for tests.
+ */
+export function elsewhereCheck(
+  linked: boolean,
+  hits: IdentityHit[]
+): Check | undefined {
+  if (linked) return undefined;
+  const holder = hits.find((hit) => hit.hasToken);
+  if (holder) {
+    return fail(
+      'device_elsewhere',
+      'This device belongs to the chosen workspace',
+      'profile.device_in_other_workspace',
+      describeHits(hits),
+      describeHits(hits)[0]
+    );
+  }
+  if (hits.length > 0) {
+    // The profile is here too, so "it lives in another workspace" would be wrong advice:
+    // this device is in neither, and the copy elsewhere only says the app has reported there.
+    return warn(
+      'identity_elsewhere',
+      'This identity exists only in the chosen workspace',
+      'profile.identity_also_elsewhere',
+      describeHits(hits),
+      describeHits(hits)[0]
+    );
+  }
+  return undefined;
 }
 
 /** Exported for tests: turning hits into evidence is the part worth pinning. */
