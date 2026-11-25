@@ -239,3 +239,42 @@ test('a --device model name that matches several Android targets is said to be a
   );
   assert.match(none.checks[0].evidence[0], /matched no connected device/);
 });
+
+test('POST_NOTIFICATIONS missing below Android 13 warns with a warning cause that says so', () => {
+  const { notificationPermissionCheck } = require('../../dist/verify/areas/push/registration/android_wiring');
+  const model = (targetSdk) => ({ manifest: '<manifest/>', gradle: targetSdk ? `targetSdk ${targetSdk}` : '' });
+  const below = notificationPermissionCheck(model(31));
+  assert.deepStrictEqual([below.verdict, below.cause], ['warn', 'wiring.post_notifications_not_yet_required']);
+  assert.strictEqual(resolveCause(below.cause).severity, 'warning');
+  assert.strictEqual(notificationPermissionCheck(model(undefined)).cause, 'wiring.post_notifications_not_yet_required');
+  const required = notificationPermissionCheck(model(34));
+  assert.deepStrictEqual([required.verdict, required.cause], ['fail', 'wiring.post_notifications_undeclared']);
+});
+
+test('a simulator build with no entitlements section to read is a warning with a cause, not a silent pass', () => {
+  const { installedBuildCheck } = require('../../dist/verify/areas/push/registration/device_ready');
+  const check = installedBuildCheck({ appPath: '/tmp/App.app', entitlements: undefined });
+  assert.deepStrictEqual([check.verdict, check.cause], ['warn', 'device.entitlements_unread']);
+  assert.strictEqual(Ladder.verdictOf({ id: 'device_ready', checks: [check] }), 'warn');
+});
+
+test("an extension whose own sources cannot be found is not judged on the app's code", async () => {
+  const { nseSourcesFor } = require('../../dist/verify/areas/push/registration/project_wiring');
+  const model = { projectPath: '/p/App.xcodeproj' };
+  const app = { absolutePath: '/p/App/AppDelegate.swift', path: 'App/AppDelegate.swift', text: 'didReceive' };
+  const ext = { absolutePath: '/p/NSE/NotificationService.swift', path: 'NSE/NotificationService.swift', text: '' };
+  assert.strictEqual(await nseSourcesFor(model, { settings: {} }, [app, ext]), undefined);
+  assert.strictEqual(await nseSourcesFor(model, { settings: { INFOPLIST_FILE: 'Other/Info.plist' } }, [app, ext]), undefined);
+  assert.deepStrictEqual(await nseSourcesFor(model, { settings: { INFOPLIST_FILE: 'NSE/Info.plist' } }, [app, ext]), [ext]);
+});
+
+test('an identity found here and elsewhere, without this device, does not say it lives elsewhere', () => {
+  const { elsewhereCheck } = require('../../dist/verify/areas/push/registration/profile_linked');
+  const other = { workspace: { id: '9', name: 'Staging' }, hasToken: false };
+  const check = elsewhereCheck(false, [other]);
+  assert.deepStrictEqual([check.verdict, check.cause], ['warn', 'profile.identity_also_elsewhere']);
+  assert.strictEqual(resolveCause(check.cause).severity, 'warning');
+  // The device itself elsewhere is still the explanation, and still a failure.
+  assert.strictEqual(elsewhereCheck(false, [{ ...other, hasToken: true }]).cause, 'profile.device_in_other_workspace');
+  assert.strictEqual(elsewhereCheck(true, [other]), undefined);
+});

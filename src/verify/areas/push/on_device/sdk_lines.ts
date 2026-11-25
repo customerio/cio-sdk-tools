@@ -279,6 +279,19 @@ export function extensionSdkQuiet(
   );
 }
 
+/**
+ * The extension handled one of these deliveries: a line from its process names the id. Its
+ * lines for a late earlier push name another id, and say nothing about this one.
+ */
+export function extensionHandled(
+  lines: LogLine[],
+  extensionName: string | undefined,
+  ids: string[]
+): boolean {
+  const own = lines.filter((line) => extensionRanIn([line], extensionName));
+  return deliveryIdsIn(own).some((id) => ids.includes(id));
+}
+
 /** Delivery ids are base64url with a `dgS_` prefix — a charset without `_` and `-` misses. */
 export function deliveryIdsIn(lines: LogLine[]): string[] {
   const ids = new Set<string>();

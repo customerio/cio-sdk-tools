@@ -72,27 +72,36 @@ export function deviceReachability(connection?: {
  * serial number guesses; a udid that `simctl` knows about is a simulator, definitively.
  */
 export async function listTargets(): Promise<Target[]> {
-  const simulators = await listSimulators();
-  const simulatorIds = new Set(simulators.map((s) => s.udid));
+  const { simulators, allUdids } = await listSimulators();
+  // Every simulator simctl knows is stripped from devicectl's list, iOS or not: a Watch
+  // left out of the targets must not come back as hardware.
   const devices = (await listPhysicalDevices()).filter(
-    (d) => !simulatorIds.has(d.udid)
+    (d) => !allUdids.has(d.udid)
   );
   return [...simulators, ...devices];
 }
 
-async function listSimulators(): Promise<Target[]> {
+async function listSimulators(): Promise<{
+  simulators: Target[];
+  allUdids: Set<string>;
+}> {
+  const none = { simulators: [], allUdids: new Set<string>() };
   const { stdout, code } = await run(
     'xcrun',
     ['simctl', 'list', 'devices', '--json'],
     60_000
   );
-  if (code !== 0) return [];
+  if (code !== 0) return none;
   try {
     const parsed = JSON.parse(stdout) as {
       devices: Record<string, Record<string, unknown>[]>;
     };
     const out: Target[] = [];
+    const allUdids = new Set<string>();
     for (const runtime of Object.keys(parsed.devices)) {
+      for (const device of parsed.devices[runtime]) {
+        allUdids.add(String(device.udid ?? ''));
+      }
       // A watchOS, tvOS or visionOS simulator cannot run the app: only iOS runtimes count.
       if (!/\.iOS-/.test(runtime)) continue;
       // Runtime identifiers read `com.apple.CoreSimulator.SimRuntime.iOS-18-0`.
@@ -112,9 +121,9 @@ async function listSimulators(): Promise<Target[]> {
         });
       }
     }
-    return out;
+    return { simulators: out, allUdids };
   } catch {
-    return [];
+    return none;
   }
 }
 

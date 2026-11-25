@@ -153,6 +153,9 @@ export async function awaitRecord(
     : 0;
   const startedAt = Date.now();
   let best: DeliveryRecord | undefined;
+  // The newest word on each id. One push only moves forward, and a refusal is its last word:
+  // a read that says sent and a later one that says failed end on failed.
+  const latest = new Map<string, DeliveryRecord>();
   for (;;) {
     const reads = await Promise.all(ids.map((id) => read(environmentId, id)));
     const records = reads.flatMap((answer) =>
@@ -161,7 +164,14 @@ export async function awaitRecord(
     // A read that fails after one succeeded takes nothing away from what was learned. The
     // fresh reads come first so that on equal rank they win: an `opened` record that later
     // gains its `delivered` is the same rank, and keeping the older one would never see it.
-    best = furthest(best ? [...records, best] : records);
+    for (const record of records) {
+      const before = latest.get(record.id);
+      latest.set(
+        record.id,
+        before && progress(before) > progress(record) ? before : record
+      );
+    }
+    best = furthest([...latest.values()]);
     const settled =
       best !== undefined &&
       (best.failed !== undefined ||
@@ -192,7 +202,21 @@ export async function awaitRecord(
   }
 }
 
-/** Opened beats delivered beats sent beats failed. */
+/** How far one push got: a refusal is further along than a send still waiting. */
+function progress(record: DeliveryRecord): number {
+  return record.opened !== undefined
+    ? 4
+    : record.delivered !== undefined
+    ? 3
+    : record.failed !== undefined
+    ? 2
+    : 1;
+}
+
+/**
+ * Across the pushes of a state (a send and its re-send), opened beats delivered beats sent
+ * beats failed: a re-send still on its way is worth waiting for after the first was refused.
+ */
 function furthest(records: DeliveryRecord[]): DeliveryRecord | undefined {
   const rank = (record: DeliveryRecord) =>
     record.opened !== undefined

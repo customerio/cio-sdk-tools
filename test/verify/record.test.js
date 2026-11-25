@@ -547,3 +547,35 @@ test('a delivery the provider refused is said to be refused, not to be one that 
   assert.match(settled.evidence.at(-1), /recorded dgS_a as failed \(BadDeviceToken\), so no open can arrive/);
   assert.doesNotMatch(settled.evidence.join(' '), /can still arrive later/);
 });
+
+test('a delivery read as sent and later as failed ends on the failure, not the older sent read', async () => {
+  let reads = 0;
+  const answer = await awaitRecord('1', ['dgS_a'], { delivered: true, opened: false }, {
+    read: async () => {
+      reads += 1;
+      return reads === 1
+        ? { ok: true, record: { id: 'dgS_a', sent: 1791983000 } }
+        : { ok: true, record: { id: 'dgS_a', sent: 1791983000, failed: 1791983004, failureMessage: 'BadDeviceToken' } };
+    },
+    limits: { deliveredMs: 2_000, pollMs: 5 },
+  });
+  assert.strictEqual(answer.record.failed, 1791983004);
+  assert.strictEqual(answer.record.failureMessage, 'BadDeviceToken');
+  assert.strictEqual(reads, 2, 'a failure is final, so the wait ends on it');
+});
+
+test('a refused first send does not end the wait while its re-send is still on its way', async () => {
+  let reads = 0;
+  const answer = await awaitRecord('1', ['dgS_first', 'dgS_retry'], { delivered: true, opened: false }, {
+    read: async (_env, id) => {
+      reads += 1;
+      if (id === 'dgS_first') return { ok: true, record: { id, sent: 1, failed: 2 } };
+      return reads > 6
+        ? { ok: true, record: { id, sent: 3, delivered: 4 } }
+        : { ok: true, record: { id, sent: 3 } };
+    },
+    limits: { deliveredMs: 2_000, pollMs: 5 },
+  });
+  assert.strictEqual(answer.record.id, 'dgS_retry');
+  assert.strictEqual(answer.record.delivered, 4);
+});
