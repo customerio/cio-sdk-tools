@@ -56,6 +56,9 @@ export async function startAndroidCapture(
   let buffer = '';
   let stderr = '';
   let exited: number | null | undefined;
+  let started = false;
+  let stopping = false;
+  let stoppedReason: string | undefined;
   let sink: WriteStream | undefined;
   if (evidencePath) sink = createWriteStream(evidencePath, { flags: 'a' });
 
@@ -64,6 +67,12 @@ export async function startAndroidCapture(
   });
   child.on('exit', (code) => {
     exited = code;
+    // An exit after the startup check is a stream that died partway through the run.
+    if (started && !stopping) {
+      stoppedReason = `adb logcat exited${
+        code === null ? '' : ` (${code})`
+      } partway through the run`;
+    }
   });
   child.stdout?.on('data', (chunk: Buffer) => {
     buffer += chunk.toString();
@@ -90,6 +99,7 @@ export async function startAndroidCapture(
   });
 
   await new Promise((resolve) => setTimeout(resolve, 1_200));
+  started = true;
   if (exited !== undefined) {
     sink?.end();
     return {
@@ -111,7 +121,9 @@ export async function startAndroidCapture(
     mark: () => dropped + lines.length,
     since: (mark: number) => lines.slice(Math.max(0, mark - dropped)),
     evidencePath,
+    stoppedReason: () => stoppedReason,
     stop: async () => {
+      stopping = true;
       child.kill();
       await new Promise<void>((resolve) => sink?.end(resolve) ?? resolve());
     },

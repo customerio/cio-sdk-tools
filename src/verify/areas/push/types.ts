@@ -47,6 +47,8 @@ export interface MatrixCell extends Cell {
   tapped?: boolean;
   /** The OS's notification store held this push while its cell was waiting. */
   arrived?: boolean;
+  /** After a re-send: the second push's title, which can also turn up after the cell. */
+  retryTitle?: string;
 }
 
 /**

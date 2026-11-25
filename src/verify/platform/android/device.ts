@@ -1,4 +1,4 @@
-import { adb, prefString, readAppFile } from './adb';
+import { adb, listAppDirectory, prefString, readAppFile } from './adb';
 
 export interface AndroidTarget {
   serial: string;
@@ -288,14 +288,8 @@ export async function readAndroidSdkState(
   }
 
   // The CDP layer keeps identity in its own file, named after the write key.
-  const listing = await adb(serial, [
-    'shell',
-    'run-as',
-    packageName,
-    'ls',
-    `/data/data/${packageName}/shared_prefs`,
-  ]);
-  const analytics = analyticsStore(listing.stdout, state.writeKey);
+  const listing = await listAppDirectory(serial, packageName, 'shared_prefs');
+  const analytics = analyticsStore(listing, state.writeKey);
   if (!analytics) return state;
 
   const cdp = await readAppFile(
