@@ -241,6 +241,8 @@ export function deviceReady(facts: DeviceFacts, bundleId?: string): Rung {
         facts.containerError ? [facts.containerError] : []
       )
     );
+    // The SDK's own line can still settle the token: "no token" is a finding, not an unknown.
+    if (facts.stateLine?.noToken) rung.checks.push(tokenCheck(facts));
     return rung;
   }
 
