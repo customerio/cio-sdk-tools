@@ -15,6 +15,7 @@ import {
   lastAuthorization,
   notificationsAllowed,
   extensionHandled,
+  extensionHandledIds,
   extensionRanFor,
   simulatorPredicate,
 } from './sdk_lines';
@@ -611,7 +612,12 @@ async function runCellBody(
   // delivery, and proves less than it appears to.
   const freshIds = ids.filter((id) => !seenIds.has(id));
   for (const id of ids) seenIds.add(id);
-  const expectedId = expectedDeliveryId(sent.deliveryId, stored, retried);
+  const expectedId = expectedDeliveryId(
+    sent.deliveryId,
+    stored,
+    retried,
+    extensionHandledIds(lines, options.extensionName, sends.ids ?? [])
+  );
 
   if (capture.available) {
     evidence.push(`log: ${lines.length} lines, extension ran: ${extensionRan}`);
@@ -672,7 +678,13 @@ async function runCellBody(
     cell,
     push: {
       // After a re-send, whichever of the two arrived is the one to tap.
-      title: stored ? stored.title : title,
+      // The push to tap is the one that arrived: the store's copy, or else the send the
+      // extension handled.
+      title: stored
+        ? stored.title
+        : retried && expectedId === retried.deliveryId
+        ? retried.title
+        : title,
       expectedId: deliveryId,
       arrivalSeen: stored ? true : extensionRan,
       mark,
@@ -688,7 +700,9 @@ async function runCellBody(
 export function expectedDeliveryId(
   sentId: string | undefined,
   stored: { title: string; deliveryId?: string } | false | undefined,
-  retried?: { title: string; deliveryId?: string }
+  retried?: { title: string; deliveryId?: string },
+  /** This state's delivery ids that the extension's lines name. */
+  handledIds: string[] = []
 ): string | undefined {
   if (stored && stored.deliveryId) return stored.deliveryId;
   if (
@@ -698,6 +712,12 @@ export function expectedDeliveryId(
     retried.deliveryId
   ) {
     return retried.deliveryId;
+  }
+  // No stored copy to read: the extension handling one of the sends says which arrived.
+  if (!stored && handledIds.length > 0) {
+    return retried?.deliveryId && handledIds.includes(retried.deliveryId)
+      ? retried.deliveryId
+      : handledIds[0];
   }
   return sentId;
 }

@@ -288,8 +288,17 @@ export function extensionHandled(
   extensionName: string | undefined,
   ids: string[]
 ): boolean {
+  return extensionHandledIds(lines, extensionName, ids).length > 0;
+}
+
+/** Which of these deliveries the extension's lines name. */
+export function extensionHandledIds(
+  lines: LogLine[],
+  extensionName: string | undefined,
+  ids: string[]
+): string[] {
   const own = lines.filter((line) => extensionRanIn([line], extensionName));
-  return deliveryIdsIn(own).some((id) => ids.includes(id));
+  return deliveryIdsIn(own).filter((id) => ids.includes(id));
 }
 
 /**
