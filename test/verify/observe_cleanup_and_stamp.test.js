@@ -44,3 +44,35 @@ test('a run counts as sending only when it holds everything a send needs', () =>
   assert.strictEqual(sendsPlanned({ ...ready, dryRun: true }), false);
   assert.strictEqual(sendsPlanned({ ...ready, send: false }), false);
 });
+
+test('--watch-registration on Android watches the serial the device name resolves to', async () => {
+  const device = require('../../dist/verify/platform/android/device');
+  const logcat = require('../../dist/verify/platform/android/logcat');
+  const wiring = require('../../dist/verify/areas/push/registration/android_wiring');
+  const { climbAndroid } = require('../../dist/verify/areas/push/android_flow');
+  const { Ladder } = require('../../dist/verify/core/report/ladder');
+  device.listAndroidTargets = async () => [
+    { serial: 'emulator-5554', model: 'Pixel 8', state: 'device' },
+  ];
+  wiring.androidWiring = async () => ({
+    rung: { id: 'project_wiring', title: 'Project wiring', checks: [] },
+    model: { appModuleName: 'app' },
+    applicationId: 'io.example.app',
+  });
+  const watched = [];
+  logcat.startAndroidCapture = async (serial) => {
+    watched.push(serial);
+    throw new Error('stop here');
+  };
+  const handle = { phase() {}, done() {} };
+  const reporter = { rung: () => handle };
+  const run = (targetSelector) =>
+    climbAndroid(new Ladder(), '/project', { observe: true }, reporter, {}, { targetSelector }, {});
+  await assert.rejects(run('Pixel 8'), /stop here/);
+  assert.deepStrictEqual(watched, ['emulator-5554']);
+  // A name no device answers to is not handed to adb as a serial: the watch is skipped, and
+  // the device rung says what matched.
+  watched.length = 0;
+  await run('Pixel 9').catch(() => {});
+  assert.deepStrictEqual(watched, []);
+});
