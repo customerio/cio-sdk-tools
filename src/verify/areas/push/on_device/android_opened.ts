@@ -74,17 +74,20 @@ export async function tapAndroidPush(
   handle?.phase('reading what the SDK did with the tap');
   // Without a link the open is the end of the sequence.
   const linkSent = Boolean(options.tap.link);
-  await waitFor(
-    () =>
-      seen(ANDROID_OPENED_MARKERS.skippedNoId) ||
-      seen(ANDROID_OPENED_MARKERS.failedClick) ||
-      seen(ANDROID_OPENED_MARKERS.linkUnhandled) ||
-      (seen(ANDROID_OPENED_MARKERS.tracked) &&
-        (!linkSent ||
-          seen(ANDROID_OPENED_MARKERS.linkHandled) ||
-          seen(ANDROID_OPENED_MARKERS.linkFellBack))),
-    TAP_SEQUENCE_TIMEOUT_MS
-  );
+  // Without a log capture none of these lines can appear, so nothing is waited for.
+  if (capture.available) {
+    await waitFor(
+      () =>
+        seen(ANDROID_OPENED_MARKERS.skippedNoId) ||
+        seen(ANDROID_OPENED_MARKERS.failedClick) ||
+        seen(ANDROID_OPENED_MARKERS.linkUnhandled) ||
+        (seen(ANDROID_OPENED_MARKERS.tracked) &&
+          (!linkSent ||
+            seen(ANDROID_OPENED_MARKERS.linkHandled) ||
+            seen(ANDROID_OPENED_MARKERS.linkFellBack))),
+      TAP_SEQUENCE_TIMEOUT_MS
+    );
+  }
 
   const lines = since();
   const tracked = seen(ANDROID_OPENED_MARKERS.tracked);
