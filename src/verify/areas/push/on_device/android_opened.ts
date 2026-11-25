@@ -167,6 +167,7 @@ export async function tapAndroidPush(
         linkAttempted,
         linkHandled: seen(ANDROID_OPENED_MARKERS.linkHandled),
         linkUnhandled: seen(ANDROID_OPENED_MARKERS.linkUnhandled),
+        linkFellBack: seen(ANDROID_OPENED_MARKERS.linkFellBack),
       }),
       tracked,
       foreign: false,
@@ -196,6 +197,8 @@ export function androidClicked(seen: {
   linkAttempted: boolean;
   linkHandled: boolean;
   linkUnhandled: boolean;
+  /** The SDK opened the app's main screen because nothing could open the link. */
+  linkFellBack: boolean;
 }): boolean {
   return (
     seen.tracked ||
@@ -203,7 +206,8 @@ export function androidClicked(seen: {
     seen.failed ||
     seen.linkAttempted ||
     seen.linkHandled ||
-    seen.linkUnhandled
+    seen.linkUnhandled ||
+    seen.linkFellBack
   );
 }
 

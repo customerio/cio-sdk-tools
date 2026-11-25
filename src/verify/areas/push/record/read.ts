@@ -174,7 +174,9 @@ export async function awaitRecord(
     best = furthest([...latest.values()]);
     const settled =
       best !== undefined &&
-      (best.failed !== undefined ||
+      // A refusal is final only once every send has a record: a re-send whose record has
+      // not landed yet (a 404) may still be delivered.
+      ((best.failed !== undefined && latest.size === ids.length) ||
         ((!wait.delivered || best.delivered !== undefined) &&
           (!wait.opened || best.opened !== undefined)));
     const waitedMs = Date.now() - startedAt;

@@ -11,6 +11,7 @@ const nothing = {
   linkAttempted: false,
   linkHandled: false,
   linkUnhandled: false,
+  linkFellBack: false,
 };
 
 test('what the SDK says about the deep link is evidence that the click reached it', () => {
@@ -42,4 +43,14 @@ test('deep-link lines with no opened line are a tap the SDK saw, not one it did 
       linkOutcome: { verdict: 'fail', cause: 'runtime.deep_link_not_handled' },
     }
   );
+});
+
+test("a tap whose only line is the SDK's fallback to the app's main screen is a click", () => {
+  const { androidClicked } = require('../../dist/verify/areas/push/on_device/android_opened');
+  const none = {
+    tracked: false, emptyId: false, failed: false,
+    linkAttempted: false, linkHandled: false, linkUnhandled: false, linkFellBack: false,
+  };
+  assert.strictEqual(androidClicked(none), false);
+  assert.strictEqual(androidClicked({ ...none, linkFellBack: true }), true);
 });
