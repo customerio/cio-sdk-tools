@@ -314,3 +314,19 @@ test('a device found in another workspace is the one cause, not beside a stale-t
   );
   assert.deepStrictEqual(linkFindings([notLinked], undefined), [notLinked]);
 });
+
+test('an init at launch passes, and a leftover call elsewhere is a warning beside it', () => {
+  const { initializationChecks } = require('../../dist/verify/areas/push/registration/project_wiring');
+  const site = (runsAtLaunch, scope) => ({ file: 'App.swift', line: 3, scope, runsAtLaunch });
+  const both = initializationChecks({ files: 2, initSites: [site(true, 'AppDelegate'), site(false, 'ContentView.body')] });
+  assert.deepStrictEqual(
+    both.map((check) => [check.id, check.verdict, check.cause]),
+    [
+      ['init_at_launch', 'pass', undefined],
+      ['init_outside_launch', 'warn', 'wiring.init_also_outside_launch'],
+    ]
+  );
+  // Only outside launch is still the blocker.
+  const only = initializationChecks({ files: 1, initSites: [site(false, 'ContentView.body')] });
+  assert.deepStrictEqual(only.map((check) => check.cause), ['wiring.init_not_at_launch']);
+});

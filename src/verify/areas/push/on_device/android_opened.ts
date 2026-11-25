@@ -54,17 +54,22 @@ export async function tapAndroidPush(
   if (shot) evidence.push(`screen at the prompt: ${shot}`);
 
   options.reporter?.pause();
-  const answer = await options.tap.asker.askTap(
-    [
-      `Tap the "${push.title}" notification on ${
-        options.deviceName ?? options.serial
-      }.`,
-      'If the banner has gone, pull down the notification shade to find it.',
-      'The app may not visibly change — the verdict comes from the log, not the screen.',
-    ].join('\n  '),
-    { timeoutMs: options.tap.tapTimeoutMs ?? TAP_TIMEOUT_MS }
-  );
-  options.reporter?.resume();
+  let answer: Awaited<ReturnType<typeof options.tap.asker.askTap>>;
+  try {
+    answer = await options.tap.asker.askTap(
+      [
+        `Tap the "${push.title}" notification on ${
+          options.deviceName ?? options.serial
+        }.`,
+        'If the banner has gone, pull down the notification shade to find it.',
+        'The app may not visibly change — the verdict comes from the log, not the screen.',
+      ].join('\n  '),
+      { timeoutMs: options.tap.tapTimeoutMs ?? TAP_TIMEOUT_MS }
+    );
+  } finally {
+    // The spinner comes back whatever the prompt did, or later cells print nothing.
+    options.reporter?.resume();
+  }
   if (answer !== 'tapped') {
     return untappedCell(state, answer, evidence, push.arrivalSeen);
   }
