@@ -262,8 +262,9 @@ async function readAppliedScripts(
   );
   const out: string[] = [];
   for (const text of module) {
+    // Groovy `apply from: "…"` and Kotlin `apply(from = "…")`.
     for (const match of text.matchAll(
-      /apply\s+from:?\s*\(?["']([^"']+)["']/g
+      /apply\s*(?:\(\s*)?from\s*[:=]?\s*\(?["']([^"']+)["']/g
     )) {
       // `apply from: "${rootDir}/samples/sample-app.gradle"` is how a sample app inherits
       // its SDK dependencies, so the usual root variables have to be substituted or the
@@ -395,8 +396,9 @@ export function gradleSdkVersion(gradle: string): string | undefined {
   if (coordinate?.[1]) return coordinate[1];
   if (coordinate?.[2]) {
     const name = coordinate[2].split('.').pop() ?? '';
+    // gradle.properties writes `name=4.5.0` with no quotes; a build script quotes it.
     const assigned = gradle.match(
-      new RegExp(`\\b${name}\\s*=\\s*["'](\\d+\\.\\d+\\.\\d+)["']`)
+      new RegExp(`\\b${name}\\s*=\\s*["']?(\\d+\\.\\d+\\.\\d+)\\b`)
     );
     if (assigned) return assigned[1];
   }
@@ -787,6 +789,10 @@ async function findOutputMetadata(
   const found: string[] = [];
   for (const entry of entries) {
     const full = path.join(directory, entry.name);
+    // `apk/androidTest/` holds the instrumentation APK, which is not the app.
+    if (entry.isDirectory() && depth === 0 && entry.name === 'androidTest') {
+      continue;
+    }
     if (entry.isDirectory()) {
       found.push(...(await findOutputMetadata(full, depth + 1)));
     } else if (entry.name === 'output-metadata.json') {

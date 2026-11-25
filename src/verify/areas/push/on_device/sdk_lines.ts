@@ -292,6 +292,25 @@ export function extensionHandled(
   return deliveryIdsIn(own).some((id) => ids.includes(id));
 }
 
+/**
+ * The extension ran for one of these deliveries, as far as its lines can say. A line naming
+ * one of the ids settles it. Lines that name only other ids are a late earlier push: the
+ * same build logs every push the same way, so this one's run would name its own id too.
+ * Lines that name no id at all cannot be told apart, and count, as does any activity when
+ * the send returned no id.
+ */
+export function extensionRanFor(
+  lines: LogLine[],
+  extensionName: string | undefined,
+  ids: string[]
+): boolean {
+  const own = lines.filter((line) => extensionRanIn([line], extensionName));
+  if (own.length === 0) return false;
+  if (ids.length === 0) return true;
+  const named = deliveryIdsIn(own);
+  return named.length === 0 || named.some((id) => ids.includes(id));
+}
+
 /** Delivery ids are base64url with a `dgS_` prefix — a charset without `_` and `-` misses. */
 export function deliveryIdsIn(lines: LogLine[]): string[] {
   const ids = new Set<string>();
