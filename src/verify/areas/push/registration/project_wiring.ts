@@ -290,7 +290,7 @@ async function sdkPresenceCheck(
  * handles delivery and never runs that code. A native call, which Expo's plugin writes, is
  * judged as in a native app.
  */
-function initializationChecks(
+export function initializationChecks(
   signals: SourceSignals,
   wrapper?: WrapperSdk
 ): Check[] {
@@ -331,7 +331,30 @@ function initializationChecks(
       `${site.file}:${site.line} in ${site.scope} (runs at launch: ${site.runsAtLaunch})`
   );
 
-  if (signals.initSites.some((site) => site.runsAtLaunch === false)) {
+  const atLaunch = signals.initSites.some((site) => site.runsAtLaunch === true);
+  const elsewhere = signals.initSites.filter(
+    (site) => site.runsAtLaunch === false
+  );
+  // A call at launch is what a push needs, as on Android. A leftover call elsewhere (a
+  // SwiftUI body re-runs on every redraw) is worth saying, and does not undo it.
+  if (atLaunch) {
+    return [
+      pass('init_at_launch', 'CustomerIO.initialize runs at launch', evidence),
+      ...(elsewhere.length > 0
+        ? [
+            warn(
+              'init_outside_launch',
+              'CustomerIO.initialize is called only at launch',
+              'wiring.init_also_outside_launch',
+              elsewhere.map(
+                (site) => `${site.file}:${site.line} in ${site.scope}`
+              )
+            ),
+          ]
+        : []),
+    ];
+  }
+  if (elsewhere.length > 0) {
     return [
       fail(
         'init_at_launch',
@@ -339,11 +362,6 @@ function initializationChecks(
         'wiring.init_not_at_launch',
         evidence
       ),
-    ];
-  }
-  if (signals.initSites.some((site) => site.runsAtLaunch === true)) {
-    return [
-      pass('init_at_launch', 'CustomerIO.initialize runs at launch', evidence),
     ];
   }
   return [

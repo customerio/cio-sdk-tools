@@ -36,6 +36,15 @@ export const CAUSES: Record<string, PushCause> = {
       "Initialize the SDK when the app starts: from the app delegate launch method on iOS, from Application.onCreate on Android, or from the app's startup code in React Native, Expo and Flutter. Without it the SDK never registers for push and never reports a metric.",
     docs: SDK_DOCS,
   },
+  'wiring.init_also_outside_launch': {
+    stage: 'project_wiring',
+    severity: 'warning',
+    summary:
+      'CustomerIO.initialize runs at launch, and is also called somewhere that runs again later, such as a SwiftUI view body.',
+    remedy:
+      'Keep the call at launch and remove the other one. A view body is re-evaluated on every redraw, so the SDK is initialized again each time.',
+    docs: SDK_DOCS,
+  },
   'wiring.init_not_at_launch': {
     stage: 'project_wiring',
     severity: 'blocker',
