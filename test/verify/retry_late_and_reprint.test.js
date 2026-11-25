@@ -99,3 +99,22 @@ test("a late earlier push's extension lines do not count as this push's extensio
   // No id from the send: any extension activity, as before.
   assert.strictEqual(extensionRanFor([leftover], 'NotificationService', []), true);
 });
+
+test('a deep-link outcome line is a click the SDK received, even with its click line lost', () => {
+  const { observeOpened } = require('../../dist/verify/areas/push/on_device/opened');
+  const outcomes = {
+    linkHandled: '[Push] Deep link handled by host app callback implementation',
+    linkUnhandled: '[Push] Deep link was not handled',
+    linkBySystem: '[Push] Deep link handled by system',
+  };
+  for (const [key, line] of Object.entries(outcomes)) {
+    const { observed } = observeOpened([line]);
+    assert.strictEqual(observed[key], true, `fixture for ${key}`);
+    assert.strictEqual(observed.clicked, true, key);
+    assert.notStrictEqual(
+      judgeOpened({ available: true, lossy: false, ...observed, linkSent: true }).cause,
+      'runtime.tap_not_seen',
+      key
+    );
+  }
+});

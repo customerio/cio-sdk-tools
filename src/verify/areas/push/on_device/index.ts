@@ -638,7 +638,7 @@ async function runCellBody(
     title,
     retryTitle: retried?.title,
     deliveryId,
-    arrived: stored ? true : undefined,
+    arrived: stored || handled ? true : undefined,
     ...judge({
       localProbe,
       available: capture.available,
@@ -661,7 +661,8 @@ async function runCellBody(
   ) {
     cell.detail = `restart it: ${restartSimulator(options.target.udid)}`;
   }
-  if (stored === false) {
+  // A push the extension handled arrived, though the store never kept it: it can be tapped.
+  if (stored === false && !handled) {
     return {
       cell,
       noPush: 'the push never arrived, so nobody was asked to tap it',

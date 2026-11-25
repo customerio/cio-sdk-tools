@@ -296,3 +296,21 @@ test("an unreadable container does not hide the SDK's own word that it holds no 
   const silent = deviceReady({ ...facts, stateLine: undefined }, 'io.example.app');
   assert.deepStrictEqual(causes(silent), ['device.container_unreadable']);
 });
+
+test('a device found in another workspace is the one cause, not beside a stale-token blocker', () => {
+  const { linkFindings, elsewhereCheck } = require('../../dist/verify/areas/push/registration/profile_linked');
+  const notLinked = { id: 'device_linked', verdict: 'fail', label: 'x', cause: 'profile.token_not_linked', evidence: [] };
+  const other = { id: 'other', verdict: 'pass', label: 'y', evidence: [] };
+  const holder = elsewhereCheck(false, [{ workspace: { id: '9', name: 'Staging' }, hasToken: true }]);
+  assert.deepStrictEqual(
+    linkFindings([notLinked, other], holder).map((c) => c.cause ?? c.id),
+    ['other', 'profile.device_in_other_workspace']
+  );
+  // An identity elsewhere without this device explains nothing, so the link failure stays.
+  const identity = elsewhereCheck(false, [{ workspace: { id: '9' }, hasToken: false }]);
+  assert.deepStrictEqual(
+    linkFindings([notLinked], identity).map((c) => c.cause),
+    ['profile.token_not_linked', 'profile.identity_also_elsewhere']
+  );
+  assert.deepStrictEqual(linkFindings([notLinked], undefined), [notLinked]);
+});
