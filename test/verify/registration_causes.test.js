@@ -278,3 +278,21 @@ test('an identity found here and elsewhere, without this device, does not say it
   assert.strictEqual(elsewhereCheck(false, [{ ...other, hasToken: true }]).cause, 'profile.device_in_other_workspace');
   assert.strictEqual(elsewhereCheck(true, [other]), undefined);
 });
+
+test("an unreadable container does not hide the SDK's own word that it holds no token", () => {
+  const { deviceReady } = require('../../dist/verify/areas/push/registration/device_ready');
+  const facts = {
+    target: { kind: 'simulator', name: 'iPhone 16', udid: 'U1', state: 'booted' },
+    usable: [],
+    ambiguous: [],
+    installed: true,
+    containerError: 'container copy failed',
+    stateLine: { noToken: true },
+  };
+  const rung = deviceReady(facts, 'io.example.app');
+  assert.ok(causes(rung).includes('device.token_unregistered'), causes(rung).join());
+  assert.strictEqual(Ladder.verdictOf(rung), 'fail');
+  // With nothing said either way, the unreadable container stays a warning.
+  const silent = deviceReady({ ...facts, stateLine: undefined }, 'io.example.app');
+  assert.deepStrictEqual(causes(silent), ['device.container_unreadable']);
+});
