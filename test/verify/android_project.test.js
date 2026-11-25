@@ -285,3 +285,19 @@ test('a commented-out pin above the live one is not read as the SDK version', ()
     '4.7.0'
   );
 });
+
+test('a pin set on a qualified extra property is read', () => {
+  assert.strictEqual(
+    gradleSdkVersion('rootProject.ext.cioVersion = "4.8.0"\nimplementation "io.customer.android:datapipelines:${cioVersion}"'),
+    '4.8.0'
+  );
+  assert.strictEqual(
+    gradleSdkVersion("project.ext.cioVersion = '4.8.1'\nimplementation \"io.customer.android:datapipelines:$cioVersion\""),
+    '4.8.1'
+  );
+  // Still not from a comment.
+  assert.strictEqual(
+    gradleSdkVersion('// rootProject.ext.cioVersion = "4.0.0"\nimplementation "io.customer.android:datapipelines:${cioVersion}"'),
+    undefined
+  );
+});
