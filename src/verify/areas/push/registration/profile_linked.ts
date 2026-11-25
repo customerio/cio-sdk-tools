@@ -197,12 +197,14 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
     ])
   );
 
-  rung.checks.push(...deviceLinkChecks(profile, input));
-
   // The profile is here and the device is not. If the device is on the same identity in
   // another workspace, that is the explanation, and it outranks "the token is stale".
-  const sweepCheck = elsewhereCheck(linked, hits);
-  if (sweepCheck) rung.checks.push(sweepCheck);
+  rung.checks.push(
+    ...linkFindings(
+      deviceLinkChecks(profile, input),
+      elsewhereCheck(linked, hits)
+    )
+  );
   const holder = hits.find((hit) => hit.hasToken);
 
   const devices = profile?.devices?.length ?? 0;
@@ -224,6 +226,29 @@ async function sweep(
     skip: input.environmentId,
     onProgress: input.onSweep,
   });
+}
+
+/** The link failures a device found in another workspace explains. */
+const EXPLAINED_BY_ELSEWHERE = [
+  'profile.no_device_linked',
+  'profile.token_not_linked',
+];
+
+/**
+ * The device-link checks and the sweep's finding, as one account. A device found in another
+ * workspace is the explanation, so the link failures it explains are not reported beside it
+ * with their own, conflicting remedies. Exported for tests.
+ */
+export function linkFindings(linkChecks: Check[], sweep?: Check): Check[] {
+  if (sweep?.cause !== 'profile.device_in_other_workspace') {
+    return sweep ? [...linkChecks, sweep] : linkChecks;
+  }
+  return [
+    ...linkChecks.filter(
+      (check) => !EXPLAINED_BY_ELSEWHERE.includes(check.cause ?? '')
+    ),
+    sweep,
+  ];
 }
 
 /**

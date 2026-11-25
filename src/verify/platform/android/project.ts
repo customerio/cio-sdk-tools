@@ -396,9 +396,13 @@ export function gradleSdkVersion(gradle: string): string | undefined {
   if (coordinate?.[1]) return coordinate[1];
   if (coordinate?.[2]) {
     const name = coordinate[2].split('.').pop() ?? '';
-    // gradle.properties writes `name=4.5.0` with no quotes; a build script quotes it.
+    // gradle.properties writes `name=4.5.0` with no quotes; a build script quotes it. The
+    // assignment starts its line, so a commented-out pin (`#`, `//`) is not read.
     const assigned = gradle.match(
-      new RegExp(`\\b${name}\\s*=\\s*["']?(\\d+\\.\\d+\\.\\d+)\\b`)
+      new RegExp(
+        `^\\s*(?:(?:def|val|var)\\s+|ext\\.)?${name}\\s*=\\s*["']?(\\d+\\.\\d+\\.\\d+)\\b`,
+        'm'
+      )
     );
     if (assigned) return assigned[1];
   }
