@@ -309,16 +309,24 @@ export async function markLateArrivals(
   for (const cell of cells) {
     // A push the store already held during its cell was on time; what went wrong is
     // something else, and calling it late hid that.
-    if (
-      !cell.title ||
-      !cell.cause ||
-      !NOT_SEEN.includes(cell.cause) ||
-      cell.arrived
-    ) {
+    // A rate-limited re-send keeps the first push's title: that push was accepted, and it
+    // is the one that may still arrive.
+    const unseen =
+      cell.cause !== undefined &&
+      (NOT_SEEN.includes(cell.cause) || cell.cause === RATE_LIMITED_CAUSE);
+    if (!cell.title || !unseen || cell.arrived) {
       out.push(cell);
       continue;
     }
-    if (!(await arrivedLate(cell.title))) {
+    // Either of a re-sent state's two pushes arriving is late delivery.
+    let lateTitle: string | undefined;
+    for (const candidate of [cell.title, cell.retryTitle]) {
+      if (candidate && (await arrivedLate(candidate))) {
+        lateTitle = candidate;
+        break;
+      }
+    }
+    if (!lateTitle) {
       out.push(cell);
       continue;
     }
@@ -329,7 +337,7 @@ export async function markLateArrivals(
       summary: undefined,
       evidence: [
         ...cell.evidence,
-        `"${cell.title}" was on the target when the run ended, so it arrived after this cell stopped waiting (was: ${cell.cause})`,
+        `"${lateTitle}" was on the target when the run ended, so it arrived after this cell stopped waiting (was: ${cell.cause})`,
       ],
     };
     reporter?.cell(`${cell.state}, late`).done(late);

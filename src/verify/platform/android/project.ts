@@ -774,7 +774,7 @@ async function findOutputMetadata(
   directory: string,
   depth: number
 ): Promise<string[]> {
-  if (depth > 2) return [];
+  if (depth > 4) return [];
   const entries = await fs
     .readdir(directory, { withFileTypes: true })
     .catch(() => []);

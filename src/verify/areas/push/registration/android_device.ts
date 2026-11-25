@@ -22,6 +22,8 @@ import { RUNG_TITLES } from '../types';
 export interface AndroidDeviceFacts {
   target?: AndroidTarget;
   usable: AndroidTarget[];
+  /** Usable targets a `--device` model name matched, when it matched more than one. */
+  ambiguous?: AndroidTarget[];
   selector?: string;
   installed: boolean;
   stopped?: boolean;
@@ -49,11 +51,15 @@ export async function gatherAndroidDevice(options: {
   readStateLine?: (target: AndroidTarget) => Promise<SdkStateLine | undefined>;
 }): Promise<AndroidDeviceFacts> {
   const targets = await listAndroidTargets();
-  const { target, usable } = selectAndroidTarget(targets, options.selector);
+  const { target, usable, ambiguous } = selectAndroidTarget(
+    targets,
+    options.selector
+  );
 
   const facts: AndroidDeviceFacts = {
     target,
     usable,
+    ambiguous,
     selector: options.selector,
     installed: false,
     sdkVersion: options.sdkVersion,
@@ -150,7 +156,9 @@ export function androidDeviceReady(
     if (facts.selector) {
       rung.checks.push(
         fail('target_available', 'Target is usable', 'device.not_available', [
-          `--device ${facts.selector} matched no connected device or running emulator`,
+          facts.ambiguous && facts.ambiguous.length > 1
+            ? `--device ${facts.selector} names ${facts.ambiguous.length} running targets; pass one's serial`
+            : `--device ${facts.selector} matched no connected device or running emulator`,
           ...facts.usable.map((t) => `available: ${describeAndroidTarget(t)}`),
         ])
       );
@@ -196,7 +204,17 @@ export function androidDeviceReady(
   rung.checks.push(permissionCheck(facts, packageName));
   const stopped = stoppedCheck(facts, sending);
   if (stopped) rung.checks.push(stopped);
-  if (facts.sdk?.notDebuggable) {
+  if (facts.sdk?.notDebuggable && facts.sdk.deviceToken) {
+    // A token the person gave lets the run go on, the way it does on iOS without a container.
+    rung.checks.push(
+      warn(
+        'sdk_state_readable',
+        "SDK's stored state is readable",
+        'device.build_not_debuggable_token_given',
+        [facts.sdk.error ?? 'run-as refused the package']
+      )
+    );
+  } else if (facts.sdk?.notDebuggable) {
     // Nothing was read, so a missing token and a missing profile would both be guesses.
     rung.checks.push(
       fail(

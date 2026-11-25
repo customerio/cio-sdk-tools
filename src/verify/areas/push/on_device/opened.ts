@@ -676,7 +676,13 @@ function judgeLink(observed: Parameters<typeof judgeOpened>[0]): LinkOutcome {
   if (observed.linkAttempted && !observed.linkHandled) {
     return { verdict: 'warn', cause: 'runtime.deep_link_outcome_unseen' };
   }
-  if (!observed.linkAttempted) {
+  // Absent only when no line about the link exists: an outcome line shows it was followed,
+  // whatever happened to the line that starts it.
+  if (
+    !observed.linkAttempted &&
+    !observed.linkHandled &&
+    !observed.linkBySystem
+  ) {
     return { verdict: 'warn', cause: 'runtime.deep_link_absent' };
   }
   // Nothing in the app claimed the link, and iOS opened the app with it again: whether the

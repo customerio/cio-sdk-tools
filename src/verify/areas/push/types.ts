@@ -52,6 +52,8 @@ export interface MatrixCell extends Cell {
    * any arrived. A recorded open settles the open and leaves this to stand.
    */
   linkOutcome?: { verdict: Verdict; cause?: string };
+  /** After a re-send: the second push's title, which can also turn up after the cell. */
+  retryTitle?: string;
 }
 
 /**
