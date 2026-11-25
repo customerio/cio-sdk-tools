@@ -188,6 +188,23 @@ export const CAUSES: Record<string, PushCause> = {
       'Add <uses-permission android:name="android.permission.POST_NOTIFICATIONS" /> and request it at runtime. Deliveries are still counted without it; nothing is ever displayed.',
     docs: ANDROID_PUSH_DOCS,
   },
+  'wiring.nse_sources_unscoped': {
+    stage: 'project_wiring',
+    severity: 'warning',
+    summary:
+      "The extension's sources could not be told apart from the app's, so forwarding and the App Group were not checked.",
+    remedy:
+      "Keep the extension's Swift files in the folder that holds its Info.plist, as Xcode's template does. The on-device run still proves delivery end to end.",
+  },
+  'wiring.post_notifications_not_yet_required': {
+    stage: 'project_wiring',
+    severity: 'warning',
+    summary:
+      'The manifest does not declare POST_NOTIFICATIONS. This build targets an Android version below 13, or one that could not be read, so notifications still show.',
+    remedy:
+      'Add <uses-permission android:name="android.permission.POST_NOTIFICATIONS" /> and request it at runtime before targetSdk reaches 33. From then on nothing is displayed without it.',
+    docs: ANDROID_PUSH_DOCS,
+  },
   'wiring.fcm_service_does_not_forward': {
     stage: 'project_wiring',
     severity: 'warning',
@@ -327,6 +344,14 @@ export const CAUSES: Record<string, PushCause> = {
     remedy:
       "The profile and the SDK's own stores stay unchecked. Install a debug build, or set debuggable true on this build type, to check them.",
   },
+  'device.entitlements_unread': {
+    stage: 'device_ready',
+    severity: 'warning',
+    summary:
+      "The installed build's entitlements could not be read, so whether it can register for push is unchecked.",
+    remedy:
+      'A simulator build signed to run locally carries its entitlements in the binary. Rebuild with code signing on, and check that the app target has the Push Notifications capability.',
+  },
   'device.not_available': {
     stage: 'device_ready',
     severity: 'blocker',
@@ -403,6 +428,14 @@ export const CAUSES: Record<string, PushCause> = {
       'The identity this app logged in as exists in a different workspace.',
     remedy:
       "Either the app is using another workspace's CDP API key, or this login happened against a different environment. Compare the key in CustomerIO.initialize with the workspace you picked.",
+  },
+  'profile.identity_also_elsewhere': {
+    stage: 'profile_linked',
+    severity: 'warning',
+    summary:
+      'The identity is in the chosen workspace and also in another one. This device is linked in neither.',
+    remedy:
+      'The app has reported this login to more than one workspace, at some point. The device link is the problem to solve here: the checks above say why it is missing.',
   },
   'profile.lookup_failed': {
     stage: 'profile_linked',

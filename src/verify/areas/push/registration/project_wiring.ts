@@ -174,11 +174,28 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
   let nseKey: KeyLiteral | undefined;
   if (nse) {
     const nseSources = await nseSourcesFor(model, nse, sources);
-    rung.checks.push(forwardingCheck(nseSources));
-    rung.checks.push(
-      await appGroupCheck(model, app, nse, nseSources, sdkVersion?.version)
-    );
-    nseKey = extensionKey(nseSources, sources);
+    if (nseSources) {
+      rung.checks.push(forwardingCheck(nseSources));
+      rung.checks.push(
+        await appGroupCheck(model, app, nse, nseSources, sdkVersion?.version)
+      );
+    } else {
+      rung.checks.push(
+        warn(
+          'nse_sources',
+          "Extension's own sources are found",
+          'wiring.nse_sources_unscoped',
+          [
+            nse.settings.INFOPLIST_FILE
+              ? `no Swift source sits beside ${nse.settings.INFOPLIST_FILE}`
+              : 'the extension target sets no INFOPLIST_FILE',
+            'forwarding and App Group were not checked',
+          ]
+        )
+      );
+    }
+    // The extension's builder call is its own, so every source is safe to search for it.
+    nseKey = extensionKey(nseSources ?? sources, sources);
   } else {
     rung.checks.push(
       skipped(
@@ -496,18 +513,19 @@ async function nseChecksFor(
  * extension never makes. Its directory is inferred from the Info.plist location, which is
  * where Xcode and every template put it.
  */
-async function nseSourcesFor(
+export async function nseSourcesFor(
   model: XcodeProjectModel,
   nse: Target,
   allSources: SwiftFile[]
-): Promise<SwiftFile[]> {
+): Promise<SwiftFile[] | undefined> {
   const plist = absolutePath(model.projectPath, nse.settings.INFOPLIST_FILE);
-  if (!plist) return allSources;
+  if (!plist) return undefined;
   const directory = path.dirname(plist);
   const scoped = allSources.filter((file) =>
     file.absolutePath.startsWith(`${directory}${path.sep}`)
   );
-  return scoped.length > 0 ? scoped : allSources;
+  // Every source would let the app's own code answer for the extension's.
+  return scoped.length > 0 ? scoped : undefined;
 }
 
 function forwardingCheck(nseSources: SwiftFile[]): Check {

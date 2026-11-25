@@ -52,3 +52,28 @@ test('a deep link whose outcome line arrived was followed, even with its start l
   assert.deepStrictEqual(judgeOpened(tapped), { verdict: 'pass' });
   assert.strictEqual(judgeOpened({ ...tapped, linkHandled: false }).cause, 'runtime.deep_link_absent');
 });
+
+test('a click the SDK refused for an empty delivery id fails as that, and is not a tap that never arrived', () => {
+  const { observeOpened } = require('../../dist/verify/areas/push/on_device/opened');
+  const { observed } = observeOpened(['Clicked message with empty deliveryId']);
+  assert.strictEqual(observed.clicked, true);
+  assert.deepStrictEqual(judgeOpened({ available: true, ...observed, linkSent: false }), {
+    verdict: 'fail',
+    cause: 'runtime.opened_without_delivery_id',
+  });
+});
+
+test("only the extension's lines for this delivery say this push arrived; a late earlier push's do not", () => {
+  const { extensionHandled, extensionRanIn } = require('../../dist/verify/areas/push/on_device/sdk_lines');
+  const line = (id) => ({ at: '', process: 'NotificationService', message: `[CIO] [Push] tracking delivered for ${id}` });
+  const ours = 'dgS_ours12345678';
+  const leftover = [line('dgS_older1234567')];
+  assert.ok(extensionRanIn(leftover, 'NotificationService'), 'the fixture is extension activity');
+  assert.strictEqual(extensionHandled(leftover, 'NotificationService', [ours]), false);
+  assert.strictEqual(extensionHandled([...leftover, line(ours)], 'NotificationService', [ours]), true);
+  // A line from the app's own process naming the id is not the extension handling it.
+  assert.strictEqual(
+    extensionHandled([{ at: '', process: 'App', message: `[CIO] opened ${ours}` }], 'NotificationService', [ours]),
+    false
+  );
+});

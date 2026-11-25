@@ -267,16 +267,18 @@ export function deviceReady(facts: DeviceFacts, bundleId?: string): Rung {
   return rung;
 }
 
-function installedBuildCheck(facts: DeviceFacts): Check | undefined {
+export function installedBuildCheck(facts: DeviceFacts): Check | undefined {
   // Only a simulator's bundle is readable from here. A phone's entitlements live in its
   // signature, inside a bundle this tool never has a copy of.
   if (!facts.appPath) return undefined;
 
   if (!facts.entitlements) {
-    return skipped(
+    // Unknown is said out loud: a build that cannot register for push looks the same here.
+    return warn(
       'installed_build_push_capable',
       'Installed build can register for push',
-      'the installed binary carries no entitlements section to read'
+      'device.entitlements_unread',
+      ['the installed binary carries no entitlements section to read']
     );
   }
 
