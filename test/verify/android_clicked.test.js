@@ -50,3 +50,24 @@ test("a tap whose only line is the SDK's fallback to the app's main screen is a 
   assert.strictEqual(androidClicked(none), false);
   assert.strictEqual(androidClicked({ ...none, linkFellBack: true }), true);
 });
+
+test('the spinner comes back when the Android tap prompt throws', async () => {
+  const { tapAndroidPush } = require('../../dist/verify/areas/push/on_device/android_opened');
+  let resumed = 0;
+  const reporter = { pause() {}, resume() { resumed += 1; } };
+  const capture = { available: false, unavailableReason: 'test', mark: () => 0, since: () => [], lines: [] };
+  await assert.rejects(
+    tapAndroidPush(
+      'background',
+      { title: 'cio verify · background', mark: 0, arrivalSeen: true },
+      {
+        serial: 'NO-SUCH-SERIAL',
+        tap: { states: ['background'], asker: { askTap: async () => { throw new Error('stdin closed'); } } },
+        reporter,
+      },
+      capture
+    ),
+    /stdin closed/
+  );
+  assert.strictEqual(resumed, 1);
+});
