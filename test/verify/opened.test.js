@@ -861,3 +861,16 @@ test("Customer.io's record of the open settles what the phone's log could not", 
   assert.strictEqual(unread.verdict, 'skip');
   assert.match(unread.evidence.at(-1), /not read: the send returned no delivery id/);
 });
+
+test("an iOS tap whose only line is the link's failure keeps that failure once Customer.io records the open", () => {
+  const { withRecordedOpen } = require('../../dist/verify/areas/push/record');
+  const { observed } = observeOpened(['[Push] Deep link was not handled']);
+  const judged = judgeOpened({ available: true, lossy: true, ...observed, linkSent: true });
+  assert.deepStrictEqual(judged.linkOutcome, { verdict: 'fail', cause: 'runtime.deep_link_not_handled' });
+  const settled = withRecordedOpen(
+    { state: 'background', evidence: [], ...judged },
+    { answer: 'opened', deliveryId: 'dgS_ug', at: 1791983000 },
+    true
+  );
+  assert.deepStrictEqual([settled.verdict, settled.cause], ['fail', 'runtime.deep_link_not_handled']);
+});
