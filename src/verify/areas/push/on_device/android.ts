@@ -35,6 +35,16 @@ import { PushMatrices, Sends, completeTaps, noteSend } from '.';
 import { SentPush, TapPlan, notTappedCell } from './opened';
 import { tapAndroidPush } from './android_opened';
 
+/** What the cells of one run have learned between them. */
+interface Known {
+  /** Some push of this run was seen in the notification list. */
+  listed: boolean;
+  /** Titles the list held before a cell's staging cleared the app's notifications. */
+  postedBefore: Set<string>;
+  /** Cells started so far. */
+  cells: number;
+}
+
 export interface AndroidMatrixOptions {
   dryRun?: boolean;
   /** The native SDK's version, as the project resolved it. */
@@ -90,10 +100,20 @@ export async function runAndroidDeliveredMatrix(
   try {
     if (capture.available) await sleep(1_500);
     const seenIds = new Set<string>();
-    const known = { listed: false };
+    const known: Known = { listed: false, postedBefore: new Set(), cells: 0 };
     section.cells = await eachState(
       states,
-      (state) => runCell(state, options, capture, seenIds, known, tapped),
+      async (state) => {
+        // Staging a state starts with `am force-stop`, which cancels the app's
+        // notifications. A push an earlier cell stopped waiting for may have appeared since,
+        // so the list is read once more before it is cleared.
+        if (known.cells++ > 0) {
+          for (const title of await postedTitles(options.serial)) {
+            known.postedBefore.add(title);
+          }
+        }
+        return runCell(state, options, capture, seenIds, known, tapped);
+      },
       { pauseMs: 5_000, reporter: options.reporter }
     );
     // One dumpsys lists every posted notification, so it is read once, and only if a cell
@@ -102,6 +122,7 @@ export async function runAndroidDeliveredMatrix(
     section.cells = await markLateArrivals(
       section.cells,
       async (title) =>
+        known.postedBefore.has(title) ||
         (posted ??= await postedTitles(options.serial)).includes(title),
       options.reporter
     );
@@ -154,7 +175,7 @@ async function runCell(
   options: AndroidMatrixOptions,
   capture: LogCapture,
   seenIds: Set<string>,
-  known: { listed: boolean },
+  known: Known,
   tapped: MatrixCell[]
 ): Promise<MatrixCell> {
   const handle = options.reporter?.cell(state);
@@ -204,7 +225,7 @@ async function runCellBody(
   options: AndroidMatrixOptions,
   capture: LogCapture,
   seenIds: Set<string>,
-  known: { listed: boolean },
+  known: Known,
   sends: Sends,
   handle?: CellHandle
 ): Promise<{ cell: MatrixCell; push?: SentPush; noPush?: string }> {
@@ -288,17 +309,25 @@ async function runCellBody(
   handle?.phase('waiting for the push to arrive');
   let listed = false;
   const deadline = Date.now() + timeout;
-  for (;;) {
-    const now = messages();
-    if (!listed) listed = (await postedTitles(options.serial)).includes(title);
-    if (
-      sdkReceived(now, title, listed || shownBySdk(now, title)).received &&
-      (listed || shownBySdk(now, title))
-    ) {
-      break;
+  if (capture.available) {
+    for (;;) {
+      const now = messages();
+      if (!listed) {
+        listed = (await postedTitles(options.serial)).includes(title);
+      }
+      if (
+        sdkReceived(now, title, listed || shownBySdk(now, title)).received &&
+        (listed || shownBySdk(now, title))
+      ) {
+        break;
+      }
+      if (Date.now() >= deadline) break;
+      await sleep(1_500);
     }
-    if (Date.now() >= deadline) break;
-    await sleep(1_500);
+  } else {
+    // No line can arrive, and the cell is judged a skip whatever the list shows: one read
+    // of the list keeps the evidence and the late-arrival record, and nothing is waited for.
+    listed = (await postedTitles(options.serial)).includes(title);
   }
   if (!listed && shownBySdk(messages(), title)) {
     listed = await listedWithin(options.serial, title, LIST_CATCH_UP_MS);

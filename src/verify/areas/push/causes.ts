@@ -147,6 +147,14 @@ export const CAUSES: Record<string, PushCause> = {
       'Add io.customer.android:messaging-push-fcm. Without it the SDK never sees a message: the module is what registers the Firebase service that receives one.',
     docs: ANDROID_PUSH_DOCS,
   },
+  'wiring.wrapper_not_installed': {
+    stage: 'project_wiring',
+    severity: 'warning',
+    summary:
+      "The wrapper package is declared and not installed, so whether it brings the push module isn't checked.",
+    remedy:
+      "Install the project's packages (npm install, yarn, or flutter pub get) and run again. Until then the run cannot tell if the push module is a dependency.",
+  },
   'wiring.wrapper_build_unread': {
     stage: 'project_wiring',
     severity: 'warning',
@@ -310,6 +318,14 @@ export const CAUSES: Record<string, PushCause> = {
       "The installed build isn't debuggable, so the SDK's token and profile can't be read from it.",
     remedy:
       "Install a debug build, or set debuggable true on this build type, and run again. Android lets another process read an app's files only when the build is debuggable, and without the token there is nothing to send to.",
+  },
+  'device.build_not_debuggable_token_given': {
+    stage: 'device_ready',
+    severity: 'warning',
+    summary:
+      "The installed build isn't debuggable, so the SDK's stored state can't be read; the run continues with the token given.",
+    remedy:
+      "The profile and the SDK's own stores stay unchecked. Install a debug build, or set debuggable true on this build type, to check them.",
   },
   'device.not_available': {
     stage: 'device_ready',

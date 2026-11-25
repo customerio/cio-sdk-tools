@@ -111,16 +111,19 @@ function sdkCheck(model: AndroidProjectModel): Check {
       );
 }
 
-function pushModuleCheck(model: AndroidProjectModel): Check {
+export function pushModuleCheck(model: AndroidProjectModel): Check {
   const modules = shippedModules(model);
   const found = PUSH_MODULE_NAMES.filter((name) => modules.includes(name));
   const wrapper = model.wrapper;
   if (found.length === 0 && wrapper?.declared && !wrapper.directory) {
-    return skipped(
-      'push_module',
-      'Push module is a dependency',
-      `${wrapper.name} is not installed, so the modules it brings could not be read`
-    );
+    return {
+      ...skipped(
+        'push_module',
+        'Push module is a dependency',
+        `${wrapper.name} is not installed, so the modules it brings could not be read`
+      ),
+      cause: 'wiring.wrapper_not_installed',
+    };
   }
   // A warning, not a skip: the run still proves push end to end, which needs the module.
   if (found.length === 0 && wrapper?.directory && !wrapper.sdkModulesRead) {

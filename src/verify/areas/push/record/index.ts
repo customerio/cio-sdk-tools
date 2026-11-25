@@ -341,9 +341,13 @@ function seconds(ms: number): string {
 export type RecordedOpen =
   | { answer: 'opened'; deliveryId: string; at?: number }
   | { answer: 'not_opened'; deliveryIds: string[]; waitedMs: number }
+  | { answer: 'failed'; deliveryId: string; reason: string }
   | { answer: 'unavailable'; reason: string };
 
-function openedAnswer(answer: RecordAnswer, ids: string[]): RecordedOpen {
+export function openedAnswer(
+  answer: RecordAnswer,
+  ids: string[]
+): RecordedOpen {
   if (!answer.record) {
     return {
       answer: 'unavailable',
@@ -355,6 +359,18 @@ function openedAnswer(answer: RecordAnswer, ids: string[]): RecordedOpen {
       answer: 'opened',
       deliveryId: answer.record.id,
       at: answer.record.opened,
+    };
+  }
+  if (answer.record.failed !== undefined) {
+    // The provider refused this delivery: no open can follow, and the wait already ended.
+    return {
+      answer: 'failed',
+      deliveryId: answer.record.id,
+      reason:
+        answer.record.failureMessage ??
+        (answer.record.providerStatus
+          ? `provider status ${answer.record.providerStatus}`
+          : 'no reason given'),
     };
   }
   return { answer: 'not_opened', deliveryIds: ids, waitedMs: answer.waitedMs };
@@ -379,6 +395,16 @@ export function withRecordedOpen(
       evidence: [
         ...cell.evidence,
         `Customer.io's record of the open was not read: ${recorded.reason}`,
+      ],
+    };
+  }
+  if (recorded.answer === 'failed') {
+    return {
+      ...cell,
+      recorded: 'not_recorded',
+      evidence: [
+        ...cell.evidence,
+        `Customer.io recorded ${recorded.deliveryId} as failed (${recorded.reason}), so no open can arrive for it`,
       ],
     };
   }

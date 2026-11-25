@@ -191,3 +191,51 @@ test('an Android target older than 13 has no notification permission to read, an
   );
   assert.strictEqual(check(undefined).cause, 'device.notification_permission_unread');
 });
+
+test('a wrapper that is declared and not installed leaves the push module unproven, with a cause', () => {
+  const { pushModuleCheck } = require('../../dist/verify/areas/push/registration/android_wiring');
+  const check = pushModuleCheck({
+    sdkModules: [],
+    wrapper: { name: 'customerio-reactnative', declared: true, sdkModules: [] },
+  });
+  assert.deepStrictEqual([check.verdict, check.cause], ['skip', 'wiring.wrapper_not_installed']);
+  const rung = { id: 'project_wiring', checks: [check] };
+  assert.strictEqual(Ladder.verdictOf(rung), 'skip');
+});
+
+test('a non-debuggable Android build goes on with a token the person gave, and stops without one', () => {
+  const { androidDeviceReady } = require('../../dist/verify/areas/push/registration/android_device');
+  const facts = (token) => ({
+    target: { serial: 'S', model: 'Pixel', kind: 'emulator', apiLevel: 34 },
+    usable: [],
+    installed: true,
+    sdk: { error: 'run-as: package not debuggable', notDebuggable: true, deviceToken: token, sources: token ? ['--token'] : [], stores: { sdk: false, cdp: false } },
+    permissionGranted: true,
+    network: { ip: true, dns: true },
+    stopped: false,
+  });
+  const given = androidDeviceReady(facts('tok'), 'com.example.app', false);
+  const readable = given.checks.find((c) => c.id === 'sdk_state_readable');
+  assert.deepStrictEqual([readable.verdict, readable.cause], ['warn', 'device.build_not_debuggable_token_given']);
+  assert.ok(given.checks.some((c) => c.id === 'token_registered'), 'the token is still judged');
+  const without = androidDeviceReady(facts(undefined), 'com.example.app', false);
+  assert.strictEqual(without.checks.find((c) => c.id === 'sdk_state_readable').cause, 'device.build_not_debuggable');
+  assert.ok(!without.checks.some((c) => c.id === 'token_registered'));
+});
+
+test('a --device model name that matches several Android targets is said to be ambiguous', () => {
+  const { androidDeviceReady } = require('../../dist/verify/areas/push/registration/android_device');
+  const emulator = (serial) => ({ serial, model: 'sdk_gphone', kind: 'emulator', state: 'device' });
+  const rung = androidDeviceReady(
+    { target: undefined, usable: [emulator('emulator-5554'), emulator('emulator-5556')], ambiguous: [emulator('emulator-5554'), emulator('emulator-5556')], selector: 'sdk_gphone', installed: false },
+    'com.example.app',
+    false
+  );
+  assert.match(rung.checks[0].evidence[0], /--device sdk_gphone names 2 running targets; pass one's serial/);
+  const none = androidDeviceReady(
+    { target: undefined, usable: [], ambiguous: [], selector: 'nothing', installed: false },
+    'com.example.app',
+    false
+  );
+  assert.match(none.checks[0].evidence[0], /matched no connected device/);
+});
