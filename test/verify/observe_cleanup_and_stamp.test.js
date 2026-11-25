@@ -33,3 +33,14 @@ test('a --device name typed in other letters still finds the simulator to observ
   const targets = [{ kind: 'simulator', name: 'iPhone 16', udid: 'U1', state: 'booted' }];
   assert.strictEqual(selectTarget(targets, 'iphone 16').target?.udid, 'U1');
 });
+
+test('a run counts as sending only when it holds everything a send needs', () => {
+  const { sendsPlanned } = require('../../dist/verify/areas/push/android_flow');
+  const ready = { send: true, serial: 'S', packageName: 'com.example.app', environmentId: '1', token: 'tok' };
+  assert.strictEqual(sendsPlanned(ready), true);
+  // The profile's token is never sent to, so the flow passes none and nothing is sent.
+  assert.strictEqual(sendsPlanned({ ...ready, token: undefined }), false);
+  assert.strictEqual(sendsPlanned({ ...ready, environmentId: undefined }), false);
+  assert.strictEqual(sendsPlanned({ ...ready, dryRun: true }), false);
+  assert.strictEqual(sendsPlanned({ ...ready, send: false }), false);
+});

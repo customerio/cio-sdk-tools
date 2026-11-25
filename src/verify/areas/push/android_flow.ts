@@ -150,10 +150,19 @@ export async function climbAndroid(
       );
     }
   }
+  // Told a send is coming only when one can be: opening the app for the pushes is what
+  // clears the stopped state, so a run that will not send must still warn about it.
   const deviceRungResult = androidDeviceReady(
     device,
     packageName,
-    options.send && !options.dryRun
+    sendsPlanned({
+      send: options.send,
+      dryRun: options.dryRun,
+      serial: device.target?.serial,
+      packageName,
+      environmentId,
+      token: tokenFromProfile ? undefined : device.sdk?.deviceToken,
+    })
   );
   ladder.adopt(deviceRungResult, deviceMs);
   deviceRung.done(deviceRungResult);
@@ -213,19 +222,26 @@ export async function climbAndroid(
     delivered: selection.states,
     retries: false,
   });
+  let sent = false;
   if (consent?.granted !== false) {
-    await androidMatrix(ladder, options, reporter, asker, selection.states, {
-      serial: device.target?.serial,
-      deviceName: device.target?.model,
-      packageName,
-      environmentId: workspace.resolution?.workspace?.id,
-      workspaceReason: workspace.resolution?.unresolvedReason ?? cio.reason,
-      token: tokenFromProfile ? undefined : device.sdk?.deviceToken,
-      tokenFromProfile,
-      sdkVersion: device.sdkVersion?.version,
-    });
+    sent = await androidMatrix(
+      ladder,
+      options,
+      reporter,
+      asker,
+      selection.states,
+      {
+        serial: device.target?.serial,
+        deviceName: device.target?.model,
+        packageName,
+        environmentId: workspace.resolution?.workspace?.id,
+        workspaceReason: workspace.resolution?.unresolvedReason ?? cio.reason,
+        token: tokenFromProfile ? undefined : device.sdk?.deviceToken,
+        tokenFromProfile,
+        sdkVersion: device.sdkVersion?.version,
+      }
+    );
   }
-  const sent = options.send && !options.dryRun && consent?.granted !== false;
 
   return {
     projectName: wiring.model.appModuleName,
@@ -345,10 +361,10 @@ async function androidMatrix(
     tokenFromProfile?: boolean;
     sdkVersion?: string;
   }
-): Promise<void> {
+): Promise<boolean> {
   // Registration sends nothing, and says so in its closing line rather than as a skipped
   // section: nothing it asked for was left unproven.
-  if (!options.send) return;
+  if (!options.send) return false;
   if (
     !inputs.serial ||
     !inputs.packageName ||
@@ -365,7 +381,7 @@ async function androidMatrix(
         tokenFromProfile: inputs.tokenFromProfile,
       }) ?? 'no push was sent';
     skipSending(ladder, options, skipped);
-    return;
+    return false;
   }
 
   const plan = tapPlanFor(options, asker, states ?? ALL_STATES);
@@ -391,5 +407,26 @@ async function androidMatrix(
       reporter,
       tapSkipped: plan.skipped,
     }
+  );
+  // A dry run goes through the matrix and sends nothing.
+  return !options.dryRun;
+}
+
+/** Whether this run will send pushes: asked to, and holding everything a send needs. */
+export function sendsPlanned(input: {
+  send?: boolean;
+  dryRun?: boolean;
+  serial?: string;
+  packageName?: string;
+  environmentId?: string;
+  token?: string;
+}): boolean {
+  return Boolean(
+    input.send &&
+      !input.dryRun &&
+      input.serial &&
+      input.packageName &&
+      input.environmentId &&
+      input.token
   );
 }
