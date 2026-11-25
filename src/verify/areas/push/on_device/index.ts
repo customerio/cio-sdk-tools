@@ -567,6 +567,12 @@ async function runCellBody(
     }
   }
 
+  // The store is one witness. The extension handling this very delivery is another, and it
+  // outranks a store that never kept the push (a foreground push the app chose not to show).
+  // Read before the probe below: its locally injected push wakes the extension too, and
+  // without a delivery id to tell them apart that would read as this push arriving.
+  const handled = stored === false && handledThis();
+
   // Nothing arrived: before blaming the integration, find out whether this target is
   // delivering anything at all.
   let localProbe = known.localProbe;
@@ -631,9 +637,6 @@ async function runCellBody(
 
   const deliveryId =
     expectedId ?? (freshIds.length === 1 ? freshIds[0] : undefined);
-  // The store is one witness. The extension handling this very delivery is another, and it
-  // outranks a store that never kept the push (a foreground push the app chose not to show).
-  const handled = stored === false && handledThis();
   if (handled) {
     evidence.push(
       'the notification store does not hold it, and the extension handled this delivery, so it arrived'
@@ -682,7 +685,7 @@ async function runCellBody(
       // extension handled.
       title: stored
         ? stored.title
-        : retried && expectedId === retried.deliveryId
+        : retried?.deliveryId && expectedId === retried.deliveryId
         ? retried.title
         : title,
       expectedId: deliveryId,
