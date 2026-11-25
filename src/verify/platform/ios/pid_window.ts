@@ -96,6 +96,7 @@ export async function openPidWindow(
   let windowFrom = highest(first.pids) + 1;
   const outcome: WindowOutcome = {};
 
+  /** Opens the window's streams and says how many reached the phone, with the first reason. */
   const fill = async (from: number) => {
     windowFrom = from;
     const opened: FollowedStream[] = [];
@@ -105,7 +106,12 @@ export async function openPidWindow(
       slots.set(pid, stream);
       opened.push(stream);
     }
-    await Promise.all(opened.map((stream) => stream.connected));
+    const results = await Promise.all(opened.map((stream) => stream.connected));
+    return {
+      opened: opened.length,
+      connected: results.filter((result) => result.connected).length,
+      reason: results.find((result) => !result.connected)?.reason,
+    };
   };
 
   /** Read the process list once, and either find the app or move the window along. */
@@ -153,7 +159,18 @@ export async function openPidWindow(
     return false;
   };
 
-  await fill(windowFrom);
+  const reached = await fill(windowFrom);
+  if (reached.opened > 0 && reached.connected === 0) {
+    // Asking for a tap now would be asking for one nothing is listening to.
+    for (const stream of slots.values()) stream.stop();
+    return {
+      unavailableReason: `none of the ${
+        reached.opened
+      } pid streams reached the phone${
+        reached.reason ? ` (${reached.reason})` : ''
+      }`,
+    };
+  }
   // The streams are now reading. A read from here on that does not list the app is the
   // proof a later launch was read from its first line.
   if (await step()) {
