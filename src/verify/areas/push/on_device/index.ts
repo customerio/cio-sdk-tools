@@ -15,6 +15,7 @@ import {
   lastAuthorization,
   notificationsAllowed,
   extensionRanIn,
+  extensionHandled,
   simulatorPredicate,
 } from './sdk_lines';
 import {
@@ -434,6 +435,13 @@ async function runCellBody(
 
   const since = () => capture.since(mark);
   const ranNow = () => extensionRanIn(since(), options.extensionName);
+  // The extension handled this very push: its lines name a delivery id this state's sends
+  // returned. Lines for a late earlier push say nothing about this one.
+  // Without an id from the send, any extension activity is all there is to go by.
+  const handledThis = () =>
+    sends.ids && sends.ids.length > 0
+      ? extensionHandled(since(), options.extensionName, sends.ids)
+      : ranNow();
   const confirming = known.nothingArrives === true;
   const timeout = confirming
     ? CONFIRMING_TIMEOUT_MS
@@ -516,7 +524,7 @@ async function runCellBody(
   if (
     options.resend !== false &&
     stored === false &&
-    !ranNow() &&
+    !handledThis() &&
     known.localProbe !== 'absent' &&
     !confirming
   ) {
@@ -614,6 +622,14 @@ async function runCellBody(
 
   const deliveryId =
     expectedId ?? (freshIds.length === 1 ? freshIds[0] : undefined);
+  // The store is one witness. The extension handling this very delivery is another, and it
+  // outranks a store that never kept the push (a foreground push the app chose not to show).
+  const handled = stored === false && handledThis();
+  if (handled) {
+    evidence.push(
+      'the notification store does not hold it, and the extension handled this delivery, so it arrived'
+    );
+  }
   const cell: MatrixCell = {
     state,
     title,
@@ -624,7 +640,7 @@ async function runCellBody(
       localProbe,
       available: capture.available,
       lossy: capture.lossy,
-      arrived: stored === undefined ? undefined : stored !== false,
+      arrived: stored === undefined ? undefined : stored !== false || handled,
       extensionRan,
       sawLines: lines.length > 0,
       expectedId,

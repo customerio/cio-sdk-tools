@@ -265,7 +265,7 @@ export function googleServicesCheck(model: AndroidProjectModel): Check {
  * developer who sees no notification concludes push is broken while every delivery is
  * being counted.
  */
-function notificationPermissionCheck(model: AndroidProjectModel): Check {
+export function notificationPermissionCheck(model: AndroidProjectModel): Check {
   const declared = /POST_NOTIFICATIONS/.test(model.manifest ?? '');
   // The build merges a library's manifest into the app's, so a wrapper's declaration is the
   // app's too.
@@ -296,7 +296,7 @@ function notificationPermissionCheck(model: AndroidProjectModel): Check {
   return warn(
     'post_notifications',
     'POST_NOTIFICATIONS is declared',
-    'wiring.post_notifications_undeclared',
+    'wiring.post_notifications_not_yet_required',
     [
       targetSdk
         ? `targetSdk ${targetSdk}, so it is not required yet — it will be on the next bump`
