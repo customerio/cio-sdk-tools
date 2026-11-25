@@ -270,3 +270,18 @@ test("a Kotlin DSL apply(from = …) script is folded in like Groovy's apply fro
   const model = await loadAndroidProject(path.join(root, 'app'));
   assert.ok(model.sdkModules.includes('messaging-push-fcm'), `modules: ${model.sdkModules}`);
 });
+
+test('a commented-out pin above the live one is not read as the SDK version', () => {
+  assert.strictEqual(
+    gradleSdkVersion('#cioVersion=4.0.0\ncioVersion=4.6.0\nimplementation "io.customer.android:datapipelines:${cioVersion}"'),
+    '4.6.0'
+  );
+  assert.strictEqual(
+    gradleSdkVersion('// def cio = "4.0.0"\ndef cio = "4.9.0"\nimplementation "io.customer.android:datapipelines:${cio}"'),
+    '4.9.0'
+  );
+  assert.strictEqual(
+    gradleSdkVersion('ext {\n    cio = "4.7.0"\n}\nimplementation "io.customer.android:datapipelines:$cio"'),
+    '4.7.0'
+  );
+});
