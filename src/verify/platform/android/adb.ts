@@ -91,6 +91,28 @@ export async function readAppFile(
   };
 }
 
+/**
+ * The names in a directory of an app's private data, read the way `readAppFile` reads a
+ * file: `run-as` first, then the emulator's root shell.
+ */
+export async function listAppDirectory(
+  serial: string,
+  packageName: string,
+  relativePath: string
+): Promise<string> {
+  const absolute = `/data/data/${packageName}/${relativePath}`;
+  const viaRunAs = await adb(serial, [
+    'shell',
+    'run-as',
+    packageName,
+    'ls',
+    absolute,
+  ]);
+  if (viaRunAs.code === 0 && viaRunAs.stdout.trim()) return viaRunAs.stdout;
+  const viaRoot = await adb(serial, ['shell', 'su', '0', 'ls', absolute]);
+  return viaRoot.code === 0 ? viaRoot.stdout : '';
+}
+
 /** Android's shared preferences are XML with entity-escaped values. */
 export function prefString(xml: string, key: string): string | undefined {
   const match = xml.match(
