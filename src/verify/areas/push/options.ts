@@ -113,7 +113,7 @@ export function parseStates(list?: string): AppState[] | undefined {
 export function evidenceDirectoryFor(options: VerifyPushOptions): string {
   return (
     options.evidence ??
-    path.join(os.tmpdir(), `cio-verify-${localStamp(new Date())}`)
+    path.join(os.tmpdir(), `cio-verify-${pathStamp(new Date())}`)
   );
 }
 
@@ -121,6 +121,14 @@ export function evidenceDirectoryFor(options: VerifyPushOptions): string {
  * `2026-10-15T23:15:06` in the machine's own time, which is what the device log and the
  * person's clock show: a folder named in UTC read four hours off against both.
  */
+/**
+ * The same stamp in a form a folder name can carry: Windows refuses a colon in a path, and
+ * the evidence folder is created under the machine's temp directory.
+ */
+export function pathStamp(at: Date): string {
+  return localStamp(at).replace(/:/g, '-');
+}
+
 export function localStamp(at: Date): string {
   const two = (value: number) => String(value).padStart(2, '0');
   return `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(

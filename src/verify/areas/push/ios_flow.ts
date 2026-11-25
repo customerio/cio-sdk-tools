@@ -8,11 +8,11 @@ import { freshness, watchFor } from '../../platform/observe';
 import { deviceLogUnavailable, startCapture } from '../../platform/ios/logs';
 import { simulatorPredicate } from './on_device/sdk_lines';
 import {
-  Target as IosTarget,
   describeTarget,
   listTargets,
   locateApp,
   readSdkState,
+  selectTarget as selectIosTarget,
 } from '../../platform/ios/device';
 import { Selection } from './select';
 import { XcodeProjectModel } from '../../platform/ios/xcode';
@@ -80,10 +80,10 @@ export async function climb(
   // Observed mode watches the facts appear before anything reads them.
   let observed = false;
   if (options.observe && selection.targetSelector && wiring.bundleId) {
-    const chosen = (await listTargets()).find(
-      (candidate: IosTarget) =>
-        candidate.udid === selection.targetSelector ||
-        candidate.name === selection.targetSelector
+    // Matched the way `--device` matched it, so a name typed in other letters finds it.
+    const { target: chosen } = selectIosTarget(
+      await listTargets(),
+      selection.targetSelector
     );
     if (chosen) {
       const watch = await observeIos({
@@ -285,6 +285,23 @@ export async function climb(
   }
 }
 
+/**
+ * Use what `locate` found and always release it. A physical device's container is copied
+ * into a temp directory per call, and a watch polls: a copy left behind per poll piles up
+ * until the process exits.
+ */
+export async function withLocatedApp<
+  T extends { cleanup?: () => Promise<void> },
+  R,
+>(locate: () => Promise<T>, use: (located: T) => Promise<R>): Promise<R> {
+  const located = await locate();
+  try {
+    return await use(located);
+  } finally {
+    await located.cleanup?.();
+  }
+}
+
 /** Observed mode, iOS. Same shape; the probes read the simulator or device container. */
 async function observeIos(input: {
   target: Parameters<typeof startCapture>[0];
@@ -303,15 +320,17 @@ async function observeIos(input: {
   let observed = false;
 
   const read = async () => {
-    const located = await locateApp(input.target, input.bundleId);
-    if (!located.installed || !located.preferences) return undefined;
-    const state = await readSdkState(
-      located.preferences,
-      input.bundleId,
-      located.sdkSupport
+    return withLocatedApp(
+      () => locateApp(input.target, input.bundleId),
+      async (located) => {
+        if (!located.installed || !located.preferences) return undefined;
+        return readSdkState(
+          located.preferences,
+          input.bundleId,
+          located.sdkSupport
+        );
+      }
     );
-    await located.cleanup?.();
-    return state;
   };
 
   try {
@@ -320,9 +339,10 @@ async function observeIos(input: {
         label: 'app installed',
         instruction: `Install and launch the build on ${input.target.name}.`,
         probe: async () =>
-          (await locateApp(input.target, input.bundleId)).installed
-            ? true
-            : undefined,
+          withLocatedApp(
+            () => locateApp(input.target, input.bundleId),
+            async (located) => (located.installed ? true : undefined)
+          ),
       },
       askerPhases(input, handle)
     );
