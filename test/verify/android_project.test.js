@@ -109,6 +109,22 @@ test("Flutter's build is found in the project's own build folder", async () => {
   );
 });
 
+test('two flavor dimensions nest the build metadata one level deeper', async () => {
+  const root = project({
+    'settings.gradle': '',
+    'app/build.gradle': "apply plugin: 'com.android.application'",
+    'app/build/outputs/apk/free/arm/debug/output-metadata.json': JSON.stringify({
+      applicationId: 'io.customer.free.arm',
+      variantName: 'freeArmDebug',
+    }),
+  });
+  const variants = await buildVariants(path.join(root, 'app'));
+  assert.deepStrictEqual(
+    variants.map((variant) => [variant.applicationId, variant.variantName]),
+    [['io.customer.free.arm', 'freeArmDebug']]
+  );
+});
+
 test("the CDP store read is the one for the SDK's configured key, not a stale one", () => {
   const { analyticsStore } = require('../../dist/verify/platform/android/device');
   const listing = 'analytics-android-localsmoke_key.xml\nanalytics-android-5f660a.xml\nio.customer.sdk.app.xml\n';
