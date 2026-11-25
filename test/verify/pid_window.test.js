@@ -112,3 +112,17 @@ test('the process list parses, and a long name cut short still matches', async (
   assert.strictEqual(pids.size, 4);
   assert.strictEqual(parsePidList(''), undefined);
 });
+
+test('streams that never reached the phone make the window unavailable, so nobody is asked to tap', async () => {
+  const phoneState = fakePhone([base]);
+  const follow = phoneState.capture.followProcess;
+  phoneState.capture.followProcess = (pid, only) => {
+    const stream = follow(pid, only);
+    stream.connected = Promise.resolve({ connected: false, how: stream.how, reason: 'idevicesyslog exited' });
+    return stream;
+  };
+  const result = await openPidWindow(phone, phoneState.capture, 'Sample', phoneState.deps);
+  assert.strictEqual(result.window, undefined);
+  assert.match(result.unavailableReason, /none of the 8 pid streams reached the phone \(idevicesyslog exited\)/);
+  assert.ok([...phoneState.streams.values()].every((stream) => stream.stopped));
+});
