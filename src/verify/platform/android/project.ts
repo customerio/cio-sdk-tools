@@ -65,9 +65,12 @@ export interface AndroidWrapper extends WrapperSdk {
 }
 
 export async function loadAndroidProject(
-  root: string,
+  given: string,
   appModuleName?: string
 ): Promise<AndroidProjectModel | undefined> {
+  // Absolute from here on: walking up from `.` never leaves it, and the applied-script check
+  // compares resolved paths against this root.
+  const root = path.resolve(given);
   const projectPath = await findGradleRoot(root);
   if (!projectPath) return undefined;
 
@@ -467,6 +470,9 @@ async function readSources(appModulePath: string): Promise<SourceFile[]> {
     const entries: string[] = await fs.readdir(dir).catch(() => []);
     for (const entry of entries) {
       if (entry.startsWith('.') || SKIP_DIRECTORIES.has(entry)) continue;
+      // Test source sets (`test`, `androidTest`, `testDebug`, …) are not the app: an init
+      // call or a messaging service there says nothing about what ships.
+      if (depth === 0 && /^(test|androidTest)/.test(entry)) continue;
       const full = path.join(dir, entry);
       const stat = await fs.stat(full).catch(() => undefined);
       if (stat?.isDirectory()) {
