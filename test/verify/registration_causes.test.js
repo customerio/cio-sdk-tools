@@ -242,7 +242,7 @@ test('a --device model name that matches several Android targets is said to be a
 
 test('POST_NOTIFICATIONS missing below Android 13 warns with a warning cause that says so', () => {
   const { notificationPermissionCheck } = require('../../dist/verify/areas/push/registration/android_wiring');
-  const model = (targetSdk) => ({ manifest: '<manifest/>', gradle: targetSdk ? `targetSdk ${targetSdk}` : '' });
+  const model = (targetSdk) => ({ manifest: '<manifest/>', gradle: targetSdk ? `targetSdk ${targetSdk}` : '', sdkModules: [] });
   const below = notificationPermissionCheck(model(31));
   assert.deepStrictEqual([below.verdict, below.cause], ['warn', 'wiring.post_notifications_not_yet_required']);
   assert.strictEqual(resolveCause(below.cause).severity, 'warning');
@@ -350,4 +350,55 @@ test('a token given over an unreadable container goes on, and says the stores we
   assert.deepStrictEqual(causes(rung), ['device.container_unreadable_token_known']);
   assert.strictEqual(Ladder.verdictOf(rung), 'warn');
   assert.ok(rung.checks.some((check) => check.id === 'token_registered' && check.verdict === 'pass'));
+});
+
+test('a key found among the sources that loaded passes, though another source failed', () => {
+  const rung = workspaceReady({
+    cio: authed,
+    resolution: { how: 'explicit', candidates: [], workspace: { id: '1', name: 'W' } },
+    credential: { kind: 'apns' },
+    keys: {
+      sdkKey: 'abc',
+      sdkKeyChecked: true,
+      extensionKey: { value: 'zzz', site: 'NotificationService.swift:10' },
+      workspaceKeys: [{ key: 'abc', source: 'iOS app' }],
+      error: 'API error 429',
+    },
+  });
+  const checks = rung.checks.filter((c) => c.id.endsWith('_key'));
+  assert.deepStrictEqual(
+    checks.map((c) => [c.id, c.verdict, c.cause]),
+    [
+      ['sdk_key', 'pass', undefined],
+      // Not among the loaded keys, and possibly in the source that failed.
+      ['extension_key', 'skip', 'workspace.lookup_failed'],
+    ]
+  );
+});
+
+test('a wait that read "no profile" and then failed still says the profile is missing', async () => {
+  let reads = 0;
+  const rung = await profileLinked(
+    profileInput(async () => {
+      reads += 1;
+      if (reads <= 2) return null;
+      throw new Error('customer lookup failed: network');
+    })
+  );
+  assert.deepStrictEqual(causes(rung), ['profile.not_found']);
+  assert.strictEqual(Ladder.verdictOf(rung), 'fail');
+});
+
+test("POST_NOTIFICATIONS merged in from Firebase Messaging counts, and an unread wrapper is unproven", () => {
+  const { notificationPermissionCheck } = require('../../dist/verify/areas/push/registration/android_wiring');
+  const base = { manifest: '<manifest/>', gradle: 'targetSdk 36' };
+  const fcm = notificationPermissionCheck({ ...base, sdkModules: ['datapipelines', 'messaging-push-fcm'] });
+  assert.strictEqual(fcm.verdict, 'pass');
+  assert.match(fcm.evidence.join(' '), /Firebase Messaging/);
+  const unread = notificationPermissionCheck({
+    ...base,
+    sdkModules: [],
+    wrapper: { name: 'customerio-reactnative', declared: true, sdkModules: [] },
+  });
+  assert.deepStrictEqual([unread.verdict, unread.cause], ['skip', 'wiring.wrapper_not_installed']);
 });

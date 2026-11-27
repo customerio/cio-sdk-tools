@@ -64,7 +64,8 @@ test('a click the SDK refused for an empty delivery id fails as that, and is not
 });
 
 test("only the extension's lines for this delivery say this push arrived; a late earlier push's do not", () => {
-  const { extensionHandled, extensionRanIn } = require('../../dist/verify/areas/push/on_device/sdk_lines');
+  const { extensionHandledIds, extensionRanIn } = require('../../dist/verify/areas/push/on_device/sdk_lines');
+  const extensionHandled = (...args) => extensionHandledIds(...args).length > 0;
   const line = (id) => ({ at: '', process: 'NotificationService', message: `[CIO] [Push] tracking delivered for ${id}` });
   const ours = 'dgS_ours12345678';
   const leftover = [line('dgS_older1234567')];
@@ -125,4 +126,47 @@ test("a re-send the extension handled, though the store kept neither push, is th
   assert.strictEqual(expectedDeliveryId('dgS_first1234567', false, retried, ['dgS_retry1234567']), 'dgS_retry1234567');
   assert.strictEqual(expectedDeliveryId('dgS_first1234567', false, retried, ['dgS_first1234567']), 'dgS_first1234567');
   assert.strictEqual(expectedDeliveryId('dgS_first1234567', false, retried, []), 'dgS_first1234567');
+});
+
+test("delivery ids from any workspace are read, not only those that happen to start dgS_", () => {
+  const { deliveryIdsIn, extensionRanFor } = require('../../dist/verify/areas/push/on_device/sdk_lines');
+  // Workspace 1, 12345 and 200000 give dgQB, dgS5 and dgTA; 122175 gives dgS_.
+  const id = (workspace, tail) => {
+    const bytes = [0x76, 4];
+    for (let n = workspace; ; ) {
+      const low = n & 0x7f;
+      n >>= 7;
+      bytes.push(n ? low | 0x80 : low);
+      if (!n) break;
+    }
+    return Buffer.concat([Buffer.from(bytes), Buffer.from(tail)]).toString('base64url');
+  };
+  const ids = [id(1, 'abcdefghij'), id(12345, 'abcdefghij'), id(200000, 'abcdefghij'), id(122175, 'abcdefghij')];
+  assert.deepStrictEqual(ids.map((value) => value.slice(0, 4)), ['dgQB', 'dgS5', 'dgTA', 'dgS_']);
+  const line = (value) => ({ at: '', process: 'NotificationService', message: `[CIO] Tracking push message delivered with deliveryId: ${value}` });
+  assert.deepStrictEqual(deliveryIdsIn(ids.map(line)), ids);
+  // A late earlier push from a workspace without dgS_ ids no longer counts for this one.
+  const ours = id(1, 'ours-push-x');
+  assert.strictEqual(extensionRanFor([line(id(1, 'older-push'))], 'NotificationService', [ours]), false);
+  assert.strictEqual(extensionRanFor([line(ours)], 'NotificationService', [ours]), true);
+});
+
+test('a cold tap with no SDK line is unproven when JavaScript or Dart initializes the SDK', () => {
+  const { judgeOpened } = require('../../dist/verify/areas/push/on_device/opened');
+  const { resolveCause } = require('../../dist/verify/core/report/causes');
+  require('../../dist/verify/areas/push/causes');
+  const silentColdTap = {
+    available: true,
+    lossy: false,
+    clicked: false,
+    tracked: false,
+    osDelivered: true,
+    linkAttempted: false,
+    linkHandled: false,
+    linkUnhandled: false,
+  };
+  assert.deepStrictEqual(judgeOpened(silentColdTap), { verdict: 'fail', cause: 'runtime.cold_tap_not_handled' });
+  const wrapper = judgeOpened({ ...silentColdTap, initInWrapper: true });
+  assert.deepStrictEqual(wrapper, { verdict: 'skip', cause: 'runtime.cold_tap_before_wrapper_init' });
+  assert.strictEqual(resolveCause(wrapper.cause).severity, 'warning');
 });

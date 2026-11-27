@@ -302,3 +302,93 @@ test('a pin set on a qualified extra property is read', () => {
     undefined
   );
 });
+
+test('SDK modules pulled in through a version catalog are read, and only when the build uses them', async () => {
+  const root = project({
+    'settings.gradle.kts': 'include(":app")',
+    'gradle/libs.versions.toml': [
+      '[versions]',
+      'cio = "4.6.0"',
+      '[libraries]',
+      'customerio-push = { module = "io.customer.android:messaging-push-fcm", version.ref = "cio" }',
+      'customerio-inapp = { group = "io.customer.android", name = "messaging-in-app", version.ref = "cio" }',
+      'customerio-location = { module = "io.customer.android:location", version.ref = "cio" }',
+    ].join('\n'),
+    'app/build.gradle.kts': [
+      'plugins { id("com.android.application") }',
+      'dependencies {',
+      '    implementation(libs.customerio.push)',
+      '    implementation(libs.customerio.inapp)',
+      '}',
+    ].join('\n'),
+  });
+  const model = await loadAndroidProject(path.join(root, 'app'));
+  assert.deepStrictEqual(model.sdkModules.sort(), ['messaging-in-app', 'messaging-push-fcm']);
+});
+
+test("Kotlin's block form apply { from(…) } is folded in, as the SDK's kotlin_compose sample writes it", async () => {
+  const root = project({
+    'settings.gradle.kts': 'include(":samples:kotlin_compose")',
+    'samples/sample-app.gradle': 'dependencies { implementation "io.customer.android:messaging-push-fcm:4.5.0" }',
+    'samples/kotlin_compose/build.gradle.kts': [
+      'plugins { id("com.android.application") }',
+      'apply {',
+      '    ext.set("appConfigKeyPrefix", "kotlinCompose_")',
+      '    from("$rootDir/samples/sample-app.gradle")',
+      '}',
+    ].join('\n'),
+  });
+  const model = await loadAndroidProject(path.join(root, 'samples', 'kotlin_compose'));
+  assert.ok(model.sdkModules.includes('messaging-push-fcm'), `modules: ${model.sdkModules}`);
+});
+
+test('--android-module picks its module even when the path handed in is another app module', async () => {
+  const root = project({
+    'settings.gradle': "include ':samples:java_layout', ':samples:kotlin_compose'",
+    'samples/java_layout/build.gradle': "apply plugin: 'com.android.application'",
+    'samples/kotlin_compose/build.gradle.kts': 'plugins { id("com.android.application") }',
+  });
+  const model = await loadAndroidProject(path.join(root, 'samples', 'java_layout'), 'kotlin_compose');
+  assert.strictEqual(model?.appModuleName, 'kotlin_compose');
+  const here = await loadAndroidProject(path.join(root, 'samples', 'java_layout'));
+  assert.strictEqual(here?.appModuleName, 'java_layout');
+});
+
+test('with no Application class, an init in an Activity is not at launch', async () => {
+  const { resolveInitAtLaunch } = require('../../dist/verify/platform/android/project');
+  const root = project({
+    'settings.gradle': "include ':app'",
+    'app/build.gradle': "apply plugin: 'com.android.application'",
+    'app/src/main/AndroidManifest.xml': '<manifest><application><activity android:name=".MainActivity"/></application></manifest>',
+    'app/src/main/java/com/example/MainActivity.kt': [
+      'class MainActivity : AppCompatActivity() {',
+      '    override fun onCreate(state: Bundle?) {',
+      '        CustomerIO.initialize(this)',
+      '    }',
+      '}',
+    ].join('\n'),
+  });
+  const model = await loadAndroidProject(path.join(root, 'app'));
+  assert.strictEqual(model.initSites.length, 1, JSON.stringify(model.initSites));
+  assert.strictEqual(resolveInitAtLaunch(model).verdict, false);
+});
+
+test("a self-closing service is not credited with the next service's messaging filter", async () => {
+  const root = project({
+    'settings.gradle': "include ':app'",
+    'app/build.gradle': "apply plugin: 'com.android.application'",
+    'app/src/main/AndroidManifest.xml': [
+      '<manifest><application>',
+      '<service android:name=".SyncService" android:exported="false"/>',
+      '<service android:name=".PushService" android:exported="false">',
+      '  <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT"/></intent-filter>',
+      '</service>',
+      '</application></manifest>',
+    ].join('\n'),
+    'app/src/main/java/com/example/PushService.kt':
+      'class PushService : CustomerIOFirebaseMessagingService()',
+  });
+  const model = await loadAndroidProject(path.join(root, 'app'));
+  assert.strictEqual(model.customMessagingService?.className, '.PushService');
+  assert.strictEqual(model.customMessagingService?.forwardsToSdk, true);
+});

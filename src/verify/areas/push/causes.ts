@@ -539,6 +539,14 @@ export const CAUSES: Record<string, PushCause> = {
     remedy:
       "The open is proven by Customer.io's own record of this push. The deep link's outcome only exists in the device's log, which dropped it, so run the state again to see it.",
   },
+  'runtime.cold_tap_before_wrapper_init': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      "The tap started the app before its JavaScript or Dart set the SDK's log level, so no line for it was written.",
+    remedy:
+      "This is unproven, not failed. React Native and Flutter initialize the core SDK from script, which runs after iOS hands a cold tap to the app; until then the SDK logs only errors, and it replays the open once the script starts. Customer.io's record of the push settles the open when the send returned a delivery id.",
+  },
   'runtime.cold_tap_not_handled': {
     stage: 'delivered_matrix',
     severity: 'blocker',

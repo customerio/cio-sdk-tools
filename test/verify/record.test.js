@@ -596,3 +596,20 @@ test("a refused first send does not end the wait while the re-send's record has 
   assert.strictEqual(answer.record.id, 'dgS_retry');
   assert.strictEqual(answer.record.delivered, 4);
 });
+
+test("an open the SDK's log level or version left unproven is settled by the record", async () => {
+  for (const cause of ['runtime.sdk_logging_off', 'runtime.sdk_lines_unchecked', 'runtime.cold_tap_before_wrapper_init']) {
+    const { read } = reader({ k: record({ ...OPENED.test_delivery, id: 'k' }) });
+    const result = await readBack({
+      environmentId: '122175',
+      judge: true,
+      delivered: section('delivered', [delivered('killed', ['k'])]),
+      opened: section('opened', [tapped('killed', { verdict: 'skip', cause })]),
+      linkSent: false,
+      read,
+      limits: QUICK,
+    });
+    assert.strictEqual(result.recorded.cells[0].summary, 'delivered · opened', cause);
+    assert.strictEqual(result.opened.cells[0].verdict, 'pass', cause);
+  }
+});

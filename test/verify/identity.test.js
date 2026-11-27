@@ -4,7 +4,6 @@ const assert = require('node:assert');
 const {
   pushTag,
   deliveredTitle,
-  tapTitle,
   tapBody,
   androidIdForTitle,
   androidOpenedIdentity,
@@ -16,13 +15,12 @@ test('every push gets its own tag, in an alphabet nobody misreads off a banner',
   for (const tag of tags) assert.match(tag, /^[2-9A-HJKMNP-TV-Z]{5}$/);
 });
 
-test('the tap test title changes every run, so an old banner cannot pass for a new one', () => {
+test('the pushed title changes every run, so an old banner cannot pass for a new one', () => {
   // It used to be `cio verify · tap me · killed` on every run.
   assert.notStrictEqual(
-    tapTitle(pushTag(() => 0)),
-    tapTitle(pushTag(() => 0.99))
+    deliveredTitle('killed', pushTag(() => 0)),
+    deliveredTitle('killed', pushTag(() => 0.99))
   );
-  assert.strictEqual(tapTitle('AB2CD'), 'cio verify AB2CD · tap me');
   assert.strictEqual(deliveredTitle('killed', 'AB2CD'), 'cio verify AB2CD · killed');
   assert.match(tapBody('background'), /\(background state\)/);
 });
@@ -32,7 +30,6 @@ test('the tag survives a banner cutting the title short', () => {
   for (const title of [
     deliveredTitle('background', 'AB2CD'),
     deliveredTitle('foreground', 'AB2CD'),
-    tapTitle('AB2CD'),
   ]) {
     assert.ok(title.length <= 30, `${title} is ${title.length} characters`);
     assert.ok(title.indexOf('AB2CD') <= 'cio verify '.length, title);

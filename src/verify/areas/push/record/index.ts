@@ -48,7 +48,12 @@ export const RECORD_DECIDES = [
   'runtime.capture_silent',
   'runtime.capture_stopped',
   'runtime.cold_tap_not_handled',
+  'runtime.cold_tap_before_wrapper_init',
   'runtime.opened_not_tracked',
+  // The matrix relabels a tap it could not prove with these before the record is read: an
+  // SDK below debug, or one whose lines this tool has not checked, still records the open.
+  'runtime.sdk_logging_off',
+  'runtime.sdk_lines_unchecked',
 ];
 
 interface Plan {

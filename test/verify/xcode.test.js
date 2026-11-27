@@ -93,6 +93,7 @@ test('an app or extension with no bundle id in the pbxproj is resolved with xcod
     needsResolution(
       target('com.apple.product-type.application', {
         PRODUCT_BUNDLE_IDENTIFIER: 'io.customer.app',
+        CODE_SIGN_ENTITLEMENTS: 'App/App.entitlements',
       })
     ),
     false
@@ -100,6 +101,23 @@ test('an app or extension with no bundle id in the pbxproj is resolved with xcod
   // A test bundle never needs one.
   assert.strictEqual(
     needsResolution(target('com.apple.product-type.bundle.unit-test', {})),
+    false
+  );
+});
+
+test('entitlements or an extension Info.plist set only in an .xcconfig are resolved with xcodebuild', () => {
+  const target = (productType, settings) => ({ name: 'T', productType, settings, embeds: [], dependencies: [] });
+  const app = { PRODUCT_BUNDLE_IDENTIFIER: 'io.customer.app' };
+  assert.strictEqual(needsResolution(target('com.apple.product-type.application', app)), true);
+  const extension = { PRODUCT_BUNDLE_IDENTIFIER: 'io.customer.app.nse' };
+  assert.strictEqual(needsResolution(target('com.apple.product-type.app-extension', extension)), true);
+  assert.strictEqual(
+    needsResolution(target('com.apple.product-type.app-extension', { ...extension, INFOPLIST_FILE: 'NSE/Info.plist' })),
+    false
+  );
+  // A generated Info.plist has no file to name.
+  assert.strictEqual(
+    needsResolution(target('com.apple.product-type.app-extension', { ...extension, GENERATE_INFOPLIST_FILE: 'YES' })),
     false
   );
 });

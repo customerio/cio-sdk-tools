@@ -30,7 +30,6 @@ export interface SourceSignals {
   sdkImports: string[];
   appGroupIds: string[];
   initSites: InitSite[];
-  identifies: boolean;
   logLevel?: string;
 }
 
@@ -156,7 +155,6 @@ export function analyzeSources(files: SwiftFile[]): SourceSignals {
   const appGroupIds = new Set<string>();
   const initSites: InitSite[] = [];
   const texts = files.map((f) => f.text);
-  let identifies = false;
   let logLevel: string | undefined;
 
   for (const file of files) {
@@ -168,13 +166,6 @@ export function analyzeSources(files: SwiftFile[]): SourceSignals {
       /^\s*(?:import|@import)\s+(Cio[A-Za-z]+|CustomerIO[A-Za-z]*)/gm
     )) {
       sdkImports.add(match[1]);
-    }
-    if (
-      /CustomerIO\.shared\.identify\s*\(|\bidentify\s*\(\s*(?:userId|identifier)\s*:/.test(
-        text
-      )
-    ) {
-      identifies = true;
     }
     for (const match of text.matchAll(/CustomerIO\.initialize\s*\(/g)) {
       const before = text.slice(0, match.index ?? 0);
@@ -199,7 +190,6 @@ export function analyzeSources(files: SwiftFile[]): SourceSignals {
     sdkImports: [...sdkImports],
     appGroupIds: [...appGroupIds],
     initSites,
-    identifies,
     logLevel,
   };
 }
