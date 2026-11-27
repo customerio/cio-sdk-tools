@@ -662,13 +662,16 @@ async function runCellBody(
     evidence,
   };
   // A restart is the fix only when nothing else explains the silence: an app whose
-  // notifications are off shows no push either, and the run says that instead.
-  if (
-    cell.cause === 'device.notifications_wedged' &&
-    (await simulatorAuthorization(options.target, options.bundleId))
-      ?.allowed !== false
-  ) {
-    cell.detail = `restart it: ${restartSimulator(options.target.udid)}`;
+  // notifications are off shows no push either, and the run says that instead. A settings
+  // file with no entry for the app is too weak to rule a restart out.
+  if (cell.cause === 'device.notifications_wedged') {
+    const authorization = await simulatorAuthorization(
+      options.target,
+      options.bundleId
+    );
+    if (authorization?.allowed !== false || authorization.noEntry) {
+      cell.detail = `restart it: ${restartSimulator(options.target.udid)}`;
+    }
   }
   // A push the extension handled arrived, though the store never kept it: it can be tapped.
   if (stored === false && !handled) {
@@ -742,13 +745,14 @@ async function simulatorAuthorization(
   bundleId: string
 ): Promise<NotificationAuthorization | undefined> {
   if (target.kind !== 'simulator') return undefined;
-  const status = await simulatorNotificationStatus(target.udid, bundleId);
-  if (!status) return undefined;
+  const read = await simulatorNotificationStatus(target.udid, bundleId);
+  if (!read) return undefined;
   return {
-    status,
+    status: read.status,
     at: localTime(new Date()),
     source: 'simulator settings',
-    allowed: notificationsAllowed(status),
+    allowed: notificationsAllowed(read.status),
+    ...(read.noEntry ? { noEntry: true } : {}),
   };
 }
 
@@ -773,11 +777,14 @@ export function explainNotificationsOff(
   notAllowed: boolean,
   reporter?: Pick<Reporter, 'cell'>
 ): MatrixSection {
+  // A settings file with no entry for the app may just not be written yet, so it does not
+  // outrank a stale push connection: a wedged cell keeps its restart.
+  const explains = section.notificationAuthorization?.noEntry
+    ? OFF_EXPLAINS.filter((cause) => cause !== 'device.notifications_wedged')
+    : OFF_EXPLAINS;
   const silent =
     section.cells.length > 0 &&
-    section.cells.every(
-      (cell) => cell.cause && OFF_EXPLAINS.includes(cell.cause)
-    );
+    section.cells.every((cell) => cell.cause && explains.includes(cell.cause));
   if (!notAllowed || !silent) return section;
   return {
     ...section,

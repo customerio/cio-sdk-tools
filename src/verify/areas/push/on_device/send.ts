@@ -147,6 +147,11 @@ export function whyNoSend(inputs: {
   workspaceId?: string;
   workspaceReason?: string;
   token?: string;
+  /**
+   * The only token found is Customer.io's record on the profile, which may belong to
+   * another phone, so it is never a send target.
+   */
+  tokenFromProfile?: boolean;
 }): string | undefined {
   const missing: string[] = [];
   if (!inputs.target) missing.push('no target');
@@ -158,7 +163,13 @@ export function whyNoSend(inputs: {
         : 'no workspace'
     );
   }
-  if (!inputs.token) missing.push('no push token registered on the target');
+  if (!inputs.token) {
+    missing.push(
+      inputs.tokenFromProfile
+        ? "no push token read from the target (the profile's token may belong to another phone: pass this device's with --token)"
+        : 'no push token registered on the target'
+    );
+  }
   return missing.length > 0
     ? `no push was sent: ${missing.join('; ')}`
     : undefined;

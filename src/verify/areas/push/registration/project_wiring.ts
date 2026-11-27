@@ -72,6 +72,11 @@ export interface WiringResult {
   extensionName?: string;
   /** The URL schemes the app declares, lowercased. */
   urlSchemes?: string[];
+  /**
+   * A React Native or Flutter app with no native init site: the core SDK is initialized from
+   * JavaScript or Dart, which runs after iOS hands a cold tap to the app.
+   */
+  initInWrapper?: boolean;
   /** The key the extension's SDK runs with, where its sources spell it out. */
   extensionKey?: KeyLiteral;
   /** The native SDK's version the project resolved, when its dependency manager says. */
@@ -230,6 +235,7 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
       .map((target) => target.settings.PRODUCT_NAME || target.name),
     extensionName: nse ? nse.settings.PRODUCT_NAME || nse.name : undefined,
     urlSchemes: await urlSchemes(model.projectPath, app),
+    initInWrapper: Boolean(wrapper?.declared) && signals.initSites.length === 0,
     extensionKey: nseKey,
     sdkVersion,
   };

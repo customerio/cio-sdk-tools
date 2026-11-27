@@ -152,10 +152,15 @@ export function parseLogcat(raw: string): LogLine | undefined {
   const line = raw.trimEnd();
   if (!line || line.startsWith('---------')) return undefined;
   const match = line.match(
-    /^(\d\d-\d\d \d\d:\d\d:\d\d\.\d+)\s+[VDIWEF]\/([^(]+)\(\s*\d+\):\s?(.*)$/
+    /^(\d\d-\d\d \d\d:\d\d:\d\d\.\d+)\s+[VDIWEF]\/([^(]+)\(\s*(\d+)\):\s?(.*)$/
   );
   if (!match) return { at: '', process: '', message: line };
-  return { at: match[1], process: match[2].trim(), message: match[3] };
+  return {
+    at: match[1],
+    process: match[2].trim(),
+    pid: match[3],
+    message: match[4],
+  };
 }
 
 const FORWARDED = '[CIO] ';
