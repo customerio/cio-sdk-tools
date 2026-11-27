@@ -73,6 +73,11 @@ export interface NotificationAuthorization {
   source?: 'sdk' | 'simulator settings';
   /** Whether iOS lets the app's notifications show; unknown for a status it has not named. */
   allowed?: boolean;
+  /**
+   * The simulator's settings hold no entry for the app: it has never asked, or SpringBoard
+   * has not written the file yet. Too weak to rule out a stale push connection.
+   */
+  noEntry?: boolean;
 }
 
 /**

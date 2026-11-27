@@ -40,17 +40,17 @@ test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 test('an app with no entry in the settings has never asked for permission', async () => {
   process.env.FAKE_SETTINGS = 'other_apps_only';
-  assert.strictEqual(
+  assert.deepStrictEqual(
     await simulatorNotificationStatus('UDID', 'com.example.app'),
-    'notDetermined'
+    { status: 'notDetermined', noEntry: true }
   );
 });
 
 test('an app with an entry gets the status in it', async () => {
   process.env.FAKE_SETTINGS = 'entry';
-  assert.strictEqual(
+  assert.deepStrictEqual(
     await simulatorNotificationStatus('UDID', 'com.example.app'),
-    'authorized'
+    { status: 'authorized' }
   );
 });
 
@@ -86,4 +86,20 @@ test('a never-asked app is warned about, in words that hold with or without a se
   );
   // Wording that holds with or without a settings entry.
   assert.doesNotMatch(check.evidence[0], /no entry/);
+});
+
+test('a missing settings entry does not take the restart away from a wedged simulator', () => {
+  const { explainNotificationsOff } = require('../../dist/verify/areas/push/on_device');
+  const wedged = { state: 'killed', verdict: 'skip', cause: 'device.notifications_wedged', detail: 'restart it', evidence: [] };
+  const section = (authorization) => ({
+    metric: 'delivered',
+    cells: [wedged],
+    notificationAuthorization: { status: 'notDetermined', at: '10:00:00', source: 'simulator settings', allowed: false, ...authorization },
+  });
+  const noEntry = explainNotificationsOff(section({ noEntry: true }), true);
+  assert.strictEqual(noEntry.cells[0].cause, 'device.notifications_wedged');
+  assert.strictEqual(noEntry.cells[0].detail, 'restart it');
+  // A written answer still explains it.
+  const written = explainNotificationsOff(section({}), true);
+  assert.strictEqual(written.cells[0].cause, 'device.notifications_disabled');
 });

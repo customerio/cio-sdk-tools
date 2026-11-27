@@ -24,12 +24,14 @@ const STATUS_NAMES = [
  * id, whose `authorizationStatus` is UNAuthorizationStatus's number. An app with no entry
  * has never asked for permission, which iOS calls `notDetermined`: a run on 2026-11-16 found
  * the React Native sample, which asks only from a button, with no entry and no extension run.
- * Nothing is claimed when the settings cannot be read at all.
+ * An entry can also be missing because SpringBoard has not written the file yet, so that
+ * answer says so (`noEntry`) and is weighed below a written one. Nothing is claimed when the
+ * settings cannot be read at all.
  */
 export async function simulatorNotificationStatus(
   udid: string,
   bundleId: string
-): Promise<string | undefined> {
+): Promise<{ status: string; noEntry?: boolean } | undefined> {
   const file = path.join(
     os.homedir(),
     'Library/Developer/CoreSimulator/Devices',
@@ -43,7 +45,7 @@ export async function simulatorNotificationStatus(
     return undefined;
   }
   const archived = sections[bundleId];
-  if (archived === undefined) return 'notDetermined';
+  if (archived === undefined) return { status: 'notDetermined', noEntry: true };
   if (typeof archived !== 'string') return undefined;
 
   // The entry is itself a binary plist, which plutil only reads from a file.
@@ -51,7 +53,8 @@ export async function simulatorNotificationStatus(
   try {
     const entry = path.join(scratch.path, 'section.plist');
     await fs.writeFile(entry, Buffer.from(archived, 'base64'));
-    return authorizationIn(await plistXml(entry));
+    const status = authorizationIn(await plistXml(entry));
+    return status ? { status } : undefined;
   } finally {
     await scratch.remove();
   }
