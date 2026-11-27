@@ -78,6 +78,9 @@ export async function androidWiring(input: {
 }
 
 /** The app's own SDK modules, and those its wrapper package brings. */
+/** Modules that depend on Firebase Messaging, whose manifest declares POST_NOTIFICATIONS. */
+const FIREBASE_PUSH_MODULES = ['messaging-push-fcm', 'messagingpush'];
+
 function shippedModules(model: AndroidProjectModel): string[] {
   return [
     ...new Set([...model.sdkModules, ...(model.wrapper?.sdkModules ?? [])]),
@@ -275,15 +278,36 @@ export function notificationPermissionCheck(model: AndroidProjectModel): Check {
     model.gradle.match(/targetSdk(?:Version)?\s*(?:=|\s)\s*(\d+)/)?.[1] ?? '0'
   );
 
-  if (declared || declaredByWrapper) {
+  // The push module brings in Firebase Messaging as an `api` dependency, and its manifest
+  // declares the permission, so the build merges it into every app that ships the module.
+  const firebaseModule = shippedModules(model).find((name) =>
+    FIREBASE_PUSH_MODULES.includes(name)
+  );
+  if (declared || declaredByWrapper || firebaseModule) {
     return pass('post_notifications', 'POST_NOTIFICATIONS is declared', [
-      ...(declared || !model.wrapper
+      ...(declared
         ? []
-        : [
+        : declaredByWrapper && model.wrapper
+        ? [
             `by ${model.wrapper.name}'s manifest, which the build merges into the app's`,
+          ]
+        : [
+            `by Firebase Messaging's manifest, which ${firebaseModule} brings in and the build merges into the app's`,
           ]),
       targetSdk ? `targetSdk ${targetSdk}` : 'targetSdk unknown',
     ]);
+  }
+  // A wrapper this tool could not read may bring the push module, and Firebase with it.
+  const wrapper = model.wrapper;
+  if (targetSdk >= 33 && wrapper?.declared && !wrapper.directory) {
+    return {
+      ...skipped(
+        'post_notifications',
+        'POST_NOTIFICATIONS is declared',
+        `${wrapper.name} is not installed, so whether its modules declare it could not be read`
+      ),
+      cause: 'wiring.wrapper_not_installed',
+    };
   }
   if (targetSdk >= 33) {
     return fail(

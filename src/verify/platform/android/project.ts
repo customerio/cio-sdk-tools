@@ -76,7 +76,13 @@ export async function loadAndroidProject(
 
   // The path handed in is usually the module itself — a sample app inside a bigger build
   // is the normal shape here, and searching the whole root would pick a sibling instead.
-  const here = (await isAppModule(root)) ? root : undefined;
+  // When a module was asked for by name, it wins: a Gradle root hands in its first app module
+  // as the path, and narrowing to that one would verify a module nobody named.
+  const here =
+    (await isAppModule(root)) &&
+    (!appModuleName || path.basename(root) === appModuleName)
+      ? root
+      : undefined;
   const modules = here ? [here] : await findAppModules(projectPath);
   const chosen = appModuleName
     ? modules.find((module) => path.basename(module) === appModuleName)
@@ -262,9 +268,10 @@ async function readAppliedScripts(
   );
   const out: string[] = [];
   for (const text of module) {
-    // Groovy `apply from: "…"` and Kotlin `apply(from = "…")`.
+    // Groovy `apply from: "…"`, Kotlin `apply(from = "…")`, and Kotlin's block form
+    // `apply { from("…") }`, which is how the SDK's own kotlin_compose sample does it.
     for (const match of text.matchAll(
-      /apply\s*(?:\(\s*)?from\s*[:=]?\s*\(?["']([^"']+)["']/g
+      /apply\s*(?:\{[^}]*?\bfrom\s*\(\s*|(?:\(\s*)?from\s*[:=]?\s*\(?)["']([^"']+)["']/g
     )) {
       // `apply from: "${rootDir}/samples/sample-app.gradle"` is how a sample app inherits
       // its SDK dependencies, so the usual root variables have to be substituted or the
@@ -353,7 +360,35 @@ export function sdkModulesFrom(gradle: string): string[] {
   )) {
     if (SDK_MODULE_NAMES.has(match[1])) modules.add(match[1]);
   }
+  // A version catalog entry names the module with no version after it, and counts only when
+  // the build uses it: `libs.customerio.push` for an alias `customerio-push`.
+  for (const [alias, module] of catalogModules(gradle)) {
+    const accessor = alias.replace(/[-_]/g, '.').replace(/\./g, '\\.');
+    if (
+      !optional.has(module) &&
+      new RegExp(`\\blibs\\.${accessor}(?![\\w.])`).test(shipped)
+    ) {
+      modules.add(module);
+    }
+  }
   return [...modules];
+}
+
+/** `alias = { module = "io.customer.android:x" … }` or `{ group = "io.customer.android", name = "x" … }`. */
+function catalogModules(gradle: string): [string, string][] {
+  const out: [string, string][] = [];
+  for (const match of gradle.matchAll(
+    /^\s*([A-Za-z][\w.-]*)\s*=\s*\{([^}\n]*)\}/gm
+  )) {
+    const body = match[2];
+    const module =
+      body.match(/\bmodule\s*=\s*"io\.customer\.android:([a-z0-9-]+)"/)?.[1] ??
+      (/\bgroup\s*=\s*"io\.customer\.android"/.test(body)
+        ? body.match(/\bname\s*=\s*"([a-z0-9-]+)"/)?.[1]
+        : undefined);
+    if (module) out.push([match[1], module]);
+  }
+  return out;
 }
 
 /**
@@ -528,12 +563,6 @@ export function enclosingClass(textBefore: string): string | undefined {
   return last;
 }
 
-export function extendsApplication(scope: string): boolean {
-  return /:\s*(?:\w+\.)*Application\b|extends\s+(?:\w+\.)*Application\b/.test(
-    scope
-  );
-}
-
 /**
  * A `FirebaseMessagingService` the app declares for itself.
  *
@@ -550,7 +579,9 @@ function messagingServiceFrom(
   if (!manifest) return undefined;
 
   for (const match of manifest.matchAll(
-    /<service[^>]*android:name="([^"]+)"[\s\S]*?<\/service>/g
+    // A self-closing `<service …/>` ends there: stretching to the next `</service>` would
+    // credit the following service's intent filter to this one.
+    /<service[^>]*?android:name="([^"]+)"[^>]*?(?:\/>|>[\s\S]*?<\/service>)/g
   )) {
     const block = match[0];
     if (!/com\.google\.firebase\.MESSAGING_EVENT/.test(block)) continue;
@@ -613,6 +644,21 @@ export function resolveInitAtLaunch(
   const evidence = model.initSites.map(
     (site) => `${site.file}:${site.line} in ${site.scope}`
   );
+
+  // With no Application class, nothing of the app's runs before a push but the messaging
+  // service itself, so an init in an Activity or Fragment is as wrong here as anywhere.
+  if (
+    !appClass &&
+    model.initSites.some((site) => ANDROID_UI_CLASS.test(site.scope))
+  ) {
+    return {
+      verdict: false,
+      evidence: [
+        ...evidence,
+        'the manifest names no Application class, and initialization sits in an Activity or Fragment, which a push does not start',
+      ],
+    };
+  }
 
   if (!appSource) {
     return {
