@@ -155,3 +155,12 @@ test("push's levels build on each other, as push chose", () => {
   // It runs before Customer.io keeps test pushes everywhere, and says so in its report.
   assert.ok(!endToEnd.unavailable);
 });
+
+test("the contract's cause appendix is the catalog, every cause in it", () => {
+  const { withAppendix, CONTRACT } = require('../../scripts/cause-appendix');
+  const contract = fs.readFileSync(CONTRACT, 'utf8');
+  assert.ok(
+    contract === withAppendix(contract),
+    'docs/verify-contract.md is out of date: run `npx tsc && node scripts/cause-appendix.js --write`'
+  );
+});
