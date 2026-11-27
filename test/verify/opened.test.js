@@ -295,15 +295,11 @@ test('both platforms reach the same verdict through the same judge', () => {
 
 test('a dry run never runs the tap test, because it skipped the consent question', () => {
   assert.match(
-    openedSkipReason({ dryRun: true, rateLimited: false }),
+    openedSkipReason({ dryRun: true }),
     /a dry run sends nothing/
   );
-  assert.match(
-    openedSkipReason({ dryRun: false, rateLimited: true }),
-    /provider was refusing sends/
-  );
   assert.strictEqual(
-    openedSkipReason({ dryRun: false, rateLimited: false }),
+    openedSkipReason({ dryRun: false }),
     undefined
   );
 });
