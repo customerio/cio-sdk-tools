@@ -8,7 +8,11 @@
  */
 
 /** One argument, or a flag and its value, kept together when the line wraps. */
-export type ReplayPart = string | [flag: string, value: string];
+export type ReplayPart =
+  | string
+  | [flag: string, value: string]
+  /** A flag whose value is read from an environment variable, so a secret is never printed. */
+  | { flag: string; variable: string };
 
 /** Single-quoted when the shell would otherwise split or expand it. */
 export function shellQuote(value: string): string {
@@ -44,7 +48,7 @@ export function wrapCommand(
 }
 
 function partText(part: ReplayPart): string {
-  return typeof part === 'string'
-    ? shellQuote(part)
-    : `${part[0]} ${shellQuote(part[1])}`;
+  if (typeof part === 'string') return shellQuote(part);
+  if (Array.isArray(part)) return `${part[0]} ${shellQuote(part[1])}`;
+  return `${part.flag} "$${part.variable}"`;
 }
