@@ -6,10 +6,14 @@ const { formatMs, stopwatch } = require('../../dist/verify/core/clock');
 test('durations read at the scale a developer thinks in', () => {
   assert.strictEqual(formatMs(0), '0ms');
   assert.strictEqual(formatMs(312), '312ms');
+  // Rounding never shows 60 seconds.
+  assert.strictEqual(formatMs(119500), '2m00s');
+  assert.strictEqual(formatMs(59950), '1m00s');
+  assert.strictEqual(formatMs(59940), '59.9s');
   assert.strictEqual(formatMs(999), '999ms');
   assert.strictEqual(formatMs(1_000), '1.0s');
   assert.strictEqual(formatMs(9_040), '9.0s');
-  assert.strictEqual(formatMs(59_999), '60.0s');
+  assert.strictEqual(formatMs(59_999), '1m00s');
   assert.strictEqual(formatMs(60_000), '1m00s');
   assert.strictEqual(formatMs(151_000), '2m31s');
 });
