@@ -611,8 +611,9 @@ export interface LaunchResolution {
   evidence: string[];
 }
 
+/** Any Activity or Fragment base: ComponentActivity (a Compose app's default), FragmentActivity, … */
 const ANDROID_UI_CLASS =
-  /extends\s+(?:\w+\.)*(?:AppCompatActivity|Activity|Fragment)\b|:\s*(?:\w+\.)*(?:AppCompatActivity|Activity|Fragment)\b/;
+  /(?:extends|:)\s*(?:\w+\.)*\w*(?:Activity|Fragment)\b/;
 
 /**
  * Does initialization run before a push can arrive?
