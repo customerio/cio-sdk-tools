@@ -126,10 +126,11 @@ export async function runPush(
   options.states = states?.join(',');
   options.named = given.depth && given.workspace && given.device;
 
-  // One evidence folder per sending run, settled here so every section writes into it. It
-  // holds the device's log, so it outlives the run only when asked for: `--evidence-dir`
-  // names where, `--verbose` keeps the default one. Otherwise it goes when the run ends.
-  if (options.send) {
+  // One evidence folder per run that captures a device's log (a sending run, or one that
+  // watches registration), settled here so every section writes into it. It outlives the run
+  // only when asked for: `--evidence-dir` names where, `--verbose` keeps the default one.
+  // Otherwise it goes when the run ends.
+  if (capturesLogs(options)) {
     options.evidence =
       options.evidence || verbose
         ? evidenceDirectoryFor(options)
@@ -338,4 +339,12 @@ export const SIMULATOR_NOTE =
 
 function advice(notes: string[]): string[] | undefined {
   return notes.length > 0 ? notes : undefined;
+}
+
+/** The run opens a device log capture: it sends, or it watches registration happen. */
+export function capturesLogs(options: {
+  send: boolean;
+  observe: boolean;
+}): boolean {
+  return options.send || options.observe;
 }
