@@ -360,7 +360,11 @@ export function initializationChecks(
         : []),
     ];
   }
-  if (elsewhere.length > 0) {
+  // Every call is off the launch path: nothing runs the SDK before a push.
+  const unresolved = signals.initSites.some(
+    (site) => site.runsAtLaunch === 'unknown'
+  );
+  if (elsewhere.length > 0 && !unresolved) {
     return [
       fail(
         'init_at_launch',
@@ -370,6 +374,8 @@ export function initializationChecks(
       ),
     ];
   }
+  // A call the tool could not follow may be the launch one, so a leftover beside it is only
+  // worth saying.
   return [
     warn(
       'init_at_launch',
@@ -377,6 +383,18 @@ export function initializationChecks(
       'wiring.init_launch_unproven',
       evidence
     ),
+    ...(elsewhere.length > 0
+      ? [
+          warn(
+            'init_outside_launch',
+            'CustomerIO.initialize is called only at launch',
+            'wiring.init_also_outside_launch',
+            elsewhere.map(
+              (site) => `${site.file}:${site.line} in ${site.scope}`
+            )
+          ),
+        ]
+      : []),
   ];
 }
 

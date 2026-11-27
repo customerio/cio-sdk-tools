@@ -435,3 +435,16 @@ test("POST_NOTIFICATIONS under an installed wrapper whose Gradle can't be read i
   });
   assert.deepStrictEqual([check.verdict, check.cause], ['warn', 'wiring.wrapper_build_unread']);
 });
+
+test('an init the tool could not follow, beside a leftover call, is unproven rather than not at launch', () => {
+  const { initializationChecks } = require('../../dist/verify/areas/push/registration/project_wiring');
+  const site = (runsAtLaunch, scope) => ({ file: 'App.swift', line: 3, scope, runsAtLaunch });
+  const checks = initializationChecks({ files: 2, initSites: [site('unknown', 'AppSetup.start'), site(false, 'ContentView.body')] });
+  assert.deepStrictEqual(
+    checks.map((check) => [check.id, check.verdict, check.cause]),
+    [
+      ['init_at_launch', 'warn', 'wiring.init_launch_unproven'],
+      ['init_outside_launch', 'warn', 'wiring.init_also_outside_launch'],
+    ]
+  );
+});
