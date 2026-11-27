@@ -1,5 +1,5 @@
 import { Ladder } from '../../core/report/ladder';
-import { Cell, Section } from '../../core/report/types';
+import { Cell, Section, Verdict } from '../../core/report/types';
 
 /** Push's registration steps, in the order they are reported. */
 export type RungId =
@@ -47,6 +47,13 @@ export interface MatrixCell extends Cell {
   tapped?: boolean;
   /** The OS's notification store held this push while its cell was waiting. */
   arrived?: boolean;
+  /**
+   * On an opened cell whose open line was missing: what the deep link's own lines said, when
+   * any arrived. A recorded open settles the open and leaves this to stand.
+   */
+  linkOutcome?: { verdict: Verdict; cause?: string };
+  /** After a re-send: the second push's title, which can also turn up after the cell. */
+  retryTitle?: string;
 }
 
 /**
@@ -66,6 +73,11 @@ export interface NotificationAuthorization {
   source?: 'sdk' | 'simulator settings';
   /** Whether iOS lets the app's notifications show; unknown for a status it has not named. */
   allowed?: boolean;
+  /**
+   * The simulator's settings hold no entry for the app: it has never asked, or SpringBoard
+   * has not written the file yet. Too weak to rule out a stale push connection.
+   */
+  noEntry?: boolean;
 }
 
 /**

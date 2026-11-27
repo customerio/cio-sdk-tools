@@ -539,6 +539,14 @@ export const CAUSES: Record<string, PushCause> = {
     remedy:
       "The open is proven by Customer.io's own record of this push. The deep link's outcome only exists in the device's log, which dropped it, so run the state again to see it.",
   },
+  'runtime.cold_tap_before_wrapper_init': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      "The tap started the app before its JavaScript or Dart set the SDK's log level, so no line for it was written.",
+    remedy:
+      "This is unproven, not failed. React Native and Flutter initialize the core SDK from script, which runs after iOS hands a cold tap to the app; until then the SDK logs only errors, and it replays the open once the script starts. Customer.io's record of the push settles the open when the send returned a delivery id.",
+  },
   'runtime.cold_tap_not_handled': {
     stage: 'delivered_matrix',
     severity: 'blocker',
@@ -554,6 +562,14 @@ export const CAUSES: Record<string, PushCause> = {
       'The open the SDK reported belongs to a different push than the one this run sent.',
     remedy:
       'Usually an older notification was tapped. Tap the one whose title ends in this run’s tag, as the prompt names it, or clear old notifications and run again.',
+  },
+  'runtime.tap_unmatched': {
+    stage: 'delivered_matrix',
+    severity: 'warning',
+    summary:
+      "The SDK tracked an open, but its line names no delivery id this tool can read, so the open can't be tied to the push this run sent.",
+    remedy:
+      'Update cio-sdk-tools: the SDK may now write the id differently. Until then, clear older notifications before the run so the only banner to tap is this one.',
   },
   'runtime.capture_stopped': {
     stage: 'delivered_matrix',
@@ -593,7 +609,7 @@ export const CAUSES: Record<string, PushCause> = {
     summary:
       "Nothing reached the app in any state, and iOS says the app's notifications aren't allowed.",
     remedy:
-      'On the device, open Settings → Notifications, find the app by its display name, and allow notifications; then run again. With notifications off, iOS drops an alert push before the extension runs, which looks exactly like a broken extension.',
+      'On the device, open Settings → Notifications, find the app by its display name, and allow notifications; then run again. An app that has never asked (some samples ask only from a button) is listed nowhere there: open it and trigger its permission prompt. With notifications off, iOS drops an alert push before the extension runs, which looks exactly like a broken extension.',
   },
   'send.provider_rate_limited': {
     stage: 'delivered_matrix',
