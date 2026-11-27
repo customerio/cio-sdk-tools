@@ -120,13 +120,29 @@ export async function loadProject(
 /**
  * Only the settings this tool reads are worth a 15s round trip. A bundle id set only in an
  * `.xcconfig` file is not in the pbxproj at all, and without one the app cannot be found on
- * the device.
+ * the device. The same goes for an app's entitlements file and an extension's Info.plist:
+ * missing from the pbxproj, each would be reported as a blocker, so the round trip is paid
+ * before saying so.
  */
 export function needsResolution(target: Target): boolean {
+  const settings = target.settings;
   if (
     (target.productType === APP_PRODUCT_TYPE ||
       target.productType === EXTENSION_PRODUCT_TYPE) &&
-    target.settings.PRODUCT_BUNDLE_IDENTIFIER === undefined
+    settings.PRODUCT_BUNDLE_IDENTIFIER === undefined
+  ) {
+    return true;
+  }
+  if (
+    target.productType === APP_PRODUCT_TYPE &&
+    settings.CODE_SIGN_ENTITLEMENTS === undefined
+  ) {
+    return true;
+  }
+  if (
+    target.productType === EXTENSION_PRODUCT_TYPE &&
+    settings.INFOPLIST_FILE === undefined &&
+    settings.GENERATE_INFOPLIST_FILE !== 'YES'
   ) {
     return true;
   }
