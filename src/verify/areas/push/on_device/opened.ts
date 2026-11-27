@@ -42,16 +42,12 @@ export const OPENED_STATES: AppState[] = ['killed', 'background'];
  */
 export function openedSkipReason(options: {
   dryRun: boolean;
-  rateLimited?: boolean;
   interactive?: boolean;
 }): string | undefined {
   if (options.dryRun)
     return 'a dry run sends nothing, so there is nothing to tap';
   if (options.interactive === false) {
     return 'opened needs a real tap, and this run cannot ask for one — run it in a terminal';
-  }
-  if (options.rateLimited) {
-    return 'the provider was refusing sends, so no tap test was sent';
   }
   return undefined;
 }
@@ -138,6 +134,8 @@ export async function tapIosPush(
     appProcess?: string;
     /** The URL schemes the app declares, lowercased. */
     appSchemes?: string[];
+    /** The core SDK is initialized from JavaScript or Dart (see MatrixOptions). */
+    initInWrapper?: boolean;
   },
   capture: LogCapture,
   handle?: CellHandle
@@ -286,6 +284,7 @@ export async function tapIosPush(
       idUnread: Boolean(push.expectedId && observed.tracked && !deliveryId),
       linkSent: Boolean(options.tap.link),
       linkToOwnApp,
+      initInWrapper: options.initInWrapper,
       ...observed,
     }),
     evidence,
@@ -479,6 +478,7 @@ export function explainUnseenTap(
     'runtime.tap_not_seen',
     'runtime.tap_lines_lost',
     'runtime.cold_tap_not_handled',
+    'runtime.cold_tap_before_wrapper_init',
   ];
   if (!unseen.includes(cell.cause ?? '')) return cell;
   if (context.stoppedReason) {
@@ -609,6 +609,11 @@ export function judgeOpened(observed: {
   linkSent?: boolean;
   /** iOS logged handing the tap to the app (phone captures only). */
   osDelivered?: boolean;
+  /**
+   * The core SDK is initialized from JavaScript or Dart. Until that runs its log level stays
+   * at error, and a cold tap is handed over before it does.
+   */
+  initInWrapper?: boolean;
 }): { verdict: Verdict; cause?: string; linkOutcome?: LinkOutcome } {
   if (!observed.available) return { verdict: 'skip' };
 
@@ -619,6 +624,14 @@ export function judgeOpened(observed: {
     // stream that read the launch from its first line, that silence is the SDK's: a tap
     // that starts the app reaches only a handler set up before launch finished.
     if (observed.osDelivered) {
+      // A React Native or Flutter app sets the level from its script, after the tap: a working
+      // app writes no debug line during that launch, so the silence proves nothing.
+      if (observed.lossy === false && observed.initInWrapper) {
+        return {
+          verdict: 'skip',
+          cause: 'runtime.cold_tap_before_wrapper_init',
+        };
+      }
       return observed.lossy === false
         ? { verdict: 'fail', cause: 'runtime.cold_tap_not_handled' }
         : { verdict: 'skip', cause: 'runtime.tap_lines_lost' };

@@ -94,8 +94,10 @@ test('a receipt line that names no push counts only once the push arrived, and a
   // No push on the device: a stray line from the last cell or another app is not this push.
   assert.strictEqual(sdkReceived([untitled], title, false).received, false);
   assert.strictEqual(sdkReceived([untitled], title, true).received, true);
-  // A tail that names a different push is never evidence for this one.
-  const other =
-    '[CIO] sdk.event ev=push.received id=dgS_other title=cio verify OTHER · killed';
-  assert.strictEqual(sdkReceived([other], title, true).received, false);
+  // A tail that names a different push is never evidence for this one, and the same line
+  // naming this push counts.
+  const tailed = (named) =>
+    `[Push] Received new message with deliveryId: dgS_abc || ev=push.received id=dgS_abc title=${encodeURIComponent(named)}`;
+  assert.strictEqual(sdkReceived([tailed('cio verify OTHER · killed')], title, true).received, false);
+  assert.strictEqual(sdkReceived([tailed(title)], title, true).received, true);
 });
