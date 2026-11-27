@@ -70,3 +70,26 @@ test('a non-iOS simulator that devicectl also lists is not offered as a device e
   const udids = (await listTargets()).map((t) => t.udid);
   assert.ok(!udids.includes('WATCH-1'), `offered: ${udids.join(', ')}`);
 });
+
+test("an x86_64 binary's entitlements are read from otool's byte-per-token layout too", () => {
+  const { decodeOtoolSection } = require('../../dist/verify/platform/ios/device');
+  const xml = '<plist><dict><key>aps-environment</key><string>development</string></dict></plist>';
+  const bytes = [...Buffer.from(xml)];
+  const hex = (n) => n.toString(16).padStart(2, '0');
+  const byteLayout = ['Contents of (__TEXT,__entitlements) section'];
+  for (let i = 0; i < bytes.length; i += 16) {
+    byteLayout.push(`${(0x100003f90 + i).toString(16)}\t${bytes.slice(i, i + 16).map(hex).join(' ')} `);
+  }
+  const padded = [...bytes, ...Array((4 - (bytes.length % 4)) % 4).fill(0)];
+  const wordLayout = ['Contents of (__TEXT,__entitlements) section'];
+  for (let i = 0; i < padded.length; i += 16) {
+    const words = [];
+    for (let w = i; w < Math.min(i + 16, padded.length); w += 4) {
+      words.push(padded.slice(w, w + 4).reverse().map(hex).join(''));
+    }
+    wordLayout.push(`${(0x100003f90 + i).toString(16)}\t${words.join(' ')} `);
+  }
+  for (const layout of [byteLayout, wordLayout]) {
+    assert.match(decodeOtoolSection(layout.join('\n')), /<string>development<\/string>/);
+  }
+});
