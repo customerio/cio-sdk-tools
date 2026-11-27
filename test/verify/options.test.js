@@ -282,6 +282,12 @@ test('a sending flag beside --depth registration is a contradiction, not a silen
   );
 });
 
+test('--deep-link without --check-opens is refused, since only tapped pushes carry the link', () => {
+  const { code, stderr } = verify(['--deep-link', 'myapp://home', '--json']);
+  assert.strictEqual(code, 2);
+  assert.match(envelope(stderr).message, /--deep-link goes only on the pushes you tap, so it needs --check-opens/);
+});
+
 test('an unattended send must name the workspace and the device; a sending flag names the depth', () => {
   const { code, stderr } = verify(['--check-opens', '--json']);
   assert.strictEqual(code, 2);
