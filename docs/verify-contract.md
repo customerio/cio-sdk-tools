@@ -56,7 +56,7 @@ Arrival is read from the OS wherever it can be: the simulator's notification sto
 | `--check-opens` | A person taps the killed and background pushes. See [Unattended runs](#unattended-runs). |
 | `--deep-link <url>` | The URL the pushes carry, so a tap is checked to land there. Needs `--check-opens`. |
 | `-n, --dry-run` | Everything except sending. |
-| `--no-retry` | No second push when the first doesn't arrive. |
+| `--no-retry` | No second push when the first doesn't arrive. Only iOS re-sends; Android sends one push per state. |
 | `--cio-profile <name>` | The `cio` login to use (env `CIO_PROFILE`). |
 | `--platform <ios\|android>` | When the folder holds both projects. |
 | `--ios-target`, `--ios-configuration`, `--android-module`, `--android-app-id` | When the project builds several apps. |
@@ -260,7 +260,7 @@ The tool reads the SDKs' log lines and stored state. Each SDK holds the parts be
 | `push.deep_link` | both | `url`; Android also `behavior` |
 | `push.deep_link_outcome` | both | `outcome`: `app_callback`, `app_navigation`, `system`, `external_app`, `default_app`, `not_handled` |
 
-The SDK writes `sdk.state` when it starts and whenever the user or token changes. The tool reads it only when the stored state below can't answer: it starts the app again and waits up to 20s for the line.
+The SDK writes `sdk.state` when it starts and whenever the user or token changes. It is a debug line, written only at the debug log level, and on iOS its `user` and `token` values are private in os_log: a person's identifier and push token never reach the device log of a build at the default level. The tool reads it only when the stored state below can't answer: it starts the app again and waits up to 20s for the line.
 
 **Log level from launch (contract).** The SDK uses the level the app last set from the moment its process starts, so a push or tap that starts a React Native or Flutter app is logged before JavaScript or Dart initializes the SDK.
 
