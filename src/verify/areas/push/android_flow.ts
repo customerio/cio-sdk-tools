@@ -59,6 +59,7 @@ export async function climbAndroid(
   const wiring = await androidWiring({
     projectPath,
     appModuleName: selection.appModuleName,
+    packageName: selection.packageName,
     model,
   });
   wiringRung.done(wiring.rung);

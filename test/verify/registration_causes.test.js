@@ -402,3 +402,36 @@ test("POST_NOTIFICATIONS merged in from Firebase Messaging counts, and an unread
   });
   assert.deepStrictEqual([unread.verdict, unread.cause], ['skip', 'wiring.wrapper_not_installed']);
 });
+
+test("google-services.json in a variant's source set, for the installed variant's package, passes", async () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { loadAndroidProject } = require('../../dist/verify/platform/android/project');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cio-verify-'));
+  const write = (relative, text) => {
+    fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+    fs.writeFileSync(path.join(root, relative), text);
+  };
+  const services = (name) => JSON.stringify({ client: [{ client_info: { android_client_info: { package_name: name } } }] });
+  write('settings.gradle', "include ':app'");
+  write('app/build.gradle', "apply plugin: 'com.android.application'\nandroid { defaultConfig { applicationId 'com.example.app' } }");
+  write('app/src/debug/google-services.json', services('com.example.app.debug'));
+  write('app/src/free/release/google-services.json', services('com.example.app.free'));
+  const model = await loadAndroidProject(path.join(root, 'app'));
+  assert.strictEqual(googleServicesCheck(model, 'com.example.app.debug').verdict, 'pass');
+  assert.strictEqual(googleServicesCheck(model, 'com.example.app.free').verdict, 'pass');
+  // Against the base id that no file lists, it is still a mismatch, never "missing".
+  assert.strictEqual(googleServicesCheck(model).cause, 'wiring.google_services_package_mismatch');
+});
+
+test("POST_NOTIFICATIONS under an installed wrapper whose Gradle can't be read is a warning", () => {
+  const { notificationPermissionCheck } = require('../../dist/verify/areas/push/registration/android_wiring');
+  const check = notificationPermissionCheck({
+    manifest: '<manifest/>',
+    gradle: 'targetSdk 35',
+    sdkModules: [],
+    wrapper: { name: 'customerio-reactnative', declared: true, directory: '/x', sdkModules: [], sdkModulesRead: false },
+  });
+  assert.deepStrictEqual([check.verdict, check.cause], ['warn', 'wiring.wrapper_build_unread']);
+});

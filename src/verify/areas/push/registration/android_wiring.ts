@@ -1,3 +1,4 @@
+import * as path from 'path';
 import {
   AndroidProjectModel,
   AndroidWrapper,
@@ -32,6 +33,8 @@ export async function androidWiring(input: {
   appModuleName?: string;
   /** Already parsed by the selection phase, which needed it to list the variants. */
   model?: AndroidProjectModel;
+  /** The installed variant's package, `applicationIdSuffix` and flavor included. */
+  packageName?: string;
 }): Promise<AndroidWiringResult> {
   const rung: Rung = {
     id: 'project_wiring',
@@ -59,7 +62,7 @@ export async function androidWiring(input: {
   rung.checks.push(sdkCheck(model));
   rung.checks.push(pushModuleCheck(model));
   rung.checks.push(initCheck(model));
-  rung.checks.push(googleServicesCheck(model));
+  rung.checks.push(googleServicesCheck(model, input.packageName));
   rung.checks.push(notificationPermissionCheck(model));
 
   const forwarding = messagingServiceCheck(model);
@@ -217,7 +220,11 @@ function wrapperInitCheck(
       );
 }
 
-export function googleServicesCheck(model: AndroidProjectModel): Check {
+export function googleServicesCheck(
+  model: AndroidProjectModel,
+  /** The installed variant's package; the build files' applicationId otherwise. */
+  packageName?: string
+): Check {
   const services = model.googleServices;
   if (!services) {
     return fail(
@@ -228,7 +235,7 @@ export function googleServicesCheck(model: AndroidProjectModel): Check {
     );
   }
 
-  const applicationId = model.applicationId;
+  const applicationId = packageName ?? model.applicationId;
   if (!applicationId) {
     return warn(
       'google_services',
@@ -241,12 +248,19 @@ export function googleServicesCheck(model: AndroidProjectModel): Check {
     );
   }
 
-  return services.packageNames.includes(applicationId)
+  // A variant's own source set can hold the file that lists its package: `src/debug/` for a
+  // `.debug` suffix, or a flavor's folder.
+  const files = model.googleServicesFiles ?? [services];
+  const listing = files.find((file) =>
+    file.packageNames.includes(applicationId)
+  );
+  return listing
     ? pass(
         'google_services',
         'google-services.json is present and matches this app',
         [
-          `${applicationId} is listed among ${services.packageNames.length} packages`,
+          `${applicationId} is listed among ${listing.packageNames.length} packages`,
+          `in ${path.relative(model.appModulePath, listing.path)}`,
         ]
       )
     : fail(
@@ -255,10 +269,16 @@ export function googleServicesCheck(model: AndroidProjectModel): Check {
         'wiring.google_services_package_mismatch',
         [
           `applicationId: ${applicationId}`,
-          `packages in file: ${services.packageNames.join(', ') || 'none'}`,
+          ...files.map(
+            (file) =>
+              `packages in ${path.relative(model.appModulePath, file.path)}: ${
+                file.packageNames.join(', ') || 'none'
+              }`
+          ),
         ],
         `the app is ${applicationId}; google-services.json lists ${
-          services.packageNames.join(', ') || 'none'
+          [...new Set(files.flatMap((file) => file.packageNames))].join(', ') ||
+          'none'
         }`
       );
 }
@@ -308,6 +328,18 @@ export function notificationPermissionCheck(model: AndroidProjectModel): Check {
       ),
       cause: 'wiring.wrapper_not_installed',
     };
+  }
+  // Installed, with Gradle files this tool cannot read: the same warning the module check
+  // gives, so the run goes on.
+  if (targetSdk >= 33 && wrapper?.directory && !wrapper.sdkModulesRead) {
+    return warn(
+      'post_notifications',
+      'POST_NOTIFICATIONS is declared',
+      'wiring.wrapper_build_unread',
+      [
+        `${wrapper.name}'s Gradle files declare the SDK in a way this tool doesn't read, so whether its modules declare it is unknown`,
+      ]
+    );
   }
   if (targetSdk >= 33) {
     return fail(

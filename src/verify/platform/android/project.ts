@@ -37,7 +37,13 @@ export interface AndroidProjectModel {
   gradle: string;
   /** `io.customer.android` modules declared anywhere in the build files. */
   sdkModules: string[];
-  googleServices?: { path: string; packageNames: string[] };
+  googleServices?: GoogleServicesFile;
+  /**
+   * Every google-services.json the module holds: the module's own, then each source set's
+   * (`src/debug/`, `src/<flavor>/`, `src/<flavor>/<buildType>/`, …), which the Google
+   * services plugin prefers for its variant.
+   */
+  googleServicesFiles?: GoogleServicesFile[];
   sources: SourceFile[];
   initSites: InitSite[];
   /** A `FirebaseMessagingService` the app declares itself, if any. */
@@ -108,7 +114,7 @@ export async function loadAndroidProject(
     manifestPath: manifest ? manifestPath : undefined,
     gradle,
     sdkModules: sdkModulesFrom(gradle),
-    googleServices: await readGoogleServices(chosen),
+    ...(await readGoogleServices(chosen)),
     sources,
     initSites: initSitesFrom(sources),
     wrapper: await loadAndroidWrapper(chosen),
@@ -479,13 +485,33 @@ export function applicationClassFrom(manifest?: string): string | undefined {
   return match?.[1];
 }
 
-async function readGoogleServices(
-  appModulePath: string
-): Promise<AndroidProjectModel['googleServices']> {
-  for (const candidate of [
+export interface GoogleServicesFile {
+  path: string;
+  packageNames: string[];
+}
+
+async function readGoogleServices(appModulePath: string): Promise<{
+  googleServices?: GoogleServicesFile;
+  googleServicesFiles?: GoogleServicesFile[];
+}> {
+  const candidates = [
     path.join(appModulePath, 'google-services.json'),
     path.join(appModulePath, 'src', 'main', 'google-services.json'),
-  ]) {
+  ];
+  // A variant's own source sets, one and two levels down: `src/debug/`, `src/free/`,
+  // `src/freeDebug/`, `src/free/debug/`. Test source sets are not the app.
+  const src = path.join(appModulePath, 'src');
+  for (const first of await fs.readdir(src).catch(() => [] as string[])) {
+    if (first === 'main' || /^(?:test|androidTest)/.test(first)) continue;
+    candidates.push(path.join(src, first, 'google-services.json'));
+    for (const second of await fs
+      .readdir(path.join(src, first))
+      .catch(() => [] as string[])) {
+      candidates.push(path.join(src, first, second, 'google-services.json'));
+    }
+  }
+  const files: GoogleServicesFile[] = [];
+  for (const candidate of candidates) {
     const text = await fs.readFile(candidate, 'utf8').catch(() => undefined);
     if (!text) continue;
     try {
@@ -497,12 +523,14 @@ async function readGoogleServices(
       const packageNames = (parsed.client ?? [])
         .map((client) => client.client_info?.android_client_info?.package_name)
         .filter((name): name is string => Boolean(name));
-      return { path: candidate, packageNames };
+      files.push({ path: candidate, packageNames });
     } catch {
-      return { path: candidate, packageNames: [] };
+      files.push({ path: candidate, packageNames: [] });
     }
   }
-  return undefined;
+  return files.length > 0
+    ? { googleServices: files[0], googleServicesFiles: files }
+    : {};
 }
 
 async function readSources(appModulePath: string): Promise<SourceFile[]> {
@@ -612,8 +640,7 @@ export interface LaunchResolution {
 }
 
 /** Any Activity or Fragment base: ComponentActivity (a Compose app's default), FragmentActivity, … */
-const ANDROID_UI_CLASS =
-  /(?:extends|:)\s*(?:\w+\.)*\w*(?:Activity|Fragment)\b/;
+const ANDROID_UI_CLASS = /(?:extends|:)\s*(?:\w+\.)*\w*(?:Activity|Fragment)\b/;
 
 /**
  * Does initialization run before a push can arrive?
