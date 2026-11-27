@@ -32,7 +32,7 @@ import { PushLadder, RUNG_TITLES } from './types';
 import { VerifyPushOptions, evidenceDirectoryFor } from './options';
 import { ClimbResult, skipRest, skipSending } from './climb';
 import { addSent, askToSend, tapPlanFor } from './sending';
-import { askerPhases } from '../../platform/observe';
+import { watchProgress } from '../../platform/observe';
 import { versionChecked } from '../../platform/sdk_version';
 import { profileToken, readAndroidStateLine } from './state_line';
 
@@ -89,7 +89,6 @@ export async function climbAndroid(
         serial: chosen.serial,
         packageName,
         reporter,
-        asker,
         evidenceDirectory: options.evidence,
       });
       observed = watch.observed;
@@ -276,7 +275,6 @@ async function observeAndroid(input: {
   serial: string;
   packageName: string;
   reporter: Reporter;
-  asker: Asker;
   evidenceDirectory?: string;
 }): Promise<{ observed: boolean; evidencePath?: string; notes: string[] }> {
   const handle = input.reporter.rung('Observing');
@@ -297,7 +295,7 @@ async function observeAndroid(input: {
             ? true
             : undefined,
       },
-      askerPhases(input, handle)
+      watchProgress(input, handle)
     );
     if (installed.timedOut) {
       notes.push('the app was never installed while watching');
@@ -317,7 +315,7 @@ async function observeAndroid(input: {
           (await readAndroidSdkState(input.serial, input.packageName))
             .deviceToken,
       },
-      askerPhases(input, handle)
+      watchProgress(input, handle)
     );
     if (token.at) {
       observed = true;
@@ -333,7 +331,7 @@ async function observeAndroid(input: {
         probe: async () =>
           (await readAndroidSdkState(input.serial, input.packageName)).userId,
       },
-      askerPhases(input, handle)
+      watchProgress(input, handle)
     );
     if (identity.at) {
       observed = true;
