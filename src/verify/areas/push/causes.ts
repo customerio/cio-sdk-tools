@@ -609,7 +609,7 @@ export const CAUSES: Record<string, PushCause> = {
     summary:
       "Nothing reached the app in any state, and iOS says the app's notifications aren't allowed.",
     remedy:
-      'On the device, open Settings → Notifications, find the app by its display name, and allow notifications; then run again. With notifications off, iOS drops an alert push before the extension runs, which looks exactly like a broken extension.',
+      'On the device, open Settings → Notifications, find the app by its display name, and allow notifications; then run again. An app that has never asked (some samples ask only from a button) is listed nowhere there: open it and trigger its permission prompt. With notifications off, iOS drops an alert push before the extension runs, which looks exactly like a broken extension.',
   },
   'send.provider_rate_limited': {
     stage: 'delivered_matrix',
