@@ -156,15 +156,13 @@ function keyChecks(facts: WorkspaceFacts): Check[] {
   const sdkKey = keys.sdkKey ?? keys.sdkKeyPrefix;
   if (sdkKey) {
     const label = `App reports to ${name}`;
-    const check = keys.error
-      ? keysUnreadable('sdk_key', label, keys.error)
-      : keyCheck(keys, sdkKey, {
-          id: 'sdk_key',
-          label,
-          where: 'the SDK on the device',
-          cause: 'workspace.sdk_key_foreign',
-          prefix: !keys.sdkKey,
-        });
+    const check = judgedKey(keys, sdkKey, {
+      id: 'sdk_key',
+      label,
+      where: 'the SDK on the device',
+      cause: 'workspace.sdk_key_foreign',
+      prefix: !keys.sdkKey,
+    });
     // The SDK said its key itself, or the tool read it where this SDK version keeps it.
     const trusted = !keys.sdkKey || keys.sdkKeyChecked;
     checks.push(
@@ -185,14 +183,12 @@ function keyChecks(facts: WorkspaceFacts): Check[] {
   if (keys.extensionKey) {
     const label = `Extension reports to ${name}`;
     checks.push(
-      keys.error
-        ? keysUnreadable('extension_key', label, keys.error)
-        : keyCheck(keys, keys.extensionKey.value, {
-            id: 'extension_key',
-            label,
-            where: `the extension, at ${keys.extensionKey.site}`,
-            cause: 'workspace.extension_key_foreign',
-          })
+      judgedKey(keys, keys.extensionKey.value, {
+        id: 'extension_key',
+        label,
+        where: `the extension, at ${keys.extensionKey.site}`,
+        cause: 'workspace.extension_key_foreign',
+      })
     );
   }
   return checks;
@@ -202,6 +198,21 @@ function keyChecks(facts: WorkspaceFacts): Check[] {
  * Unproven, with a cause so the run ends inconclusive. A skip with no cause exits 0 as
  * "registered for push", while the key that could not be checked may be the foreign one.
  */
+/**
+ * The keys that loaded still settle a match. A key missing from them is only unproven when
+ * some source's keys could not be read, since it may be one of those.
+ */
+function judgedKey(
+  keys: KeyFacts,
+  key: string,
+  check: Parameters<typeof keyCheck>[2]
+): Check {
+  const judged = keyCheck(keys, key, check);
+  return keys.error && judged.verdict !== 'pass'
+    ? keysUnreadable(check.id, check.label, keys.error)
+    : judged;
+}
+
 function keysUnreadable(id: string, label: string, error: string): Check {
   return {
     ...skipped(id, label, `the workspace's keys could not be read: ${error}`),

@@ -122,6 +122,9 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
   // later. So the chosen workspace is read again for a while before anything is called
   // missing, unless another workspace already holds the device, which explains it.
   const waited: string[] = [];
+  // Polls during the wait that got an answer. One that did looked again for the login and
+  // found nothing, so a failure after it leaves "missing" standing.
+  let pollsAnswered = 0;
   if ((!profile || !linked) && !hits.some((hit) => hit.hasToken)) {
     // Once, before waiting: an app opened again sends what it queued in the background.
     const opened = await input.foreground?.();
@@ -144,6 +147,7 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
       // A poll that fails says nothing new: what earlier reads established stays.
       const polled = await read();
       if (!lookupFailed) {
+        pollsAnswered += 1;
         profile = polled;
         linked = holds(profile);
         if (profile && linked) break;
@@ -157,7 +161,7 @@ export async function profileLinked(input: ProfileInput): Promise<Rung> {
     );
   }
 
-  if (!profile && lookupFailed) {
+  if (!profile && lookupFailed && pollsAnswered === 0) {
     unreadable();
     return rung;
   }
