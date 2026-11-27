@@ -425,6 +425,11 @@ async function locateDeviceApp(
 
 export interface DeviceSdkState {
   pushDeviceToken?: string;
+  /**
+   * The token came from Customer.io's record of the profile's one device for this app, not
+   * from this device: it may be another phone's.
+   */
+  tokenFromProfile?: boolean;
   userId?: string;
   anonymousId?: string;
   /** From the SDK's server-issued settings: the one link from this build to a workspace. */

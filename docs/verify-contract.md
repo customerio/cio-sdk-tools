@@ -428,6 +428,8 @@ Generated from the tool's catalog by `scripts/cause-appendix.js`. `severity` is 
   Launch the app once and let the SDK re-register. A reinstall leaves the container alone, and a dead token reads exactly like a live one.
 - **`device.token_unregistered`** · blocker — The SDK has no push token stored on this target.
   Open the app, and run again: the SDK stores a token the first time the app starts with push set up. If the app has been opened, check it registers for push at launch, and background and foreground it once. Without a token there is no address to send to.
+- **`device.token_from_profile`** · warning — The token came from Customer.io's record of the profile's one device for this app, not from this device.
+  The SDK's token store on the device couldn't be read, so this may be another phone's token, and it can't show this device is linked. Pass this device's token with --token, or run a debug build whose store the tool can read.
 - **`device.sdk_state_unreadable`** · warning — The tool couldn't read what the SDK stored on this target, so it can't say whether the SDK holds a token or an identified user.
   Update cio-sdk-tools: this SDK version may keep its state where this version of the tool doesn't look. To go on meanwhile, pass --token and --user. An SDK that writes its state line in the log at debug level is read from there when its files can't be.
 - **`device.identity_anonymous`** · blocker — No user is identified on this device, and Customer.io sends push only to identified profiles.

@@ -394,6 +394,18 @@ function tokenCheck(facts: DeviceFacts) {
       facts.stateLine?.noToken ? 'the SDK says it holds no token' : looked,
     ]);
   }
+  // Customer.io's record of the profile stood in for the device: it may be another phone's.
+  if (facts.sdk?.tokenFromProfile) {
+    return warn(
+      'token_registered',
+      'SDK holds a push token',
+      'device.token_from_profile',
+      [
+        `${token.slice(0, 12)}… (${token.length} chars)`,
+        ...(facts.sdk?.sources ?? []),
+      ]
+    );
+  }
   // Only the shape is printed. The token is the address of someone's phone.
   return pass('token_registered', 'SDK holds a push token', [
     `${token.slice(0, 12)}… (${token.length} chars)`,

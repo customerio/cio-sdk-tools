@@ -448,3 +448,45 @@ test('an init the tool could not follow, beside a leftover call, is unproven rat
     ]
   );
 });
+
+test("a token read from the profile is a warning, and can't prove the link it came from", () => {
+  const { deviceReady } = require('../../dist/verify/areas/push/registration/device_ready');
+  const { androidDeviceReady } = require('../../dist/verify/areas/push/registration/android_device');
+  const { deviceLinkChecks } = require('../../dist/verify/areas/push/registration/profile_linked');
+  const token = 'a'.repeat(64);
+  const fromProfile = ["Customer.io: the profile's one iOS device for this app"];
+  const ios = deviceReady(
+    {
+      target: { kind: 'simulator', name: 'iPhone 16', udid: 'U1', state: 'booted' },
+      usable: [],
+      ambiguous: [],
+      installed: true,
+      preferences: {},
+      sdk: { pushDeviceToken: token, tokenFromProfile: true, userId: 'u', sources: fromProfile, stores: { sdk: false, context: true, cdp: false } },
+    },
+    'io.example.app'
+  );
+  const iosToken = ios.checks.find((check) => check.id === 'token_registered');
+  assert.deepStrictEqual([iosToken.verdict, iosToken.cause], ['warn', 'device.token_from_profile']);
+  const android = androidDeviceReady(
+    {
+      target: { serial: 'emulator-5554', state: 'device' },
+      usable: [],
+      ambiguous: [],
+      installed: true,
+      sdk: { deviceToken: token, tokenFromProfile: true, userId: 'u', sources: [], stores: { sdk: false, context: false, cdp: true } },
+    },
+    'io.example.app',
+    false
+  );
+  const androidToken = android.checks.find((check) => check.id === 'token_registered');
+  assert.deepStrictEqual([androidToken.verdict, androidToken.cause], ['warn', 'device.token_from_profile']);
+  const profile = { cioId: 'c1', identifiers: {}, devices: [{ id: token, platform: 'ios' }] };
+  const [link] = deviceLinkChecks(profile, { token, tokenFromProfile: true });
+  assert.deepStrictEqual([link.verdict, link.cause], ['skip', 'device.token_from_profile']);
+  // Through the ladder the run is unproven, never a pass.
+  const ladder = new Ladder();
+  ladder.adopt({ id: 'profile_linked', title: 'Profile linked', checks: [link] });
+  assert.strictEqual(ladder.exitCode, EXIT.inconclusive);
+  assert.strictEqual(deviceLinkChecks(profile, { token })[0].verdict, 'pass');
+});

@@ -153,6 +153,7 @@ export async function climbAndroid(
     );
     if (token) {
       device.sdk.deviceToken = token;
+      device.sdk.tokenFromProfile = true;
       tokenFromProfile = true;
       device.sdk.sources.push(
         "Customer.io: the profile's one Android device for this app"
@@ -189,6 +190,7 @@ export async function climbAndroid(
     userId: device.sdk?.userId,
     anonymousId: device.sdk?.anonymousId,
     token: device.sdk?.deviceToken,
+    tokenFromProfile,
     candidates: selection.resolution.candidates,
     onSweep: (workspace) =>
       profileRung.phase(`looking in ${workspace.name ?? workspace.id}`),
