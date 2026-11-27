@@ -614,7 +614,7 @@ export function judgeOpened(observed: {
    * at error, and a cold tap is handed over before it does.
    */
   initInWrapper?: boolean;
-}): { verdict: Verdict; cause?: string } {
+}): { verdict: Verdict; cause?: string; linkOutcome?: LinkOutcome } {
   if (!observed.available) return { verdict: 'skip' };
 
   if (!observed.clicked && !observed.tracked) {
@@ -650,10 +650,42 @@ export function judgeOpened(observed: {
     return { verdict: 'fail', cause: 'runtime.opened_without_delivery_id' };
   }
   if (!observed.tracked) {
-    return observed.lossy
-      ? { verdict: 'skip', cause: 'runtime.tap_lines_lost' }
-      : { verdict: 'fail', cause: 'runtime.opened_not_tracked' };
+    // The link lines that did arrive are a verdict of their own. Customer.io's record can
+    // overturn the missing open, and it must not take the link's outcome with it.
+    const linkOutcome = linkLinesSeen(observed)
+      ? judgeLink(observed)
+      : undefined;
+    return {
+      ...(observed.lossy
+        ? { verdict: 'skip' as const, cause: 'runtime.tap_lines_lost' }
+        : { verdict: 'fail' as const, cause: 'runtime.opened_not_tracked' }),
+      ...(linkOutcome ? { linkOutcome } : {}),
+    };
   }
+  return judgeLink(observed);
+}
+
+/** What the deep link did, judged from its lines alone. */
+export interface LinkOutcome {
+  verdict: Verdict;
+  cause?: string;
+}
+
+/** The log held at least one line about the link. */
+function linkLinesSeen(observed: Parameters<typeof judgeOpened>[0]): boolean {
+  return (
+    observed.linkSent !== false &&
+    !!(
+      observed.linkAttempted ||
+      observed.linkHandled ||
+      observed.linkUnhandled ||
+      observed.linkBySystem ||
+      observed.linkOpenFailed
+    )
+  );
+}
+
+function judgeLink(observed: Parameters<typeof judgeOpened>[0]): LinkOutcome {
   // No link was sent, so the open is everything this cell claims.
   if (observed.linkSent === false) return { verdict: 'pass' };
   // The open was handled. The deep link is a second, independent claim: a push that opens
