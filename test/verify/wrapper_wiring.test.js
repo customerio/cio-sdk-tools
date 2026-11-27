@@ -92,7 +92,7 @@ test('a React Native app that never calls initialize still fails, on both platfo
 test('a React Native app on iOS initializes from TypeScript', async () => {
   const root = reactNativeApp();
   const xcodeproj = path.join(root, 'ios', 'Sample.xcodeproj');
-  const { rung } = await projectWiring({
+  const { rung, initInWrapper } = await projectWiring({
     projectPath: xcodeproj,
     scanRoot: path.join(root, 'ios'),
     model: {
@@ -114,6 +114,8 @@ test('a React Native app on iOS initializes from TypeScript', async () => {
   });
   assert.strictEqual(check(rung, 'init_present').verdict, 'pass');
   assert.deepStrictEqual(check(rung, 'init_present').evidence, [path.join('src', 'App.tsx') + ':1']);
+  // Its SDK logs at debug only once the script runs, which a cold tap comes before.
+  assert.strictEqual(initInWrapper, true);
 });
 
 /** A native iOS app and its extension, sharing the App Groups given, on the SDK version given. */
