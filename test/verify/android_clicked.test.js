@@ -37,7 +37,11 @@ test('deep-link lines with no opened line are a tap the SDK saw, not one it did 
   assert.strictEqual(judged(false).cause, 'runtime.tap_not_seen');
   assert.deepStrictEqual(
     judged(androidClicked({ ...nothing, linkAttempted: true, linkUnhandled: true })),
-    { verdict: 'fail', cause: 'runtime.opened_not_tracked' }
+    {
+      verdict: 'fail',
+      cause: 'runtime.opened_not_tracked',
+      linkOutcome: { verdict: 'fail', cause: 'runtime.deep_link_not_handled' },
+    }
   );
 });
 
