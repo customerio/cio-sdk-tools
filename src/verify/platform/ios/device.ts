@@ -633,15 +633,22 @@ export async function installedEntitlements(
   return entitlements;
 }
 
-/** `otool -X -s` prints little-endian hex words, four to a line, after an address column. */
-function decodeOtoolSection(stdout: string): string {
+/**
+ * `otool -X -s` prints the section after an address column in one of two layouts: for arm64,
+ * little-endian 32-bit words, four to a line; for x86_64, single bytes, sixteen to a line.
+ * Reading only the first left an Intel build with no entitlements at all.
+ */
+export function decodeOtoolSection(stdout: string): string {
   const bytes: number[] = [];
   for (const line of stdout.split('\n')) {
-    const words = line.trim().split(/\s+/).slice(1);
-    for (const word of words) {
-      if (!/^[0-9a-f]{8}$/i.test(word)) continue;
-      for (let i = 6; i >= 0; i -= 2) {
-        bytes.push(parseInt(word.slice(i, i + 2), 16));
+    const tokens = line.trim().split(/\s+/).slice(1);
+    for (const token of tokens) {
+      if (/^[0-9a-f]{2}$/i.test(token)) {
+        bytes.push(parseInt(token, 16));
+      } else if (/^[0-9a-f]{8}$/i.test(token)) {
+        for (let i = 6; i >= 0; i -= 2) {
+          bytes.push(parseInt(token.slice(i, i + 2), 16));
+        }
       }
     }
   }

@@ -123,6 +123,7 @@ const NEEDS_SDK_LINES = [
   // An SDK that writes nothing writes nothing during a launch either: a cold tap with no SDK
   // line was read as the SDK set up too late, a false failure with the wrong fix.
   'runtime.cold_tap_not_handled',
+  'runtime.cold_tap_before_wrapper_init',
   'runtime.opened_not_tracked',
 ];
 
@@ -280,18 +281,9 @@ export function extensionSdkQuiet(
 }
 
 /**
- * The extension handled one of these deliveries: a line from its process names the id. Its
- * lines for a late earlier push name another id, and say nothing about this one.
+ * Which of these deliveries the extension's lines name. Its lines for a late earlier push
+ * name another id, and say nothing about these.
  */
-export function extensionHandled(
-  lines: LogLine[],
-  extensionName: string | undefined,
-  ids: string[]
-): boolean {
-  return extensionHandledIds(lines, extensionName, ids).length > 0;
-}
-
-/** Which of these deliveries the extension's lines name. */
 export function extensionHandledIds(
   lines: LogLine[],
   extensionName: string | undefined,
@@ -320,12 +312,16 @@ export function extensionRanFor(
   return named.length === 0 || named.some((id) => ids.includes(id));
 }
 
-/** Delivery ids are base64url with a `dgS_` prefix — a charset without `_` and `-` misses. */
+/**
+ * Delivery ids are base64url of `v`, 4, then the workspace id as a uvarint, so every one starts
+ * `dg` and a third character from Q to T; the fourth comes from the workspace id. Reading
+ * only `dgS_` read workspace 122175's ids and no others. A charset without `_` and `-` misses.
+ */
 export function deliveryIdsIn(lines: LogLine[]): string[] {
   const ids = new Set<string>();
   for (const line of lines) {
     for (const match of line.message.matchAll(
-      /(dgS_[A-Za-z0-9_-]{8,}={0,2})/g
+      /(?<![A-Za-z0-9_-])(dg[QRST][A-Za-z0-9_-]{9,}={0,2})/g
     )) {
       ids.add(match[1].replace(/[,)]+$/, ''));
     }

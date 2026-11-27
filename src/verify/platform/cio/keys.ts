@@ -34,31 +34,45 @@ export async function workspaceKeys(
   const sources = (listed.data.sources ?? []).filter(
     (source) => source.id !== undefined
   );
-  const answers = await Promise.all(
-    sources.map((source) =>
-      api<{ api_keys?: { api_key?: string }[] }>(
-        '/cdp/api/workspaces/{workspace_id}/sources/{source_id}/api_keys',
-        { workspace_id: environmentId, source_id: String(source.id) }
-      )
+  // A few at a time: a large workspace has many sources, and a burst of calls is what gets
+  // throttled. A source that still fails leaves the keys that did load, with the error beside
+  // them, so a key found among them is still found.
+  const answers = await inBatches(sources, KEY_LOOKUPS_AT_ONCE, (source) =>
+    api<{ api_keys?: { api_key?: string }[] }>(
+      '/cdp/api/workspaces/{workspace_id}/sources/{source_id}/api_keys',
+      { workspace_id: environmentId, source_id: String(source.id) }
     )
   );
   const failed = answers.find((answer) => !answer.ok);
-  if (failed) {
-    return {
-      keys: [],
-      error: shortError(failed.error ?? 'no answer from the cio CLI'),
-    };
-  }
   return {
     keys: answers.flatMap((answer, index) =>
-      (answer.data?.api_keys ?? [])
+      (answer.ok ? answer.data?.api_keys ?? [] : [])
         .filter((entry) => entry.api_key)
         .map((entry) => ({
           key: entry.api_key as string,
           source: sources[index].name ?? String(sources[index].id),
         }))
     ),
+    ...(failed
+      ? { error: shortError(failed.error ?? 'no answer from the cio CLI') }
+      : {}),
   };
+}
+
+const KEY_LOOKUPS_AT_ONCE = 4;
+
+async function inBatches<T, R>(
+  items: T[],
+  size: number,
+  each: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let start = 0; start < items.length; start += size) {
+    results.push(
+      ...(await Promise.all(items.slice(start, start + size).map(each)))
+    );
+  }
+  return results;
 }
 
 /**

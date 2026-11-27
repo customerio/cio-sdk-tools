@@ -72,6 +72,11 @@ export interface WiringResult {
   extensionName?: string;
   /** The URL schemes the app declares, lowercased. */
   urlSchemes?: string[];
+  /**
+   * A React Native or Flutter app with no native init site: the core SDK is initialized from
+   * JavaScript or Dart, which runs after iOS hands a cold tap to the app.
+   */
+  initInWrapper?: boolean;
   /** The key the extension's SDK runs with, where its sources spell it out. */
   extensionKey?: KeyLiteral;
   /** The native SDK's version the project resolved, when its dependency manager says. */
@@ -230,6 +235,7 @@ export async function projectWiring(input: WiringInput): Promise<WiringResult> {
       .map((target) => target.settings.PRODUCT_NAME || target.name),
     extensionName: nse ? nse.settings.PRODUCT_NAME || nse.name : undefined,
     urlSchemes: await urlSchemes(model.projectPath, app),
+    initInWrapper: Boolean(wrapper?.declared) && signals.initSites.length === 0,
     extensionKey: nseKey,
     sdkVersion,
   };
@@ -604,15 +610,35 @@ async function appGroupCheck(
       `the SDK (${sdkVersion}) shares nothing through an App Group before ${APP_GROUP_SINCE}`
     );
   }
+  // `appGroupId(AppConfig.groupId)`: set in code, to a value this tool cannot read.
+  const fromExpression =
+    inCode.length === 0 &&
+    nseSources.some((file) => /\.appGroupId\(\s*[^"\s)]/.test(file.text));
+  if (fromExpression) {
+    evidence.push(
+      'code: appGroupId() is set from an expression, not a literal'
+    );
+  }
   // From 4.4, with no appGroupId() in code, the SDK uses group.<app bundle id>.cio: any
   // other group the two targets share is not the one it reads.
   const sdkDefault =
-    inCode.length === 0 && sdkVersion && app.settings.PRODUCT_BUNDLE_IDENTIFIER
+    inCode.length === 0 &&
+    !fromExpression &&
+    sdkVersion &&
+    app.settings.PRODUCT_BUNDLE_IDENTIFIER
       ? `group.${app.settings.PRODUCT_BUNDLE_IDENTIFIER}.cio`
       : undefined;
   if (sdkDefault) evidence.push(`SDK default: ${sdkDefault}`);
 
-  if (inCode.length === 0 && inApp.length === 0 && inExtension.length === 0) {
+  // No group the SDK would use: none in code, and its default is not in both targets. To the
+  // SDK that is the same as having no group at all, whatever else the app shares with a widget.
+  const noGroupForSdk =
+    inCode.length === 0 &&
+    !fromExpression &&
+    !(sdkDefault
+      ? inApp.includes(sdkDefault) && inExtension.includes(sdkDefault)
+      : inApp.some((group) => inExtension.includes(group)));
+  if (noGroupForSdk) {
     return warn(
       'app_group_agreement',
       'App Group agrees across app, extension and code',

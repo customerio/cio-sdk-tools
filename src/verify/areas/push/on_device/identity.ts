@@ -35,23 +35,12 @@ export function deliveredTitle(state: AppState, tag: string): string {
   return `cio verify ${tag} · ${state}`;
 }
 
-export function tapTitle(tag: string): string {
-  return `cio verify ${tag} · tap me`;
-}
-
 export function tapBody(state: AppState): string {
   return `Tap this to verify the opened metric (${state} state).`;
 }
 
 const DELIVERY_ID = /[A-Za-z0-9_-]{8,}={0,2}/;
 
-/**
- * The delivery id of the push with this title, from the Android SDK's account of receiving it.
- *
- * `Received notification for message:` and `Showing notification for message:` print the
- * message's data map on one line — `{…, title=<title>, CIO-Delivery-ID=<id>}` — which is the
- * one place on Android where the title and the id are written down together.
- */
 /**
  * Whether a receipt line names a different push: an SDK with key tails writes the title on
  * its `push.received` line, and a line for another push is no evidence for this one.
@@ -66,6 +55,13 @@ export function receiptNamesOtherPush(message: string, title: string): boolean {
   );
 }
 
+/**
+ * The delivery id of the push with this title, from the Android SDK's account of receiving it.
+ *
+ * `Received notification for message:` and `Showing notification for message:` print the
+ * message's data map on one line — `{…, title=<title>, CIO-Delivery-ID=<id>}` — which is the
+ * one place on Android where the title and the id are written down together.
+ */
 export function androidIdForTitle(
   messages: string[],
   title: string

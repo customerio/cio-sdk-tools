@@ -54,7 +54,7 @@ Arrival is read from the OS wherever it can be: the simulator's notification sto
 | `-d, --device <id\|name>` | Simulator udid, iPhone udid, Android serial, or name. |
 | `--app-states <list>` | `killed`, `background`, `foreground` (default all three), one push each. |
 | `--check-opens` | A person taps the killed and background pushes. See [Unattended runs](#unattended-runs). |
-| `--deep-link <url>` | The URL the pushes carry, so a tap is checked to land there. |
+| `--deep-link <url>` | The URL the pushes carry, so a tap is checked to land there. Needs `--check-opens`. |
 | `-n, --dry-run` | Everything except sending. |
 | `--no-retry` | No second push when the first doesn't arrive. |
 | `--cio-profile <name>` | The `cio` login to use (env `CIO_PROFILE`). |
@@ -200,14 +200,14 @@ A tool failure is one JSON line on stderr, in the `cio` CLI's own shape, so one 
 
 ## Causes
 
-84 today, each found by one step (`stage`), listed in [the appendix](#appendix-every-cause). Every check or push that doesn't pass names one.
+Each is found by one step (`stage`) and listed in [the appendix](#appendix-every-cause). Every check or push that doesn't pass names one.
 
-- `blocker`: the integration is broken, or the run can't go on. The run fails (exit 20).
+- `blocker`: the integration is broken (the run fails, exit 20), or the run can't go on (it ends unproven, exit 21, as `send.provider_rate_limited` and `device.notifications_wedged` do).
 - `warning`: worth the person's attention, or the reason a push is unproven. The run warns (exit 0) or ends unproven (exit 21).
 
 ## Requirements
 
-- **Node.js 20 or later.** Node 20 went out of support in April 2026; CI tests it as the oldest the package allows.
+- **Node.js 20 or later.** Node 20 went out of support in April 2026, and CI tests on Node 24.
 - **The Customer.io CLI, logged in:** `npm install -g @customerio/cli`, then `cio auth login`. The login needs to read workspaces, push credentials, sources and their API keys, customers and test deliveries, and to send test pushes. `--cio-profile` needs a `cio` that has profiles.
 - **iOS:** macOS with Xcode, and a booted simulator or a USB-connected, unlocked iPhone running a development build. An iPhone's logs need `idevicesyslog` (`brew install libimobiledevice`).
 - **Android:** `adb`, and a running emulator or connected device with a debuggable build (the tool reads the SDK's stored token with `run-as`).
@@ -322,7 +322,7 @@ The native sample apps, in a workspace with several apps; on the iPhone and the 
 
 ## Appendix: every cause
 
-Generated from the tool's catalog. `severity` is `blocker` or `warning`; the second line is the remedy, as the tool prints it.
+Generated from the tool's catalog by `scripts/cause-appendix.js`. `severity` is `blocker` or `warning`; the second line is the remedy, as the tool prints it.
 
 ### Project wiring (`project_wiring`)
 
@@ -330,8 +330,12 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
   Add the SDK before anything else. Every later finding would be a consequence of its absence rather than a cause. https://www.customer.io/docs/sdk/
 - **`wiring.init_absent`** · blocker — No call to CustomerIO.initialize was found in the app sources.
   Initialize the SDK when the app starts: from the app delegate launch method on iOS, from Application.onCreate on Android, or from the app's startup code in React Native, Expo and Flutter. Without it the SDK never registers for push and never reports a metric. https://www.customer.io/docs/sdk/
+- **`wiring.init_also_outside_launch`** · warning — CustomerIO.initialize runs at launch, and is also called somewhere that runs again later, such as a SwiftUI view body.
+  Keep the call at launch and remove the other one. A view body is re-evaluated on every redraw, so the SDK is initialized again each time. https://www.customer.io/docs/sdk/
 - **`wiring.init_not_at_launch`** · blocker — CustomerIO.initialize runs where nothing guarantees it runs before a push arrives: a SwiftUI view body on iOS, which is re-evaluated on every redraw, or an Activity on Android, which a push never starts.
   Move initialization to app launch: the app delegate launch method or the App type initializer on iOS, Application.onCreate on Android. https://www.customer.io/docs/sdk/
+- **`wiring.google_services_unverified`** · warning — google-services.json was found, but the app's applicationId could not be resolved to compare it against.
+  Check that a client in google-services.json lists the app's package name, including any flavor suffix. A file for the wrong package gives the app no Firebase token, and nothing here proves it either way. https://www.customer.io/docs/sdk/android/push/
 - **`wiring.init_launch_unproven`** · warning — CustomerIO.initialize was found, but no path from a launch method to it could be resolved.
   Nothing to fix if initialization runs at launch through a helper the tool could not follow. Worth a glance: initialization that runs later than launch loses pushes that arrive before it.
 - **`wiring.nse_missing`** · blocker — The project has no Notification Service Extension target.
@@ -354,6 +358,8 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
   Add the Push Notifications capability to the app target; Xcode creates the entitlements file with it. https://www.customer.io/docs/sdk/ios/push/
 - **`wiring.push_module_missing`** · blocker — The project does not depend on the SDK's push module.
   Add io.customer.android:messaging-push-fcm. Without it the SDK never sees a message: the module is what registers the Firebase service that receives one. https://www.customer.io/docs/sdk/android/push/
+- **`wiring.wrapper_not_installed`** · warning — The wrapper package is declared and not installed, so whether it brings the push module isn't checked.
+  Install the project's packages (npm install, yarn, or flutter pub get) and run again. Until then the run cannot tell if the push module is a dependency.
 - **`wiring.wrapper_build_unread`** · warning — The wrapper package's Gradle files declare the SDK in a way this tool doesn't read, so whether it brings the push module isn't checked.
   Update cio-sdk-tools. The rest of the run still proves push end to end: a push that arrives and is tracked shows the module is there.
 - **`wiring.google_services_missing`** · blocker — No google-services.json in the app module.
@@ -362,6 +368,10 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
   Add this app to the Firebase project, or fetch the file for the right one. A mismatch here fails at registration, so the app never gets a token. https://www.customer.io/docs/sdk/android/push/
 - **`wiring.post_notifications_undeclared`** · blocker — The manifest does not declare POST_NOTIFICATIONS, which Android 13 and later require before a notification can be shown.
   Add <uses-permission android:name="android.permission.POST_NOTIFICATIONS" /> and request it at runtime. Deliveries are still counted without it; nothing is ever displayed. https://www.customer.io/docs/sdk/android/push/
+- **`wiring.nse_sources_unscoped`** · warning — The extension's sources could not be told apart from the app's, so forwarding and the App Group were not checked.
+  Keep the extension's Swift files in the folder that holds its Info.plist, as Xcode's template does. The on-device run still proves delivery end to end.
+- **`wiring.post_notifications_not_yet_required`** · warning — The manifest does not declare POST_NOTIFICATIONS. This build targets an Android version below 13, or one that could not be read, so notifications still show.
+  Add <uses-permission android:name="android.permission.POST_NOTIFICATIONS" /> and request it at runtime before targetSdk reaches 33. From then on nothing is displayed without it. https://www.customer.io/docs/sdk/android/push/
 - **`wiring.fcm_service_does_not_forward`** · warning — The app declares its own FirebaseMessagingService and it does not appear to forward messages to the SDK.
   A service the app declares owns every message. Forward to the SDK from onMessageReceived, or every delivery goes uncounted while the notification still displays — the Android shape of the invisible failure. https://www.customer.io/docs/sdk/android/push/
 
@@ -381,8 +391,10 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
   Everything the app reports, its profile and device included, goes to the workspace that issued the key, or nowhere if the key is dead, though a push sent to its token still arrives. Initialize the SDK with a key from this workspace, or choose the app's own workspace with --workspace. An app can keep a key from an earlier build in its own storage, so delete the app and install it again rather than installing over it. https://www.customer.io/docs/sdk/
 - **`workspace.extension_key_foreign`** · blocker — The Notification Service Extension's SDK runs with a key that isn't one of this workspace's.
   Pushes still arrive and show, but their delivered metrics go to another workspace, or nowhere. Initialize the extension's SDK with the app's key, where this finding points. https://www.customer.io/docs/sdk/ios/push/#rich-push
-- **`workspace.lookup_failed`** · warning — The workspace credential could not be read.
-  Check that the authenticated account can read this workspace. Nothing about the credential is proven either way.
+- **`workspace.build_environment_unknown`** · warning — The credential's environment is known, but the build declares no aps-environment to compare it against.
+  Add the Push Notifications capability so the build's entitlements carry aps-environment. Until the build says sandbox or production, a mismatch with the credential cannot be seen, and it is silent on both ends. https://www.customer.io/docs/sdk/ios/push/
+- **`workspace.lookup_failed`** · warning — The workspace's push credential or keys could not be read.
+  Check that the authenticated account can read this workspace, including its keys. Nothing about the credential or the keys is proven either way.
 
 ### Device ready (`device_ready`)
 
@@ -394,14 +406,22 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
   Restart the emulator with `-dns-server 8.8.8.8` (an emulator loses DNS whenever the host resolver changes under it). Everything else looks healthy in this state, which is what makes it worth naming.
 - **`device.notification_permission_denied`** · blocker — Notification permission is not granted on this target.
   Grant it with the command shown with this finding, or accept the prompt in the app. Deliveries are counted either way; nothing is displayed.
+- **`device.notification_permission_unread`** · warning — The target's notification permission could not be read.
+  dumpsys listed no POST_NOTIFICATIONS entry for the app on an Android 13 or newer target, so the permission's state is unknown. Check it in the app's settings, or grant it with `adb shell pm grant <app> android.permission.POST_NOTIFICATIONS`, and run again.
 - **`device.build_not_debuggable`** · blocker — The installed build isn't debuggable, so the SDK's token and profile can't be read from it.
   Install a debug build, or set debuggable true on this build type, and run again. Android lets another process read an app's files only when the build is debuggable, and without the token there is nothing to send to.
+- **`device.build_not_debuggable_token_given`** · warning — The installed build isn't debuggable, so the SDK's stored state can't be read; the run continues with the token given.
+  The profile and the SDK's own stores stay unchecked. Install a debug build, or set debuggable true on this build type, to check them.
+- **`device.entitlements_unread`** · warning — The installed build's entitlements could not be read, so whether it can register for push is unchecked.
+  A simulator build signed to run locally carries its entitlements in the binary. Rebuild with code signing on, and check that the app target has the Push Notifications capability.
 - **`device.not_available`** · blocker — The requested simulator or device is not usable.
   Boot the simulator or connect and unlock the device, then run again. Pass --device with a name or udid to choose between several.
 - **`device.app_not_installed`** · blocker — The app is not installed on the target.
   Build and run the app on this target first. Verification reads what the SDK recorded at runtime, so there has to have been a run.
 - **`device.container_unreadable`** · warning — The app's data container could not be read.
   Container access needs a development build installed by Xcode. Without it the token and identity cannot be read, so the later rungs prove nothing.
+- **`device.container_unreadable_token_known`** · warning — The app's data container could not be read; the run continues with the token from --token or the SDK's log.
+  The SDK's stored state, and whether the token belongs to this install, stay unchecked. Install a development build from Xcode to read them.
 - **`device.installed_build_cannot_register`** · blocker — The installed build carries no aps-environment entitlement, so it cannot register for push at all.
   Install a build made with code signing on — a build made with CODE_SIGNING_ALLOWED=NO has no entitlements, APNs refuses it a token, and the SDK deletes the one it had while its stored copy stays on disk looking healthy. https://www.customer.io/docs/sdk/ios/push/
 - **`device.token_predates_install`** · warning — The stored push token is older than the installed build, so it may not belong to it.
@@ -421,6 +441,10 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
   The app is reporting to another workspace: check the CDP API key passed to CustomerIO.initialize against the key for the workspace you picked. Pushes sent from the chosen workspace will never reach this device.
 - **`profile.identity_in_other_workspace`** · blocker — The identity this app logged in as exists in a different workspace.
   Either the app is using another workspace's CDP API key, or this login happened against a different environment. Compare the key in CustomerIO.initialize with the workspace you picked.
+- **`profile.identity_also_elsewhere`** · warning — The identity is in the chosen workspace and also in another one. This device is linked in neither.
+  The app has reported this login to more than one workspace, at some point. The device link is the problem to solve here: the checks above say why it is missing.
+- **`profile.lookup_failed`** · warning — The profile lookup failed, so whether the device is linked is unknown.
+  Check that the authenticated account can read profiles in this workspace (`cio auth status`), then run again. The failure is in the lookup itself: nothing about the profile is proven either way.
 - **`profile.not_found`** · blocker — No profile in this workspace matches the device's identity.
   Check the workspace is the one the app talks to, and that identify has reached it — profile sync runs on a cycle, so a login seconds old may not be there yet. An app sent to the background straight after logging in keeps its login on the device until it is opened again (Android cuts its network, iOS suspends it): keep the app open for about 30 seconds after logging in, then run again.
 - **`profile.no_device_linked`** · blocker — The profile has no devices at all.
@@ -442,6 +466,8 @@ Generated from the tool's catalog. `severity` is `blocker` or `warning`; the sec
   This is unproven, not failed. A phone's log stream drops lines, most of all during the burst of a cold launch, so a tap the app handled can leave no trace in it. For a tap on a killed app the run watches the next pids the phone will hand out, so the app lands in a stream that is already reading; the cell's evidence says why that did not cover it (usually more processes starting at once than it watched). Run that state again: the run prints the command, and the report carries it as `rerunUnproven`.
 - **`runtime.opened_recorded_link_unseen`** · warning — Customer.io recorded the open; where the tap went was in the lines the phone's log lost.
   The open is proven by Customer.io's own record of this push. The deep link's outcome only exists in the device's log, which dropped it, so run the state again to see it.
+- **`runtime.cold_tap_before_wrapper_init`** · warning — The tap started the app before its JavaScript or Dart set the SDK's log level, so no line for it was written.
+  This is unproven, not failed. React Native and Flutter initialize the core SDK from script, which runs after iOS hands a cold tap to the app; until then the SDK logs only errors, and it replays the open once the script starts. Customer.io's record of the push settles the open when the send returned a delivery id.
 - **`runtime.cold_tap_not_handled`** · blocker — The tap started the app, and the SDK never handled it.
   iOS handed the tap to the app, and every line the app wrote from its first was read, so this is not a lost line. A tap that starts the app is delivered once, during launch, to the notification delegate in place by then; Apple's rule is that the delegate must be assigned before the app finishes launching. When taps on a running app pass and this one fails, the SDK is set up too late: initialize it, push module included, in the app delegate's launch method, not after a login, a screen appearing or an async load. https://www.customer.io/docs/sdk/ios/push/
 - **`runtime.tap_other_push`** · warning — The open the SDK reported belongs to a different push than the one this run sent.

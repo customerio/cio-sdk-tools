@@ -91,6 +91,16 @@ export async function runPush(
     );
   }
 
+  // The link goes only on pushes someone taps, so without the tap it is checked nowhere, and
+  // a passing run would look like it had been.
+  if (flags.deepLink && !flags.checkOpens) {
+    throw new ToolFailure(
+      '--deep-link goes only on the pushes you tap, so it needs --check-opens',
+      ERROR_CODES.validation,
+      { flag: '--check-opens' }
+    );
+  }
+
   const { level, asked: levelAsked } = await resolveLevel(PUSH_LEVELS, {
     given: flags.depth,
     flag: '--depth',

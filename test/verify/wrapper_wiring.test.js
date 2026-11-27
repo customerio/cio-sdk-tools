@@ -92,7 +92,7 @@ test('a React Native app that never calls initialize still fails, on both platfo
 test('a React Native app on iOS initializes from TypeScript', async () => {
   const root = reactNativeApp();
   const xcodeproj = path.join(root, 'ios', 'Sample.xcodeproj');
-  const { rung } = await projectWiring({
+  const { rung, initInWrapper } = await projectWiring({
     projectPath: xcodeproj,
     scanRoot: path.join(root, 'ios'),
     model: {
@@ -114,25 +114,29 @@ test('a React Native app on iOS initializes from TypeScript', async () => {
   });
   assert.strictEqual(check(rung, 'init_present').verdict, 'pass');
   assert.deepStrictEqual(check(rung, 'init_present').evidence, [path.join('src', 'App.tsx') + ':1']);
+  // Its SDK logs at debug only once the script runs, which a cold tap comes before.
+  assert.strictEqual(initInWrapper, true);
 });
 
 /** A native iOS app and its extension, sharing the App Groups given, on the SDK version given. */
-async function nativeIosWiring({ sdkVersion, groups, inCode }) {
+async function nativeIosWiring({ sdkVersion, groups, extensionGroups = groups, inCode, codeLine }) {
   const plist = (body) =>
     `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>${body}</dict></plist>`;
-  const groupList = plist(
-    `<key>com.apple.security.application-groups</key><array>${groups.map((g) => `<string>${g}</string>`).join('')}</array>`
-  );
+  const list = (names) =>
+    plist(
+      `<key>com.apple.security.application-groups</key><array>${names.map((g) => `<string>${g}</string>`).join('')}</array>`
+    );
+  const groupList = list(groups);
   const root = project({
     'ios/Podfile.lock': sdkVersion ? `PODS:\n  - CustomerIO/MessagingPushAPN (${sdkVersion}):\n` : 'PODS:\n',
     'ios/Sample/AppDelegate.swift': 'import CioMessagingPushAPN\nCustomerIO.initialize(withConfig: config)\n',
     'ios/Sample/Sample.entitlements': groupList,
-    'ios/NSE/NSE.entitlements': groupList,
+    'ios/NSE/NSE.entitlements': list(extensionGroups),
     'ios/NSE/Info.plist': plist(
       '<key>NSExtension</key><dict><key>NSExtensionPointIdentifier</key><string>com.apple.usernotifications.service</string></dict>'
     ),
     'ios/NSE/NotificationService.swift': `import CioMessagingPushAPN\n${
-      inCode ? `MessagingPushConfigBuilder(cdpApiKey: "k").appGroupId("${inCode}")\n` : ''
+      inCode ? `MessagingPushConfigBuilder(cdpApiKey: "k").appGroupId("${inCode}")\n` : codeLine ? `${codeLine}\n` : ''
     }MessagingPushAPN.shared.didReceive(request, withContentHandler: contentHandler)\n`,
   });
   const xcodeproj = path.join(root, 'ios', 'Sample.xcodeproj');
@@ -176,7 +180,8 @@ const MACOS_ONLY = { skip: process.platform !== 'darwin' && 'plutil is macOS-onl
 test("from 4.4 the SDK reads its own App Group, so a different shared group doesn't count", MACOS_ONLY, async () => {
   const other = await nativeIosWiring({ sdkVersion: '4.9.0', groups: ['group.shared.other'] });
   assert.strictEqual(other.sdkVersion.version, '4.9.0');
-  assert.strictEqual(other.check.cause, 'wiring.app_group_mismatch');
+  // To the SDK, a group it does not use is the same as none.
+  assert.deepStrictEqual([other.check.verdict, other.check.cause], ['warn', 'wiring.app_group_absent']);
   assert.match(other.check.evidence.join(' '), /SDK default: group\.io\.customer\.ami\.cio/);
 
   const own = await nativeIosWiring({ sdkVersion: '4.9.0', groups: ['group.io.customer.ami.cio'] });
@@ -207,4 +212,26 @@ test("a wrapper whose Gradle files the tool can't read is a warning, not a missi
   const { rung } = await androidWiring({ projectPath: path.join(root, 'android', 'app') });
   assert.strictEqual(check(rung, 'push_module').verdict, 'warn');
   assert.strictEqual(check(rung, 'push_module').cause, 'wiring.wrapper_build_unread');
+});
+
+test('an App Group only the app has, for a widget, is no group to the SDK, not a mismatch', MACOS_ONLY, async () => {
+  const widget = await nativeIosWiring({ sdkVersion: '4.9.0', groups: ['group.io.customer.ami.widget'], extensionGroups: [] });
+  assert.deepStrictEqual([widget.check.verdict, widget.check.cause], ['warn', 'wiring.app_group_absent']);
+});
+
+test('appGroupId() set from a constant is not taken to be the default group', MACOS_ONLY, async () => {
+  const shared = await nativeIosWiring({
+    sdkVersion: '4.9.0',
+    groups: ['group.shared.own'],
+    codeLine: 'MessagingPushConfigBuilder(cdpApiKey: "k").appGroupId(AppConfig.groupId)',
+  });
+  assert.strictEqual(shared.check.verdict, 'pass');
+  // Named in code, so a group the extension lacks is a real mismatch.
+  const missing = await nativeIosWiring({
+    sdkVersion: '4.9.0',
+    groups: ['group.shared.own'],
+    extensionGroups: [],
+    codeLine: 'MessagingPushConfigBuilder(cdpApiKey: "k").appGroupId(AppConfig.groupId)',
+  });
+  assert.strictEqual(missing.check.cause, 'wiring.app_group_mismatch');
 });

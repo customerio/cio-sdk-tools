@@ -34,7 +34,7 @@ import { PushLadder, RUNG_TITLES } from './types';
 import { VerifyPushOptions, evidenceDirectoryFor } from './options';
 import { ClimbResult, skipRest, skipSending } from './climb';
 import { addSent, askToSend, skipUnreadable, tapPlanFor } from './sending';
-import { askerPhases } from '../../platform/observe';
+import { watchProgress } from '../../platform/observe';
 import { versionChecked } from '../../platform/sdk_version';
 import { profileToken, readIosStateLine } from './state_line';
 
@@ -90,7 +90,6 @@ export async function climb(
         target: chosen,
         bundleId: wiring.bundleId,
         reporter,
-        asker,
         evidenceDirectory: options.evidence,
         processNames: wiring.processNames,
       });
@@ -257,6 +256,7 @@ export async function climb(
         processNames: wiring.processNames,
         extensionName: wiring.extensionName,
         appSchemes: wiring.urlSchemes,
+        initInWrapper: wiring.initInWrapper,
         sdkVersion: device.sdkVersion?.version,
       });
     }
@@ -307,7 +307,6 @@ async function observeIos(input: {
   target: Parameters<typeof startCapture>[0];
   bundleId: string;
   reporter: Reporter;
-  asker: Asker;
   evidenceDirectory?: string;
   processNames?: string[];
 }): Promise<{ observed: boolean; evidencePath?: string; notes: string[] }> {
@@ -344,7 +343,7 @@ async function observeIos(input: {
             async (located) => (located.installed ? true : undefined)
           ),
       },
-      askerPhases(input, handle)
+      watchProgress(input, handle)
     );
     if (installed.timedOut) {
       notes.push('the app was never installed while watching');
@@ -362,7 +361,7 @@ async function observeIos(input: {
           'Launch the app, and allow notifications, so the SDK registers a token.',
         probe: async () => (await read())?.pushDeviceToken,
       },
-      askerPhases(input, handle)
+      watchProgress(input, handle)
     );
     if (token.at) {
       observed = true;
@@ -377,7 +376,7 @@ async function observeIos(input: {
         instruction: 'Log in on the device so the SDK identifies a profile.',
         probe: async () => (await read())?.userId,
       },
-      askerPhases(input, handle)
+      watchProgress(input, handle)
     );
     if (identity.at) {
       observed = true;
@@ -421,6 +420,7 @@ async function matrix(
     processNames?: string[];
     extensionName?: string;
     appSchemes?: string[];
+    initInWrapper?: boolean;
     sdkVersion?: string;
   }
 ): Promise<void> {
@@ -458,6 +458,7 @@ async function matrix(
     processNames: inputs.processNames,
     extensionName: inputs.extensionName,
     appSchemes: inputs.appSchemes,
+    initInWrapper: inputs.initInWrapper,
     sdkVersion: inputs.sdkVersion,
     states,
     dryRun: options.dryRun,
