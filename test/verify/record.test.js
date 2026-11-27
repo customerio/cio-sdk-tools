@@ -613,3 +613,18 @@ test("an open the SDK's log level or version left unproven is settled by the rec
     assert.strictEqual(result.opened.cells[0].verdict, 'pass', cause);
   }
 });
+
+test('an open the record settles drops the detail of what the device said went wrong', () => {
+  const { withRecordedOpen } = require('../../dist/verify/areas/push/record');
+  const stopped = {
+    state: 'killed',
+    verdict: 'skip',
+    cause: 'runtime.capture_stopped',
+    detail: 'the log stream exited (code 1)',
+    tapped: true,
+    evidence: [],
+  };
+  const settled = withRecordedOpen(stopped, { answer: 'opened', deliveryId: 'k' }, false);
+  assert.strictEqual(settled.verdict, 'pass');
+  assert.strictEqual(settled.detail, undefined);
+});
