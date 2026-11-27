@@ -1,5 +1,4 @@
 import { formatMs, stopwatch } from '../core/clock';
-import { Asker } from '../core/prompt';
 import { Reporter } from '../core/report/render';
 
 /**
@@ -20,8 +19,7 @@ import { Reporter } from '../core/report/render';
  *
  * Who acts is the caller's business. A person reads the instruction and does it; an agent
  * that has just run an install has nothing to read and simply finds the state already
- * true. Both paths poll, so neither needs a keypress — but a keypress is accepted as a
- * nudge from anyone who would rather not wait for the next tick.
+ * true. Both paths poll, so neither needs a keypress.
  */
 export interface Step<T> {
   /** What the person (or agent) has to do before this can become true. */
@@ -41,7 +39,6 @@ export interface Observed<T> {
 }
 
 export interface WatchOptions {
-  asker: Asker;
   /** Progress line, so a two-minute wait is visibly alive. */
   onPhase?: (text: string) => void;
   /** Printed once per step, where a person can read it. */
@@ -126,16 +123,14 @@ function formatAge(ms: number): string {
   const days = Math.round(hours / 24);
   return `${days} day${days === 1 ? '' : 's'}`;
 }
-export function askerPhases(
-  input: { reporter: Reporter; asker: Asker },
+export function watchProgress(
+  input: { reporter: Reporter },
   handle: { phase(text: string): void }
 ): {
-  asker: Asker;
   onPhase: (text: string) => void;
   onInstruction: (text: string) => void;
 } {
   return {
-    asker: input.asker,
     onPhase: (text) => handle.phase(text),
     // Instructions are for a person; an agent that has already installed the build never
     // sees them, because the probe is true on the first tick.

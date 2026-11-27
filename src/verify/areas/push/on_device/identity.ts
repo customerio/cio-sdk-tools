@@ -35,10 +35,6 @@ export function deliveredTitle(state: AppState, tag: string): string {
   return `cio verify ${tag} · ${state}`;
 }
 
-export function tapTitle(tag: string): string {
-  return `cio verify ${tag} · tap me`;
-}
-
 export function tapBody(state: AppState): string {
   return `Tap this to verify the opened metric (${state} state).`;
 }

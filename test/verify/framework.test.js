@@ -115,6 +115,28 @@ test("a workspace's keys are read from each of its sources", async () => {
   assert.match((await workspaceKeys('1', failing.api)).error, /404/);
 });
 
+test("one source's failed key lookup keeps the keys that loaded, a few lookups at a time", async () => {
+  const table = { '/cdp/api/workspaces/1/sources': { sources: [] } };
+  for (let id = 1; id <= 9; id++) {
+    table['/cdp/api/workspaces/1/sources'].sources.push({ id, name: `s${id}` });
+    if (id !== 5) table[`/cdp/api/workspaces/1/sources/${id}/api_keys`] = { api_keys: [{ api_key: `k${id}` }] };
+  }
+  const { api } = fakeApi(table);
+  let running = 0;
+  let most = 0;
+  const counted = async (...args) => {
+    running++;
+    most = Math.max(most, running);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    running--;
+    return api(...args);
+  };
+  const read = await workspaceKeys('1', counted);
+  assert.deepStrictEqual(read.keys.map((entry) => entry.key), ['k1', 'k2', 'k3', 'k4', 'k6', 'k7', 'k8', 'k9']);
+  assert.match(read.error, /404/);
+  assert.ok(most <= 4, `ran ${most} at once`);
+});
+
 test('a real key is shortened, and a placeholder is printed as it is', () => {
   assert.strictEqual(shortKey('57b6553d60e40fefffd6'), '57b655…');
   assert.strictEqual(shortKey('test-cdp-api-key'), 'test-cdp-api-key');

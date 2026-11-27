@@ -14,7 +14,6 @@ import {
   sdkWasQuiet,
   lastAuthorization,
   notificationsAllowed,
-  extensionHandled,
   extensionHandledIds,
   extensionRanFor,
   simulatorPredicate,
@@ -81,6 +80,11 @@ export interface MatrixOptions {
   appSchemes?: string[];
   /** The native SDK's version, as the project resolved it. */
   sdkVersion?: string;
+  /**
+   * The core SDK is initialized from JavaScript or Dart, as React Native and Flutter apps do:
+   * its log level is set only once that runs, after iOS hands a cold tap to the app.
+   */
+  initInWrapper?: boolean;
 }
 
 /**
@@ -352,6 +356,7 @@ async function runCell(
             reporter: options.reporter,
             appProcess: options.processNames?.[0],
             appSchemes: options.appSchemes,
+            initInWrapper: options.initInWrapper,
           },
           capture,
           tapHandle
@@ -439,13 +444,6 @@ async function runCellBody(
   // extensionRanFor). Every wait and verdict below reads this one.
   const ranNow = () =>
     extensionRanFor(since(), options.extensionName, sends.ids ?? []);
-  // The extension handled this very push: its lines name a delivery id this state's sends
-  // returned. Lines for a late earlier push say nothing about this one.
-  // Without an id from the send, any extension activity is all there is to go by.
-  const handledThis = () =>
-    sends.ids && sends.ids.length > 0
-      ? extensionHandled(since(), options.extensionName, sends.ids)
-      : ranNow();
   const confirming = known.nothingArrives === true;
   const timeout = confirming
     ? CONFIRMING_TIMEOUT_MS
@@ -528,7 +526,7 @@ async function runCellBody(
   if (
     options.resend !== false &&
     stored === false &&
-    !handledThis() &&
+    !ranNow() &&
     known.localProbe !== 'absent' &&
     !confirming
   ) {
@@ -567,11 +565,13 @@ async function runCellBody(
     }
   }
 
-  // The store is one witness. The extension handling this very delivery is another, and it
-  // outranks a store that never kept the push (a foreground push the app chose not to show).
+  // The store is one witness. The extension running for this push is another, and it outranks
+  // a store that never kept the push (a foreground push the app chose not to show). Its lines
+  // need not name the delivery: an SDK below debug names none. Lines that name only another
+  // delivery are a late earlier push's, and do not count (see extensionRanFor).
   // Read before the probe below: its locally injected push wakes the extension too, and
   // without a delivery id to tell them apart that would read as this push arriving.
-  const handled = stored === false && handledThis();
+  const handled = stored === false && ranNow();
 
   // Nothing arrived: before blaming the integration, find out whether this target is
   // delivering anything at all.
@@ -639,7 +639,7 @@ async function runCellBody(
     expectedId ?? (freshIds.length === 1 ? freshIds[0] : undefined);
   if (handled) {
     evidence.push(
-      'the notification store does not hold it, and the extension handled this delivery, so it arrived'
+      'the notification store does not hold it, and the extension ran for it, so it arrived'
     );
   }
   const cell: MatrixCell = {

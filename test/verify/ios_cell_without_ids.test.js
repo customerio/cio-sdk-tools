@@ -18,7 +18,7 @@ const extensionLine = { at: '', process: 'NotificationService', message: 'didRec
  * One foreground cell on a simulator whose sends return no delivery id and whose notification
  * store never holds the push. `onSend` and `onProbe` decide when the extension speaks.
  */
-async function runOneCell({ onSend = () => {}, onProbe = () => {}, resend = false, tap = false }) {
+async function runOneCell({ onSend = () => {}, onProbe = () => {}, resend = false, tap = false, deliveryId }) {
   const lines = [];
   const tapped = [];
   let sends = 0;
@@ -34,7 +34,7 @@ async function runOneCell({ onSend = () => {}, onProbe = () => {}, resend = fals
   send.sendVerifyPush = async (request) => {
     sends += 1;
     onSend(sends, lines, request);
-    return { accepted: true };
+    return deliveryId ? { accepted: true, deliveryId } : { accepted: true };
   };
   notifications.waitForNotification = async () => false;
   notifications.waitForTitle = async () => false;
@@ -61,7 +61,7 @@ async function runOneCell({ onSend = () => {}, onProbe = () => {}, resend = fals
     resend,
     tap: tap ? { states: ['foreground'] } : undefined,
   });
-  return { cell: result.delivered.cells[0], tapped };
+  return { cell: result.delivered.cells[0], tapped, sends };
 }
 
 test("the probe waking the extension is not this push arriving", async () => {
@@ -81,4 +81,16 @@ test('without delivery ids the push to tap keeps the first title', async () => {
   assert.strictEqual(cell.arrived, true);
   assert.strictEqual(tapped.length, 1);
   assert.strictEqual(tapped[0].title, cell.title);
+});
+
+test("an extension that ran for a push the store never kept is an arrival, though its SDK named no id", async () => {
+  // The send returned an id; the extension's SDK, below debug, wrote none of its own.
+  const { cell, sends } = await runOneCell({
+    resend: true,
+    deliveryId: 'dgQBabcdefghijkl',
+    onSend: (n, lines) => n === 1 && lines.push(extensionLine),
+  });
+  assert.strictEqual(cell.arrived, true);
+  assert.notStrictEqual(cell.cause, 'runtime.push_never_arrived');
+  assert.strictEqual(sends, 1, 'no duplicate send for a push the extension already ran for');
 });
