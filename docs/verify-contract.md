@@ -21,7 +21,7 @@ npx cio-sdk-tools@1.9.0 verify push <path> --depth on-device \
 |---|---|
 | Version | 1.9.0, published by semantic-release when `verify-command` merges to `main`. Nothing else gates it. |
 | Where it lives | `cio-sdk-tools verify`, next to `doctor`. `doctor` is deprecated later. |
-| Before it ships | See [Open before release](#open-before-release). |
+| After it ships | See [After release](#after-release). |
 
 ## The command
 
@@ -300,9 +300,22 @@ The CDP layer's stores are a library's internals, and Customer.io plans to encry
 |---|---|---|---|---|
 | iPhone 15, iOS 18.0.1 | ✅ | ✅ | ✅ | Not yet |
 | iPhone 16 simulator, iOS 18.0 | ✅ | ✅ | ✅ | Not yet |
+| iPhone 16 and 16 Pro simulators, iOS 18.5 | ✅ | ✅ | Not yet | ✅ |
 | Galaxy S24, Android 16 | ✅ | ✅ | ✅ | Not yet |
+| Galaxy S24, Android 17 | ✅ | ✅ | Not yet | ✅ |
 
 The native sample apps, in a workspace with several apps; on the iPhone and the S24 from fresh installs. An Android emulator (API 35) passed registration on the release build.
+
+End-to-end against production, every push received and recorded as delivered (exit 0), with no taps:
+
+| App | Android (S24) | iOS simulator |
+|---|---|---|
+| Native samples (`java_layout`, APN-UIKit) | ✅ | ✅ |
+| React Native sample | ✅ | ✅ |
+| Flutter sample | ✅ | ✅ (FCM) |
+| Expo test app | ✅ | Not yet: the test app's simulator build does not link |
+
+With the Android SDK at error log level (`java_layout`), the run ends unproven (exit 21), never failed: the background and foreground pushes are proven from the notification list and the SDK's delivery worker, and the killed one is left unproven because the SDK wrote no line.
 
 ## Known limits
 
@@ -313,12 +326,10 @@ The native sample apps, in a workspace with several apps; on the iPhone and the 
 - **Customer.io's copy of the permission (`push_enabled`)** lags the device by 30–60s and isn't judged.
 - **An iPhone app that never asked for permission** can still run its extension for a push, so the push passes; the tool adds that notifications aren't allowed, so nothing would have shown.
 
-## Open before release
+## After release
 
-- Deploy the backend route for test deliveries, then run end-to-end against a local backend, then production.
-- Run a React Native, an Expo and a Flutter sample.
-- Run Android with the SDK at error log level.
 - Name the SDK versions with the key tails, the `sdk.state` line, the permission line and the deep-link outcome once they ship (customerio-ios and customerio-android, one PR each). The tool works without them.
+- Run the Expo test app end-to-end on an iOS simulator once its build links again.
 
 ## Appendix: every cause
 
