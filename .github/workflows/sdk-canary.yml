@@ -7,6 +7,10 @@ on:
     - cron: '0 6 * * 1'
   workflow_dispatch:
 
+# It only clones public SDK repos and runs node.
+permissions:
+  contents: read
+
 jobs:
   sdk-canary:
     name: SDK lines verify push reads

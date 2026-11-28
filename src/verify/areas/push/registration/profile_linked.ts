@@ -23,6 +23,8 @@ export interface ProfileInput {
   userId?: string;
   anonymousId?: string;
   token?: string;
+  /** The token was read from this same profile, so it cannot show the device is linked. */
+  tokenFromProfile?: boolean;
   bundleId?: string;
   /**
    * The other workspaces this login can read. Only used when the chosen one disappoints:
@@ -307,6 +309,20 @@ export function describeHits(hits: IdentityHit[]): string[] {
 export function deviceLinkChecks(profile: Profile, input: ProfileInput) {
   const token = input.token as string;
   const linked = profile.devices.find((device) => device.id === token);
+
+  // The profile answering for itself proves nothing about this device.
+  if (input.tokenFromProfile) {
+    return [
+      {
+        ...skipped(
+          'device_linked',
+          'This device is linked to the profile',
+          "the token was read from this profile, not from the device, so it can't show this device is the one linked"
+        ),
+        cause: 'device.token_from_profile',
+      },
+    ];
+  }
 
   if (profile.devices.length === 0) {
     return [

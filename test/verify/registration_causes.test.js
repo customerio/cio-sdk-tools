@@ -402,3 +402,91 @@ test("POST_NOTIFICATIONS merged in from Firebase Messaging counts, and an unread
   });
   assert.deepStrictEqual([unread.verdict, unread.cause], ['skip', 'wiring.wrapper_not_installed']);
 });
+
+test("google-services.json in a variant's source set, for the installed variant's package, passes", async () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { loadAndroidProject } = require('../../dist/verify/platform/android/project');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cio-verify-'));
+  const write = (relative, text) => {
+    fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+    fs.writeFileSync(path.join(root, relative), text);
+  };
+  const services = (name) => JSON.stringify({ client: [{ client_info: { android_client_info: { package_name: name } } }] });
+  write('settings.gradle', "include ':app'");
+  write('app/build.gradle', "apply plugin: 'com.android.application'\nandroid { defaultConfig { applicationId 'com.example.app' } }");
+  write('app/src/debug/google-services.json', services('com.example.app.debug'));
+  write('app/src/free/release/google-services.json', services('com.example.app.free'));
+  const model = await loadAndroidProject(path.join(root, 'app'));
+  assert.strictEqual(googleServicesCheck(model, 'com.example.app.debug').verdict, 'pass');
+  assert.strictEqual(googleServicesCheck(model, 'com.example.app.free').verdict, 'pass');
+  // Against the base id that no file lists, it is still a mismatch, never "missing".
+  assert.strictEqual(googleServicesCheck(model).cause, 'wiring.google_services_package_mismatch');
+});
+
+test("POST_NOTIFICATIONS under an installed wrapper whose Gradle can't be read is a warning", () => {
+  const { notificationPermissionCheck } = require('../../dist/verify/areas/push/registration/android_wiring');
+  const check = notificationPermissionCheck({
+    manifest: '<manifest/>',
+    gradle: 'targetSdk 35',
+    sdkModules: [],
+    wrapper: { name: 'customerio-reactnative', declared: true, directory: '/x', sdkModules: [], sdkModulesRead: false },
+  });
+  assert.deepStrictEqual([check.verdict, check.cause], ['warn', 'wiring.wrapper_build_unread']);
+});
+
+test('an init the tool could not follow, beside a leftover call, is unproven rather than not at launch', () => {
+  const { initializationChecks } = require('../../dist/verify/areas/push/registration/project_wiring');
+  const site = (runsAtLaunch, scope) => ({ file: 'App.swift', line: 3, scope, runsAtLaunch });
+  const checks = initializationChecks({ files: 2, initSites: [site('unknown', 'AppSetup.start'), site(false, 'ContentView.body')] });
+  assert.deepStrictEqual(
+    checks.map((check) => [check.id, check.verdict, check.cause]),
+    [
+      ['init_at_launch', 'warn', 'wiring.init_launch_unproven'],
+      ['init_outside_launch', 'warn', 'wiring.init_also_outside_launch'],
+    ]
+  );
+});
+
+test("a token read from the profile is a warning, and can't prove the link it came from", () => {
+  const { deviceReady } = require('../../dist/verify/areas/push/registration/device_ready');
+  const { androidDeviceReady } = require('../../dist/verify/areas/push/registration/android_device');
+  const { deviceLinkChecks } = require('../../dist/verify/areas/push/registration/profile_linked');
+  const token = 'a'.repeat(64);
+  const fromProfile = ["Customer.io: the profile's one iOS device for this app"];
+  const ios = deviceReady(
+    {
+      target: { kind: 'simulator', name: 'iPhone 16', udid: 'U1', state: 'booted' },
+      usable: [],
+      ambiguous: [],
+      installed: true,
+      preferences: {},
+      sdk: { pushDeviceToken: token, tokenFromProfile: true, userId: 'u', sources: fromProfile, stores: { sdk: false, context: true, cdp: false } },
+    },
+    'io.example.app'
+  );
+  const iosToken = ios.checks.find((check) => check.id === 'token_registered');
+  assert.deepStrictEqual([iosToken.verdict, iosToken.cause], ['warn', 'device.token_from_profile']);
+  const android = androidDeviceReady(
+    {
+      target: { serial: 'emulator-5554', state: 'device' },
+      usable: [],
+      ambiguous: [],
+      installed: true,
+      sdk: { deviceToken: token, tokenFromProfile: true, userId: 'u', sources: [], stores: { sdk: false, context: false, cdp: true } },
+    },
+    'io.example.app',
+    false
+  );
+  const androidToken = android.checks.find((check) => check.id === 'token_registered');
+  assert.deepStrictEqual([androidToken.verdict, androidToken.cause], ['warn', 'device.token_from_profile']);
+  const profile = { cioId: 'c1', identifiers: {}, devices: [{ id: token, platform: 'ios' }] };
+  const [link] = deviceLinkChecks(profile, { token, tokenFromProfile: true });
+  assert.deepStrictEqual([link.verdict, link.cause], ['skip', 'device.token_from_profile']);
+  // Through the ladder the run is unproven, never a pass.
+  const ladder = new Ladder();
+  ladder.adopt({ id: 'profile_linked', title: 'Profile linked', checks: [link] });
+  assert.strictEqual(ladder.exitCode, EXIT.inconclusive);
+  assert.strictEqual(deviceLinkChecks(profile, { token })[0].verdict, 'pass');
+});

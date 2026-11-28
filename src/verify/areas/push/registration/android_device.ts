@@ -366,6 +366,18 @@ function tokenCheck(facts: AndroidDeviceFacts): Check {
       ]
     );
   }
+  // Customer.io's record of the profile stood in for the device: it may be another phone's.
+  if (facts.sdk?.tokenFromProfile) {
+    return warn(
+      'token_registered',
+      'SDK holds an FCM token',
+      'device.token_from_profile',
+      [
+        `${token.slice(0, 12)}… (${token.length} chars)`,
+        ...(facts.sdk?.sources ?? []),
+      ]
+    );
+  }
   // Read from shared preferences on purpose: logcat truncates long lines, and a clipped
   // token comes back from a send as FCM_UNREGISTERED, which reads like a broken setup.
   return pass('token_registered', 'SDK holds an FCM token', [

@@ -160,6 +160,7 @@ export async function climb(
       );
       if (token) {
         device.sdk.pushDeviceToken = token;
+        device.sdk.tokenFromProfile = true;
         tokenFromProfile = true;
         device.sdk.sources.push(
           "Customer.io: the profile's one iOS device for this app"
@@ -183,6 +184,7 @@ export async function climb(
       userId: device.sdk?.userId,
       anonymousId: device.sdk?.anonymousId,
       token: device.sdk?.pushDeviceToken,
+      tokenFromProfile,
       candidates: selection.resolution.candidates,
       onSweep: (workspace) =>
         profileRung.phase(`looking in ${workspace.name ?? workspace.id}`),

@@ -21,7 +21,7 @@ npx cio-sdk-tools@1.9.0 verify push <path> --depth on-device \
 |---|---|
 | Version | 1.9.0, published by semantic-release when `verify-command` merges to `main`. Nothing else gates it. |
 | Where it lives | `cio-sdk-tools verify`, next to `doctor`. `doctor` is deprecated later. |
-| Before it ships | See [Open before release](#open-before-release). |
+| After it ships | See [After release](#after-release). |
 
 ## The command
 
@@ -56,7 +56,7 @@ Arrival is read from the OS wherever it can be: the simulator's notification sto
 | `--check-opens` | A person taps the killed and background pushes. See [Unattended runs](#unattended-runs). |
 | `--deep-link <url>` | The URL the pushes carry, so a tap is checked to land there. Needs `--check-opens`. |
 | `-n, --dry-run` | Everything except sending. |
-| `--no-retry` | No second push when the first doesn't arrive. |
+| `--no-retry` | No second push when the first doesn't arrive. Only iOS re-sends; Android sends one push per state. |
 | `--cio-profile <name>` | The `cio` login to use (env `CIO_PROFILE`). |
 | `--platform <ios\|android>` | When the folder holds both projects. |
 | `--ios-target`, `--ios-configuration`, `--android-module`, `--android-app-id` | When the project builds several apps. |
@@ -260,7 +260,7 @@ The tool reads the SDKs' log lines and stored state. Each SDK holds the parts be
 | `push.deep_link` | both | `url`; Android also `behavior` |
 | `push.deep_link_outcome` | both | `outcome`: `app_callback`, `app_navigation`, `system`, `external_app`, `default_app`, `not_handled` |
 
-The SDK writes `sdk.state` when it starts and whenever the user or token changes. The tool reads it only when the stored state below can't answer: it starts the app again and waits up to 20s for the line.
+The SDK writes `sdk.state` when it starts and whenever the user or token changes. It is a debug line, written only at the debug log level, and on iOS its `user` and `token` values are private in os_log: a person's identifier and push token never reach the device log of a build at the default level. The tool reads it only when the stored state below can't answer: it starts the app again and waits up to 20s for the line.
 
 **Log level from launch (contract).** The SDK uses the level the app last set from the moment its process starts, so a push or tap that starts a React Native or Flutter app is logged before JavaScript or Dart initializes the SDK.
 
@@ -300,9 +300,22 @@ The CDP layer's stores are a library's internals, and Customer.io plans to encry
 |---|---|---|---|---|
 | iPhone 15, iOS 18.0.1 | ✅ | ✅ | ✅ | Not yet |
 | iPhone 16 simulator, iOS 18.0 | ✅ | ✅ | ✅ | Not yet |
+| iPhone 16 and 16 Pro simulators, iOS 18.5 | ✅ | ✅ | Not yet | ✅ |
 | Galaxy S24, Android 16 | ✅ | ✅ | ✅ | Not yet |
+| Galaxy S24, Android 17 | ✅ | ✅ | Not yet | ✅ |
 
 The native sample apps, in a workspace with several apps; on the iPhone and the S24 from fresh installs. An Android emulator (API 35) passed registration on the release build.
+
+End-to-end against production, every push received and recorded as delivered (exit 0), with no taps:
+
+| App | Android (S24) | iOS simulator |
+|---|---|---|
+| Native samples (`java_layout`, APN-UIKit) | ✅ | ✅ |
+| React Native sample | ✅ | ✅ |
+| Flutter sample | ✅ | ✅ (FCM) |
+| Expo test app | ✅ | Not yet: the test app's simulator build does not link |
+
+With the Android SDK at error log level (`java_layout`), the run ends unproven (exit 21), never failed: the background and foreground pushes are proven from the notification list and the SDK's delivery worker, and the killed one is left unproven because the SDK wrote no line.
 
 ## Known limits
 
@@ -313,12 +326,10 @@ The native sample apps, in a workspace with several apps; on the iPhone and the 
 - **Customer.io's copy of the permission (`push_enabled`)** lags the device by 30–60s and isn't judged.
 - **An iPhone app that never asked for permission** can still run its extension for a push, so the push passes; the tool adds that notifications aren't allowed, so nothing would have shown.
 
-## Open before release
+## After release
 
-- Deploy the backend route for test deliveries, then run end-to-end against a local backend, then production.
-- Run a React Native, an Expo and a Flutter sample.
-- Run Android with the SDK at error log level.
 - Name the SDK versions with the key tails, the `sdk.state` line, the permission line and the deep-link outcome once they ship (customerio-ios and customerio-android, one PR each). The tool works without them.
+- Run the Expo test app end-to-end on an iOS simulator once its build links again.
 
 ## Appendix: every cause
 
@@ -428,6 +439,8 @@ Generated from the tool's catalog by `scripts/cause-appendix.js`. `severity` is 
   Launch the app once and let the SDK re-register. A reinstall leaves the container alone, and a dead token reads exactly like a live one.
 - **`device.token_unregistered`** · blocker — The SDK has no push token stored on this target.
   Open the app, and run again: the SDK stores a token the first time the app starts with push set up. If the app has been opened, check it registers for push at launch, and background and foreground it once. Without a token there is no address to send to.
+- **`device.token_from_profile`** · warning — The token came from Customer.io's record of the profile's one device for this app, not from this device.
+  The SDK's token store on the device couldn't be read, so this may be another phone's token, and it can't show this device is linked. Pass this device's token with --token, or run a debug build whose store the tool can read.
 - **`device.sdk_state_unreadable`** · warning — The tool couldn't read what the SDK stored on this target, so it can't say whether the SDK holds a token or an identified user.
   Update cio-sdk-tools: this SDK version may keep its state where this version of the tool doesn't look. To go on meanwhile, pass --token and --user. An SDK that writes its state line in the log at debug level is read from there when its files can't be.
 - **`device.identity_anonymous`** · blocker — No user is identified on this device, and Customer.io sends push only to identified profiles.

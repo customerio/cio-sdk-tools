@@ -51,7 +51,10 @@ const pushCommand = new Command('push')
   )
   .addOption(sending('-n, --dry-run', 'do everything except send the pushes'))
   .addOption(
-    sending('--no-retry', "don't send a second push when the first is missing")
+    sending(
+      '--no-retry',
+      "iOS: don't send a second push when the first is missing (Android sends one per state)"
+    )
   )
   .option('--workspace <id>', 'Customer.io workspace the app should report to')
   .option(

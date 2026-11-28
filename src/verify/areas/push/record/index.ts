@@ -435,7 +435,9 @@ export function withRecordedOpen(
         ? { verdict: cell.linkOutcome.verdict, cause: cell.linkOutcome.cause }
         : { verdict: 'warn', cause: 'runtime.opened_recorded_link_unseen' }
       : { verdict: 'pass', cause: undefined }),
+    // What the device said went wrong no longer stands: the record settled it.
     summary: undefined,
+    detail: undefined,
     evidence: [
       ...cell.evidence,
       `Customer.io recorded the open of ${recorded.deliveryId}${when} (was: ${cell.cause})`,

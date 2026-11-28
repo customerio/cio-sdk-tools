@@ -227,6 +227,11 @@ export function dnsResolved(
 
 export interface AndroidSdkState {
   deviceToken?: string;
+  /**
+   * The token came from Customer.io's record of the profile's one device for this app, not
+   * from this device: it may be another phone's.
+   */
+  tokenFromProfile?: boolean;
   userId?: string;
   anonymousId?: string;
   siteId?: string;

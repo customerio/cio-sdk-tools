@@ -414,6 +414,14 @@ export const CAUSES: Record<string, PushCause> = {
     remedy:
       'Open the app, and run again: the SDK stores a token the first time the app starts with push set up. If the app has been opened, check it registers for push at launch, and background and foreground it once. Without a token there is no address to send to.',
   },
+  'device.token_from_profile': {
+    stage: 'device_ready',
+    severity: 'warning',
+    summary:
+      "The token came from Customer.io's record of the profile's one device for this app, not from this device.",
+    remedy:
+      "The SDK's token store on the device couldn't be read, so this may be another phone's token, and it can't show this device is linked. Pass this device's token with --token, or run a debug build whose store the tool can read.",
+  },
   'device.sdk_state_unreadable': {
     stage: 'device_ready',
     severity: 'warning',

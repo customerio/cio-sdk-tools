@@ -76,3 +76,10 @@ test('--watch-registration on Android watches the serial the device name resolve
   await run('Pixel 9').catch(() => {});
   assert.deepStrictEqual(watched, []);
 });
+
+test('a registration run that watches gets an evidence folder, so --verbose keeps its logs', () => {
+  const { capturesLogs } = require('../../dist/verify/areas/push/run');
+  assert.strictEqual(capturesLogs({ send: false, observe: true }), true);
+  assert.strictEqual(capturesLogs({ send: true, observe: false }), true);
+  assert.strictEqual(capturesLogs({ send: false, observe: false }), false);
+});

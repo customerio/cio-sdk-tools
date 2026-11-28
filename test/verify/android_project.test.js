@@ -392,3 +392,23 @@ test("a self-closing service is not credited with the next service's messaging f
   assert.strictEqual(model.customMessagingService?.className, '.PushService');
   assert.strictEqual(model.customMessagingService?.forwardsToSdk, true);
 });
+
+test('a Compose ComponentActivity or a FragmentActivity init is not at launch either', async () => {
+  const { resolveInitAtLaunch } = require('../../dist/verify/platform/android/project');
+  for (const base of ['ComponentActivity()', 'FragmentActivity()', 'androidx.activity.ComponentActivity()']) {
+    const root = project({
+      'settings.gradle': "include ':app'",
+      'app/build.gradle': "apply plugin: 'com.android.application'",
+      'app/src/main/AndroidManifest.xml': '<manifest><application><activity android:name=".MainActivity"/></application></manifest>',
+      'app/src/main/java/com/example/MainActivity.kt': [
+        `class MainActivity : ${base} {`,
+        '    override fun onCreate(state: Bundle?) {',
+        '        CustomerIO.initialize(this)',
+        '    }',
+        '}',
+      ].join('\n'),
+    });
+    const model = await loadAndroidProject(path.join(root, 'app'));
+    assert.strictEqual(resolveInitAtLaunch(model).verdict, false, base);
+  }
+});
